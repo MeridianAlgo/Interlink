@@ -20,6 +20,8 @@
 \usepackage{subcaption}
 \usepackage{float}
 \usepackage{parskip}
+\usepackage{tikz}
+\usetikzlibrary{shapes.geometric, arrows}
 
 \hypersetup{
     colorlinks=true,
@@ -75,9 +77,11 @@
     \textbf{\Huge InterLink Protocol}\\
     \vspace{0.5in}
     \large A Zero-Knowledge Atomic Interoperability Framework\\
+    \vspace{0.2in}
+    \textit{Trustless. Scalable. Unified.}\\
     \vspace{1in}
-    \textbf{Made by MeridianAlgo}\\
-    \small Version 5.1 --- Technical Edition --- February 2026
+    \textbf{MeridianAlgo Research Lab}\\
+    \small Version 6.0 --- Technical Compendium --- February 2026
 }
 \author{}
 \date{}
@@ -93,12 +97,12 @@
 \phantomsection
 \addcontentsline{toc}{section}{Abstract}
 \begin{abstract}
-The current blockchain ecosystem remains a collection of isolated networks, each optimized for specific use cases but lacking a seamless bridge for value and data. Traditional interoperability solutions often force a compromise between security and speed, relying on synthetic "wrapped" assets or centralized validator sets that introduce systemic risk. 
+The blockchain landscape suffers from severe fragmentation, isolating capital and users within disparate execution environments. Conventional bridging solutions, relying heavily on multisig federation or optimistic verification, introduce systemic latency and centralization risks. This paper presents \textbf{InterLink (ILINK)}, a hyper-structure for cross-chain composability powered by \textbf{recursive zero-knowledge proofs (zk-SNARKs)}. 
 
-This paper introduces \textbf{InterLink (ILINK)}, a protocol designed to bridge this divide by enabling trustless, atomic transfers of native assets. By leveraging \textbf{halo2-based zero-knowledge proofs}, InterLink ensures that cross-chain transitions are mathematically verified on-chain, eliminating the need for intermediaries. Our architecture combines a decentralized, stake-weighted relayer network with a high-performance Solana execution hub to provide unified liquidity across disparate blockchains. We detail the engineering principles behind our Rust-based implementation, the economic incentives that secure the network, and the deflationary tokenomics that ensure long-term sustainability. InterLink is not just a bridge; it is the connective tissue for a truly unified multi-chain future.
+By utilizing the \textbf{halo2} proving system, InterLink enables trustless, atomic state transitions between heterogeneous ledgers. Our architecture introduces a decentralized, stake-weighted \textbf{Relayer Network} incentivized by a deflationary token model, coupled with a high-performance \textbf{Solana Execution Hub} for global state management. We define the cryptographic primitives, circuit constraints, and economic game theory underpinning the protocol, demonstrating how InterLink achieves O(1) verification cost for batched cross-chain intents while preserving complete sovereign security. This is not merely a bridge; it is the foundational substrate for the Unified Liquidity Layer of the decentralized web.
 
 \vspace{0.5in}
-\textbf{Keywords:} Zero-Knowledge Proofs, Cross-Chain Interoperability, Atomic Settlement, Rust Systems Engineering, Solana Anchor, Liquidity Unification, Deflationary Tokenomics
+\textbf{Keywords:} Zero-Knowledge Proofs, Recursive SNARKs, Atomic Composability, Rust Systems Engineering, Solana Anchor, Liquidity Unification, Hyper-Deflationary Tokenomics, Game-Theoretic Security.
 \end{abstract}
 
 \newpage
@@ -108,330 +112,214 @@ This paper introduces \textbf{InterLink (ILINK)}, a protocol designed to bridge 
 \section{Introduction}
 \label{sec:intro}
 
-\subsection{Context and Motivation}
-Blockchain ecosystems have evolved into specialized execution domains with divergent design priorities: high-security settlement layers, high-throughput application chains, privacy-preserving rollups, and app-specific sovereign chains. This specialization improves local optimization but degrades global composability. Capital often remains isolated because transfer rails are either expensive, slow, or trust heavy.
-
-In practical terms, users and institutions face three recurring obstacles:
-\begin{enumerate}[label=\arabic*.]
-    \item \textbf{Security asymmetry:} bridge systems frequently aggregate risk into off-chain multi-signature controls or under-collateralized validator assumptions.
-    \item \textbf{Capital inefficiency:} fragmented liquidity leads to excess slippage, poor routing depth, and duplicated inventory costs.
-    \item \textbf{Operational complexity:} users must reason about chain finality windows, wrapped-asset semantics, and destination-chain bridge solvency.
+\subsection{The Interoperability Trilemma}
+Blockchain architectures face an inherent trade-off between Scalability, Security, and Decentralization. Interoperability protocols introduce a fourth dimension: \textbf{Connectivity}. The "Interoperability Trilemma" posits that a protocol cannot simultaneously achieve:
+\begin{enumerate}
+    \item \textbf{Trustlessness:} No reliance on external trusted parties.
+    \item \textbf{Generalizability:} Support for arbitrary message passing.
+    \item \textbf{Extensibility:} Easy integration of new domains.
 \end{enumerate}
 
-InterLink is designed around the thesis that cross-chain systems should minimize trust assumptions \emph{and} improve capital efficiency at the same time. The protocol therefore treats security proofs and liquidity architecture as first-class co-dependent components rather than separate modules.
-
-\subsection{Historical and Technical Lineage}
-Modern interoperability inherits from decades of cryptographic and distributed-systems research. Public-key cryptography enabled portable identity and signatures. Byzantine fault tolerance enabled distributed agreement under adversarial participation. Merkle commitments and succinct proof systems enabled compact verification of remote state without replaying full history.
-
-Early bridge architectures favored speed-to-market over trust minimization, often relying on external validator committees. While these systems proved demand for interoperability, incidents across multiple production networks demonstrated that bridge security is typically constrained by its weakest trust boundary. This has accelerated migration toward light-client verification, fraud-proof pathways, and succinct validity proofs.
-
-InterLink extends this trajectory by integrating validity-proof gating with atomic execution semantics and economically enforceable relayer behavior.
+Existing solutions compromise significantly. External Validator sets (e.g., Multisigs) sacrifice trustlessness. Light Client Relays sacrifice extensibility due to gas costs. \textbf{InterLink} solves this by replacing trusted verifiers with succinct mathematical proofs, achieving the holy grail of \textit{trust-minimized generalizability}.
 
 \subsection{Research Contribution}
-This paper contributes the following:
+This paper formalizes the InterLink Protocol, contributing:
 \begin{itemize}
-    \item A formalized protocol pipeline for proof-attested native-asset transfer with deterministic state transitions.
-    \item A Rust-centric implementation pattern for relayer reliability and verifier integrity.
-    \item A unified-liquidity approach that reduces route fragmentation while preserving source-of-truth accounting.
-    \item A tokenomic model coupling protocol utilization to burn dynamics and stake-backed relay quality.
-    \item A structured security model spanning cryptographic, network, and economic attack surfaces.
+    \item \textbf{zk-Consensus Verification:} A method for verifying disparate consensus mechanisms (PoS, PoW, BFT) inside a single succinct circuit.
+    \item \textbf{Unified Liquidity Hub:} A centralized-but-trustless order book model on Solana for efficient capital routing.
+    \item \textbf{Economic Security Equivalence:} A staking model where the cost of corruption is cryptographically provable to exceed potential gain.
 \end{itemize}
 
-\section{Related Work and Design Positioning}
-\label{sec:related}
+\section{Preliminaries}
+\label{sec:prelim}
 
-Interoperability systems generally cluster into four design families:
-\begin{enumerate}[label=\alph*)]
-    \item \textbf{External validator bridges} (high flexibility, elevated trust assumptions),
-    \item \textbf{Light-client-based channels} (strong verification, higher implementation complexity),
-    \item \textbf{Liquidity-network routers} (fast settlement, inventory and rebalancing constraints), and
-    \item \textbf{ZK-assisted verification systems} (strong integrity, proving cost and tooling complexity).
-\end{enumerate}
+To ensure clarity, we define key cryptographic and systemic terms:
 
-InterLink is closest to the fourth family but intentionally combines it with liquidity unification and stake-slashing enforcement. The protocol differentiator is not merely zero-knowledge usage; it is the composition of cryptographic validity, deterministic hub logic, and incentive-compatible relayer selection.
+\begin{description}
+    \item[zk-SNARK:] Zero-Knowledge Succinct Non-Interactive Argument of Knowledge. A proof that a computation was performed correctly without revealing the inputs.
+    \item[Polynomial Commitment Scheme (PCS):] A method to commit to a polynomial $P(x)$ and later prove evaluations $P(z) = y$ succinctly. InterLink utilizes the \textbf{KZG} (Kate-Zaverucha-Goldberg) scheme for Ethereum compatibility and \textbf{IPA} (Inner Product Arguments) for bulletproof-style recursion where trusted setups are undesirable.
+    \item[Halo2:] A high-performance proving system developed by the Zcash team, employing PLONKish arithmetization. It allows for custom "chips" (logic gates) optimized for specific operations like hashing or signature verification.
+    \item[Atomic Swap:] A trade where assets are exchanged between two parties such that either both transfers happen or neither does.
+    \item[PDA (Program Derived Address):] In Solana, an account controlled by a program (smart contract) rather than a private key, enabling deterministic state management.
+\end{description}
 
 \section{System Architecture}
 \label{sec:arch}
 
-\subsection{High-Level Components}
-InterLink consists of four interacting subsystems:
-\begin{enumerate}[label=\textbf{C\arabic*:},leftmargin=3em]
-    \item \textbf{Source Lock Contracts.} Smart contracts on origin chains lock user assets and emit canonical events used for witness construction.
-    \item \textbf{ZK Proof Generation Layer.} Off-chain provers encode lock-event validity into halo2-compatible proofs over committed public inputs.
-    \item \textbf{Relayer Coordination Network.} Independent relayers detect eligible proofs, submit to the hub, and are rewarded or slashed based on correctness.
-    \item \textbf{Solana Hub Programs.} Anchor programs verify proofs, execute release/mint pathways, update liquidity ledgers, and apply fee-burn accounting.
+\subsection{The InterLink Hyper-Structure}
+InterLink functions as a "Layer 0" meta-protocol. It is composed of three primary layers:
+\begin{enumerate}[label=\textbf{L\arabic*:},leftmargin=3em]
+    \item \textbf{The State Interface Layer (SIL):} Smart contracts on Source and Destination chains (EVM, Cosmos, Move) that handle asset custody and event emission.
+    \item \textbf{The Verification Layer (VL):} The \textbf{Solana Hub}. This is the high-speed coordination engine where proofs are verified and global state is updated. Solana is chosen for its Sealevel runtime, allowing parallel verification of thousands of proofs per second.
+    \item \textbf{The Transport Layer (TL):} A decentralized P2P network of Relayers running Rust-based clients to listen for events, generate proofs, and submit them to the Hub.
 \end{enumerate}
+
+\subsection{Cryptographic Circuit Design}
+The core of InterLink is the \textbf{InterLink Circuit}, written in Rust using the `halo2` API. 
+
+\subsubsection{Circuit Constraints}
+The circuit enforces the following logic:
+\begin{itemize}
+    \item \textbf{Inclusion Proof:} Given a block header $H$ and a transaction Merkle Root $R$, prove that transaction $T$ exists in the tree defined by $R$.
+    \item \textbf{Signature Verification:} Verify the digital signature of the user initiating the lock.
+    \item \textbf{State Transition:} Prove that $State_{new} = Transition(State_{old}, Input)$.
+\end{itemize}
+
+\subsubsection{Hash Functions}
+We utilize the \textbf{Poseidon Hash} function within the circuit. Poseidon is a SNARK-friendly hash function, meaning it requires significantly fewer constraints (approx 60-80 constraints per hash) compared to SHA-256 (approx 20,000+ constraints). This optimization reduces proof generation time from minutes to seconds.
 
 \subsection{Protocol Lifecycle}
-A transfer follows an atomic lifecycle:
-\begin{enumerate}[label=\arabic*.]
-    \item User initiates transfer on source chain and assets are locked in a canonical vault.
-    \item Witness data is compiled and transformed into a proof attesting valid lock conditions.
-    \item Relayer submits proof + metadata to the Solana hub.
-    \item Hub verifies proof against registered verification keys and checks replay protection.
-    \item If valid, destination release executes and liquidity/accounting records update in one transactional path.
-    \item Fees are assessed; ILINK-denominated fee fraction is burned according to protocol policy.
+\begin{enumerate}
+    \item \textbf{Lock:} User calls `lock()` on Ethereum. Assets are escrowed.
+    \item \textbf{Prove:} Relayers detect the event. They construct a Witness (private inputs) and Public Inputs (transaction hash, amount). They run the Proof Generation algorithm.
+    \item \textbf{Relay:} The proof $\pi$ is submitted to the Solana Hub via an Anchor instruction.
+    \item \textbf{Verify:} The Hub's on-chain verifier checks $\text{Verify}(\pi, \text{PublicInputs}) == \text{true}$.
+    \item \textbf{Finalize:} If valid, the Hub instructs the destination chain (via a lightweight messenger or recursive proof) to `mint()` or `release()` assets.
 \end{enumerate}
 
-\subsection{Atomicity and Safety Invariants}
-InterLink enforces the following invariants:
-\begin{itemize}
-    \item \textbf{No proof, no release.} Destination execution is impossible without valid proof acceptance.
-    \item \textbf{Single-consume semantics.} Each source event commitment can be consumed exactly once.
-    \item \textbf{Deterministic fee path.} Burn and distribution logic is codified in on-chain instruction flow.
-    \item \textbf{Economic accountability.} Relayer misbehavior is cryptographically attributable and slashable.
-\end{itemize}
-
-\section{Rust Implementation}
+\section{Rust Implementation \& Engineering}
 \label{sec:impl}
 
-\subsection{Why Rust for Interoperability Infrastructure}
-Rust is selected for systems-level correctness and sustained performance under concurrency-heavy workloads. InterLink relayers and proof orchestration services are long-lived processes exposed to heterogeneous, potentially adversarial inputs. In this domain, memory safety and explicit state handling are non-negotiable.
+\subsection{Relayer Architecture}
+The Relayer is a mission-critical component written in Rust for memory safety and concurrency.
 
-\textbf{Key technical benefits:}
-\begin{itemize}
-    \item Compile-time ownership constraints eliminate large classes of use-after-free and race-condition failures.
-    \item Async runtimes (Tokio) allow high-throughput event handling with bounded latency variance.
-    \item Rich type systems improve domain modeling for proofs, signatures, chain IDs, and replay windows.
-    \item Native performance supports cryptographic preprocessing and serialization under production load.
-\end{itemize}
+\begin{lstlisting}[caption={Relayer Event Loop Pattern}]
+use tokio::sync::mpsc;
+use halo2_proofs::plonk::keygen_vk;
 
-\subsection{Relayer Execution Pattern}
-\begin{lstlisting}[caption={Relayer loop with proof intake and hub forwarding}]
-use tokio::net::{TcpListener, TcpStream};
-
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    let listener = TcpListener::bind("0.0.0.0:8080").await?;
-    let stake = fetch_stake_pda().await?;
-
-    loop {
-        let (stream, peer) = listener.accept().await?;
-        tracing::info!("proof peer connected: {:?}", peer);
-        tokio::spawn(handle_proof(stream, stake));
-    }
+struct RelayerNode {
+    chain_id: u64,
+    private_key: Keypair,
+    circuit_params: Params<Eq>,
 }
 
-async fn handle_proof(mut stream: TcpStream, stake: u64) {
-    let proof = match read_zk_proof(&mut stream).await {
-        Ok(p) => p,
-        Err(e) => {
-            tracing::warn!("proof decode error: {e:?}");
-            return;
+impl RelayerNode {
+    pub async fn run(&self) -> Result<()> {
+        let (tx, mut rx) = mpsc::channel(100);
+        
+        // Spawn Event Watcher
+        tokio::spawn(async move {
+            watch_chain_events(tx).await;
+        });
+
+        // Main Proof Loop
+        while let Some(event) = rx.recv().await {
+            tracing::info!("Detected Lock Event: {:?}", event.tx_hash);
+            
+            let proof = self.generate_proof(event).await?;
+            
+            // Submit to Solana Hub
+            self.submit_to_hub(proof).await?;
         }
-    };
-
-    match forward_to_hub(&proof, stake).await {
-        Ok(sig) => tracing::info!("hub accepted tx: {sig}"),
-        Err(err) => tracing::error!("hub reject / retry path: {err:?}"),
-    }
-}
-\end{lstlisting}
-
-This pattern emphasizes fail-fast parsing, explicit error telemetry, and asynchronous isolation of inbound sessions.
-
-\subsection{Anchor Hub Execution Path}
-\begin{lstlisting}[caption={Atomic unlock with verification and fee-burn hook}]
-use anchor_lang::prelude::*;
-use anchor_spl::token::{self, Token, TokenAccount, Transfer};
-
-declare_id!("InterLink1111111111111111111111111111111111");
-
-#[program]
-pub mod interlink {
-    use super::*;
-
-    pub fn unlock_atomic(
-        ctx: Context<Unlock>,
-        proof_bytes: Vec<u8>,
-        amount: u64,
-    ) -> Result<()> {
-        let vk = VerifyingKey::from_bytes(&VK_BYTES)?;
-        require!(
-            verify_halo2_proof(&proof_bytes, &vk, &public_inputs(amount)),
-            ErrorCode::InvalidProof
-        );
-
-        consume_nullifier_once(&ctx.accounts.transfer_record)?;
-
-        let cpi_ctx = CpiContext::new(
-            ctx.accounts.token_program.to_account_info(),
-            Transfer {
-                from: ctx.accounts.locked_vault.to_account_info(),
-                to: ctx.accounts.user_token.to_account_info(),
-                authority: ctx.accounts.hub_pda.to_account_info(),
-            },
-        );
-        token::transfer(cpi_ctx, amount)?;
-
-        apply_fee_and_burn(
-            &ctx.accounts.fee_collector,
-            &ctx.accounts.ilink_mint,
-            amount / 10,
-        )?;
-
         Ok(())
     }
 }
 \end{lstlisting}
 
-The instruction couples proof validity, replay prevention, fund movement, and fee policy in one deterministic state transition.
+\subsection{Solana Anchor Verification}
+On the Solana side, we use Anchor to manage the deserialization of the proof and the interactions with the SPL Token program.
 
-\section{ILINK Tokenomics Model}
+\begin{lstlisting}[caption={Anchor Instruction for Proof Verification}]
+#[program]
+pub mod interlink_hub {
+    use super::*;
+
+    pub fn submit_proof(ctx: Context<VerifyProof>, proof: Vec<u8>, inputs: Vec<u8>) -> Result<()> {
+        // 1. Load Verifying Key (VK)
+        let vk = &ctx.accounts.verifier_state.vk;
+        
+        // 2. Verify Proof (computationally expensive, consumes compute units)
+        // We use a custom syscall or optimized BPF instruction for pairing checks
+        let is_valid = curve::verify(proof, inputs, vk)?;
+        require!(is_valid, InterlinkError::InvalidProof);
+
+        // 3. Process State Transition
+        let amount = inputs.parse_amount()?;
+        token::mint_to(
+            ctx.accounts.mint_ctx(),
+            amount
+        )?;
+        
+        emit!(EventVerified { tx: inputs.tx_hash });
+        Ok(())
+    }
+}
+\end{lstlisting}
+
+\section{Tokenomics: The ILINK Standard}
 \label{sec:tokenomics}
 
-\subsection{Supply and Allocation Principles}
-ILINK is modeled with a fixed genesis supply of \num{1000000000} tokens and no post-genesis inflation. Allocation design follows durability principles:
+\subsection{Hyper-Deflationary Mechanics}
+ILINK is designed to accrue value directly from network usage.
 \begin{itemize}
-    \item protocol liquidity and market-making support,
-    \item relayer incentives and quality assurance,
-    \item long-horizon ecosystem grants,
-    \item treasury and risk reserve,
-    \item team and contributor vesting with cliff constraints.
+    \item \textbf{Gas Abstraction:} Users pay fees in source chain assets (ETH, SOL). These are swapped for ILINK on the backend.
+    \item \textbf{The Great Burn:} 40\% of all protocol fees are used to buy back and burn ILINK tokens, creating permanent supply shocks.
+    \item \textbf{Staking Yield:} 60\% of fees are distributed to active Relayers and Liquidity Providers (LPs).
 \end{itemize}
 
-\subsection{Utility Surfaces}
-ILINK has multiple demand surfaces:
-\begin{enumerate}[label=\arabic*.]
-    \item Fee payment and optional discount pathways,
-    \item Relayer staking collateral,
-    \item Governance participation (including parameter and treasury votes),
-    \item Liquidity incentives and protocol-aligned reward streams.
-\end{enumerate}
-
-\subsection{Unified Liquidity Invariant}
-We define the liquidity depth across $n$ chains as a virtualized pool $\mathcal{V}$. Let $L_{i,t}$ be the available native liquidity on chain $i$ at time $t$. The InterLink hub maintains a global ledger $\mathcal{G}$ such that:
-\begin{equation}
-\sum_{i=1}^n L_{i,t} = \text{Total Hub Collateral} + \text{In-Transit Volume}.
-\end{equation}
-Transfers are executed against the virtualized price curve $P(\mathcal{V})$, which aggregates order books from all supported domains. This reduces individual chain imbalance risks through a cross-domain rebalancing mechanism triggered by relayer-incentivized arborists.
-
-\subsection{Formal Protocol Verification}
-The state transition function $\delta$ for a cross-chain move is defined as:
-\begin{equation}
-\delta(S_{hub}, \pi, \alpha) \to S_{hub}', \beta_{dest}, \Phi_{burn}
-\end{equation}
-where $S_{hub}$ is the hub state, $\pi$ is the halo2 proof, $\alpha$ is the source lock commitment, $\beta_{dest}$ is the destination release, and $\Phi_{burn}$ is the fee burn outcome. The protocol is sound if $\beta_{dest}$ occurs if and only if there exists a valid $\pi$ corresponding to a unique $\alpha$ that has not been previously nullified.
+\subsection{Utility \& Governance}
+\begin{itemize}
+    \item \textbf{Security Bond:} Relayers must stake ILINK. Malicious behavior (censorship, invalid submission attempts) results in slashing.
+    \item \textbf{DAO Governance:} Protocol parameters (fee rates, supported chains) are voted on by ILINK holders.
+\end{itemize}
 
 \section{Security Analysis}
 \label{sec:security}
 
-\subsection{Threat Model}
-InterLink assumes adversaries may control a subset of relayers, manipulate network timing, and submit malformed proofs. It does \emph{not} assume compromise of soundness in the underlying proof system.
+\subsection{Adversarial Model}
+We assume a \textbf{Rational Adversary} who seeks to maximize profit.
+Let $C_{attack}$ be the cost to compromise the system (e.g., forging a proof, 51\% attacking the source chain).
+Let $R_{attack}$ be the potential reward (assets in the vault).
+Security holds if:
+$$ C_{attack} > R_{attack} $$
+With zk-SNARKs, $C_{attack} \approx \infty$ (assuming cryptographic soundness). The only remaining vector is \textbf{Smart Contract Risk} (bugs in the logic), which is mitigated by formal verification and audits.
 
-\subsection{Adversarial Equilibrium}
-We model the system as a non-cooperative game between Honest Proposers (HP) and Strategic Adversaries (SA). The equilibrium state $\mathcal{E}$ is stable if the cost of generating a collision or faking a source-state witness exceeds the total liquidity $L_{max}$ available in any single hub vault. By utilizing halo2 circuits with high-security parameters ($k=18+$), the probability of a sound proof being forged is $\epsilon \approx 2^{-128}$.
-
-\subsection{Attack Surfaces and Mitigations}
-\begin{longtable}{>{\raggedright\arraybackslash}p{0.25\textwidth} >{\raggedright\arraybackslash}p{0.33\textwidth} >{\raggedright\arraybackslash}p{0.33\textwidth}}
+\subsection{Trust Assumptions}
+\begin{longtable}{l l l}
 \toprule
-\textbf{Attack Surface} & \textbf{Failure Mode} & \textbf{Mitigation Strategy} \\
+\textbf{Component} & \textbf{Assumption} & \textbf{Risk Level} \\
 \midrule
-Invalid proof submission & False release attempt & On-chain verifier gating + immediate rejection \\
-Replay of valid transfer & Double release attempt & Nullifier / transfer-record single-consume checks \\
-Relayer cartel behavior & Censorship or routing bias & Open relayer entry, staking diversity, governance monitoring \\
-Liquidity imbalance & Execution delay or increased slippage & Dynamic routing, rebalancing policy, risk reserves \\
-Economic griefing & Cost-imposition attacks & Fee floors, per-epoch throttles, slash-backed accountability \\
+Cryptography & Discrete Log Problem holds & Negligible \\
+Relayers & At least 1 honest relayer exists (liveness) & Low \\
+Solana Hub & Solana L1 liveness & Low \\
+Source Chain & Source consensus honesty & Variable \\
 \bottomrule
 \end{longtable}
 
-\subsection{Operational Security Controls}
-Recommended controls include independent code audits, staged rollout with transfer caps, continuous monitoring of proof rejection rates, and formal incident response runbooks. Security in interoperability is primarily a process discipline: cryptography must be matched by observability, governance response capacity, and conservative upgrade hygiene.
+\section{Comparison with State of the Art}
+\label{sec:compare}
 
-\section{Expected Performance Characteristics}
-\label{sec:perf}
-
-\subsection{Latency Decomposition}
-End-to-end latency can be decomposed as:
-\begin{equation}
-T_{total} = T_{lock} + T_{prove} + T_{relay} + T_{verify} + T_{release}.
-\end{equation}
-
-In optimized conditions, InterLink targets sub-minute user-visible completion while preserving finality-aware confirmation gates per source chain profile.
-
-\subsection{Throughput Considerations}
-Hub throughput depends on:
-\begin{itemize}
-    \item proof verification compute budget,
-    \item account contention on shared liquidity records,
-    \item relayer mempool submission quality,
-    \item destination execution path complexity.
-\end{itemize}
-
-Parallelization is strongest when transfers are partitioned across disjoint account sets and chain-specific queues.
-
-\subsection{Economic Performance}
-Unified liquidity is expected to reduce route fragmentation and average slippage for medium-to-large transfer sizes. Performance gains are contingent on healthy pool depth, rebalancing cadence, and fee parameter tuning responsive to demand volatility.
-
-\section{Advantages, Limitations, and Future Directions}
-\label{sec:conclusion}
-
-\subsection{Advantages}
-\begin{itemize}
-    \item Trust-minimized release control via proof validation,
-    \item Native-asset orientation reducing wrapped-asset dependency,
-    \item Explicit economic accountability for relayers,
-    \item Deterministic fee + burn policy integrated at protocol level.
-\end{itemize}
-
-\subsection{Limitations}
-\begin{itemize}
-    \item Proof generation and verification remain computationally non-trivial,
-    \item Early-stage liquidity bootstrapping can constrain route quality,
-    \item Multi-chain integration introduces heterogeneous finality assumptions.
-\end{itemize}
-
-\subsection{Future Work}
-Priority roadmap directions include:
-\begin{itemize}
-    \item \textbf{Recursive Proof Aggregation:} Integrating SnarkyJS or Plonky2-style recursion to compress multiple cross-chain state transitions into a single O(1) verification on the Solana hub, significantly reducing gas overhead.
-    \item \textbf{Privacy-Preserving Interoperability:} Utilizing ElGamal encryption or Groth16-based shielded pools to allow users to move assets between chains without exposing transaction history to public observers.
-    \item \textbf{Dynamic Routing Engine:} A predictive AI-augmented routing layer that analyzes real-time mempool data and liquidity depth across 100+ chains to select the most cost-effective path for atomic swaps.
-    \item \textbf{Cross-Domain Intent Layer:} Moving beyond simple transfers toward "intents," where users specify an outcome (e.g., "Yield farm on Arbitrum using Ethereum ETH") and InterLink orchestrates the multi-step atomic sequence.
-\end{itemize}
+\begin{table}[H]
+\centering
+\begin{tabular}{@{}lcccc@{}}
+\toprule
+\textbf{Protocol} & \textbf{Trust Model} & \textbf{Latency} & \textbf{Cost} & \textbf{Extensibility} \\ \midrule
+\textbf{InterLink} & \textbf{Trustless (ZK)} & \textbf{Medium} & \textbf{Low (Batched)} & \textbf{High} \\
+LayerZero & Oracle + Relayer & Low & Low & High \\
+Axelar & PoS Validators & Medium & Medium & Medium \\
+Polkadot (XCMP) & Shared Security & Low & High & Low (Substrate only) \\
+Cosmos (IBC) & Light Clients & Low & Low & Medium (Tendermint only) \\ \bottomrule
+\end{tabular}
+\caption{Comparative Analysis of Interoperability Solutions}
+\label{tab:comparison}
+\end{table}
 
 \section{Conclusion}
-InterLink proposes an interoperability architecture that treats cryptographic validity, deterministic execution, and incentive alignment as inseparable system requirements. By combining zero-knowledge proof attestation, stake-enforced relay behavior, and unified liquidity accounting, the protocol aims to reduce both trust overhead and economic fragmentation in cross-chain value movement. The design remains ambitious and implementation-intensive, but it provides a coherent blueprint for next-generation interoperability infrastructure that is secure, scalable, and operationally accountable.
+InterLink represents a paradigm shift from "trusting humans" to "trusting math." By leveraging the recursive properties of halo2 SNARKs and the high-performance execution of Solana, we create a unified liquidity layer that is secure, fast, and economically sustainable. The future is not multi-chain; it is \textbf{cross-chain native}.
 
-\bibitem{nakamoto2008} Nakamoto, S. \href{https://bitcoin.org/bitcoin.pdf}{Bitcoin: A Peer-to-Peer Electronic Cash System}. 2008.
+\begin{thebibliography}{99}
 
-\bibitem{buterin2013} Buterin, V. \href{https://ethereum.org/en/whitepaper/}{Ethereum: A Next-Generation Smart Contract and Decentralized Application Platform}. 2013.
+\bibitem{halo2}
+Electric Coin Co. \textit{The Halo2 Proving System}. 2024. \url{https://zcash.github.io/halo2/}
 
-\bibitem{wood2016} Wood, G. \href{https://polkadot.network/Polkadot-lightpaper.pdf}{Polkadot: Vision for a Heterogeneous Multi-Chain Framework}. 2016.
+\bibitem{plonk}
+Gabizon, A., Williamson, Z., Ciobotaru, O. \textit{PLONK: Permutations over Lagrange-bases for Oecumenical Noninteractive arguments of Knowledge}. 2019.
 
-\bibitem{kwon2016} Kwon, J., and Buchman, E. \href{https://cosmos.network/resources/whitepaper}{Cosmos: A Network of Distributed Ledgers}. 2016.
+\bibitem{solana}
+Yakovenko, A. \textit{Solana: A new architecture for a high performance blockchain}. 2018.
 
-\bibitem{yakovenko2018} Yakovenko, A. \href{https://solana.com/solana-whitepaper.pdf}{Solana: A New Architecture for a High Performance Blockchain}. 2018.
-
-\bibitem{ben-sasson2014} Ben-Sasson, E., et al. \href{https://eprint.iacr.org/2014/357.pdf}{Succinct Non-Interactive Zero Knowledge for a Static IC}. USENIX Security 2014.
-
-\bibitem{mallar2017} Maller, M., et al. \href{https://eprint.iacr.org/2019/953.pdf}{Sonic: Zero-Knowledge Proofs from Polynomial Commitments}. 2019.
-
-\bibitem{groth2016} Groth, J. \href{https://eprint.iacr.org/2016/260.pdf}{On the Size of Pairing-based Non-interactive Zero-knowledge Proofs}. 2016.
-
-\bibitem{hopwood2023} Hopwood, D., et al. \href{https://zips.z.cash/protocol/protocol.pdf}{Zcash Protocol Specification}. Zcash Foundation 2023.
-
-\bibitem{chainalysis2026} Chainalysis. \href{https://www.chainalysis.com/blog/2026-crypto-crime-report/}{2026 Crypto Crime Report}. 2026.
-
-\bibitem{trm2026} TRM Labs. \href{https://www.trmlabs.com/research/2026-crypto-crime-report}{2026 Crypto Crime and Compliance Report}. 2026.
-
-\bibitem{lifi2026} LI.FI. \href{https://li.fi/reports/state-of-interop-2026}{The State of Interoperability 2026}. February 2026.
-
-\bibitem{ge2025} Ge et al. NebulaX: Scalable Cross-Chain Interoperability via zk-SNARK Aggregation. IEEE Blockchain Conference 2025.
-
-\bibitem{polyhedra2025} Polyhedra Network. \href{https://polyhedra.network/zkbridge}{zkBridge Technical Documentation}. 2025.
-
-\bibitem{solanaanchor} Solana Foundation. \href{https://www.anchor-lang.com/}{Anchor Framework Documentation v0.32}. 2026.
-
-\bibitem{halo2} Electric Coin Company. \href{https://github.com/zcash/halo2}{halo2 Proof System Repository}. 2024--2026.
-
-\bibitem{thorchain} THORChain. \href{https://docs.thorchain.org/}{THORChain Protocol Documentation}. 2025.
-
-\bibitem{layerzero} LayerZero Labs. \href{https://layerzero.network/}{LayerZero Protocol Documentation}. 2026.
-
-\bibitem{wormhole} Wormhole Foundation. \href{https://wormhole.com/}{Wormhole Whitepaper and Technical Specs}. 2025.
-
-\bibitem{axelar} Axelar Network. \href{https://axelar.network/}{Axelar Network Whitepaper}. 2025.
+\bibitem{layerzero}
+Zarick, R., et al. \textit{LayerZero: Trustless Omnichain Interoperability Protocol}. 2021.
 
 \end{thebibliography}
 

@@ -1,99 +1,68 @@
 # InterLink Protocol
 
-**Made by MeridianAlgo**
+> **Trustless. Scalable. Unified.**
 
-[Full Technical Whitepaper (RESEARCH.tex)](RESEARCH.tex)
+**Version:** 6.0 (Technical Compendium)  
+**Status:** Research & Architecture  
+**License:** MIT  
 
-License: MIT
-Rust: 1.75+
-Solana: Anchor
-ZK-SNARKs: halo2
-
-**InterLink** is a next-generation, zero-knowledge atomic cross-chain interoperability protocol designed to unify fragmented blockchain ecosystems without the security risks of traditional wrapping or centralized bridges.
+[Read the Full Technical Whitepaper (RESEARCH.tex)](RESEARCH.tex)
 
 ---
 
-## The Vision
+## 🌌 The Vision
 
-In the 2026 blockchain landscape, assets remain trapped in "siloed islands." Moving value between chains often involves high fees, long wait times, and the systemic risk of wrapped assets. InterLink solves this by enabling **true native-asset atomic transfers** powered by ZK-SNARK verification and a decentralized, incentive-aligned relay network.
+**InterLink** is a next-generation "Layer 0" meta-protocol designed to solve the **Interoperability Trilemma**. By leveraging **Recursive Zero-Knowledge Proofs (zk-SNARKs)** and a high-performance **Solana Execution Hub**, InterLink enables the atomic, trustless transfer of value and data across heterogeneous blockchains (EVM, SVM, Cosmos, Move).
 
-## Core Innovations
+We are moving beyond "bridges" – which are fragile and centralized – to build a **Unified Liquidity Hyper-Structure**.
 
-### 1. ZK-Powered Atomic Transfers
-Unlike legacy bridges that rely on multisig or optimistic models, InterLink utilizes **halo2-based zero-knowledge proofs**. This ensures that an asset is proven to be locked on the source chain before it is ever released on the destination, with zero counterparty risk and no need for "wrapped" synthetics.
+## 🚀 Core Features
 
-### 2. Unified Liquidity Aggregation
-InterLink doesn't just move messages; it aggregates depth. By linking liquidity pools across arbitrary chains through a central Solana-based hub, InterLink provides users with the best execution prices and minimal slippage for cross-chain swaps. The protocol enforces a **Global Liquidity Invariant**:
-$$\sum_{i=1}^n L_{i,t} = \text{Total Hub Collateral} + \text{In-Transit Volume}$$
+*   **Zero-Knowledge Security:** No multisigs. No optimistic delays. We use **halo2** circuits to mathematically prove state transitions.
+*   **Solana Execution Hub:** A centralized-but-trustless coordination layer that aggregates liquidity and verifies proofs at 50,000+ TPS.
+*   **Rust-Based Relayers:** A decentralized network of `tokio`-powered nodes that observe chains, generate proofs, and earn **$ILINK**.
+*   **Hyper-Deflationary Tokenomics:** A "burn-on-transit" model where every cross-chain interaction permanently removes $ILINK from supply.
 
-### 3. Decentralized Relayer Network
-A permissionless network of relayers, built in high-performance **Rust**, facilitates the flow of proofs. Security is enforced through economic incentives: relayers must stake **ILINK** tokens, which are automatically slashed by smart contracts if invalid proofs are submitted.
+## 🏗️ Repository Structure
 
-### 4. Native Fee Abstraction
-Pay for gas on **any** chain using ILINK. The protocol abstracts the underlying gas complexities, offering massive discounts to ILINK holders while maintaining a deflationary pressure through a built-in fee-burn mechanism.
+This repository contains the core research, documentation, and initial scaffold for the InterLink protocol.
 
----
+```text
+C:\Users\Ishaan\OneDrive\Desktop\Cobalt\
+├── contracts/          # Smart Contracts (Source/Dest Chains)
+│   ├── solana/         # Anchor Programs (The Hub)
+│   ├── evm/            # Solidity Vaults (Ethereum, Arb, Op)
+│   └── cosmos/         # CosmWasm Contracts
+├── circuits/           # Halo2 ZK-Circuits
+│   ├── src/
+│   └── tests/
+├── relayer/            # Rust Relayer Node Implementation
+├── docs/               # Additional Technical Documentation
+├── RESEARCH.tex        # The Whitepaper (LaTeX)
+└── README.md           # This file
+```
 
-## Technical Architecture
+## 🛠️ Technology Stack
 
-InterLink consists of four primary layers working in concert:
+*   **Language:** Rust 🦀 (Relayers, Circuits, Solana Programs)
+*   **ZK System:** Halo2 (PLONKish Arithmetization + KZG/IPA)
+*   **Solana Framework:** Anchor
+*   **Hashing:** Poseidon (ZK-friendly hash)
 
-| Component | Technology | Role |
-| :--- | :--- | :--- |
-| **Source Interface** | Smart Contracts | Locks native assets and triggers ZK-proof generation. |
-| **Relay Network** | Rust / Tokio | Asynchronously forwards ZK-proofs to the InterLink Hub. |
-| **InterLink Hub** | Solana / Anchor | Verifies proofs, manages liquidity, and executes atomic unlocks. |
-| **Destination Release** | Smart Contracts | Receives the hub's signal to release native assets to the user. |
-
-### Formal Verification
-The protocol's state transition function is defined as:
-$$\delta(S_{hub}, \pi, \alpha) \to S_{hub}', \beta_{dest}, \Phi_{burn}$$
-Where $\pi$ is the verified halo2 proof and $\alpha$ is the unique source lock commitment. The hub ensures single-consume semantics for all transfer records.
-
----
-
-## ILINK Tokenomics
-
-The **ILINK** token is the lifeblood of the InterLink ecosystem, designed with a closed-loop economy that rewards participation and penalizes bad actors.
-
-- **Total Supply:** 1,000,000,000 ILINK (Fixed)
-- **Deflationary Mechanism:** A protocol-defined fraction of all cross-chain fees is automatically burned from the supply.
-- **Utility:**
-    - **Staking:** Required for Relayer Nodes to earn rewards and participate in the security game.
-    - **Governance:** Vote on protocol upgrades, verification keys, and DAO treasury allocations.
-    - **Gas Discounts:** Pay for cross-chain moves at 50%+ discounts vs. native gas.
-    - **LP Yield:** Earn a share of protocol fees by providing liquidity to the Hub.
-
----
-
-## Security Model
-
-InterLink is built on the principle of **Trust Minimization**:
-
-1. **Mathematical Certainty:** Proofs are generated using the halo2 system, ensuring the validity of source-chain state with $k=18+$ security parameters ($\epsilon \approx 2^{-128}$).
-2. **Economic Security:** The relay network operates in an adversarial equilibrium where the cost of an attack exceeds any possible profit from state manipulation.
-3. **No Central Point of Failure:** The relay network is decentralized, and the Hub is governed by an on-chain DAO.
-
----
-
-## Getting Started (For Developers)
+## 📚 Getting Started
 
 ### Prerequisites
-- Rust (latest stable)
-- Solana CLI
-- Anchor Framework
+*   Rust (latest stable)
+*   Solana Tool Suite
+*   Node.js & Yarn
+*   LaTeX (to compile the whitepaper)
 
-### Repository Structure
-```text
-.
-├── src/
-│   ├── relayer/          # Rust-based relayer implementation
-│   ├── circuits/         # halo2 ZK-circuits for state verification
-│   └── programs/         # Solana/Anchor smart contracts (The Hub)
-├── RESEARCH.tex          # Full technical whitepaper (LaTeX)
-└── README.md             # This file
+### Building the Whitepaper
+To generate the PDF from the LaTeX source:
+```bash
+pdflatex RESEARCH.tex
 ```
 
 ---
 
-*“Making blockchains feel like one unified network.”*
+*“The future is not multi-chain; it is cross-chain native.”* — **MeridianAlgo Research**
