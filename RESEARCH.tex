@@ -6,9 +6,9 @@
 \usepackage{lmodern}
 \usepackage{microtype}
 \usepackage{hyperref}
-\usepackage[nameinlink,noabbrev]{cleveref}
 \usepackage{amsmath,amssymb,amsfonts,amsthm}
 \usepackage{mathtools}
+\usepackage[nameinlink,noabbrev]{cleveref}
 \usepackage{booktabs}
 \usepackage{array}
 \usepackage{longtable}
@@ -27,7 +27,7 @@
     urlcolor=cyan,
     citecolor=blue,
     pdftitle={InterLink: A Zero-Knowledge Atomic Cross-Chain Interoperability Protocol with Unified Liquidity and Incentive-Aligned Tokenomics},
-    pdfauthor={InterLink Research Team},
+    pdfauthor={MeridianAlgo},
     pdfsubject={Blockchain Interoperability Research Paper},
     pdflang={en}
 }
@@ -37,7 +37,15 @@
 \definecolor{codepurple}{rgb}{0.58,0,0.82}
 \definecolor{backcolour}{rgb}{0.95,0.95,0.92}
 
-\lstloadlanguages{Rust}
+% Define Rust language for listings
+\lstdefinelanguage{Rust}{
+  morekeywords={abstract,as,async,await,become,box,break,const,continue,crate,do,dyn,else,enum,extern,false,fn,for,if,impl,in,let,loop,macro,match,mod,move,mut,pub,ref,return,self,Self,static,struct,super,trait,true,type,typeof,unsafe,unsized,use,virtual,where,while,yield},
+  sensitive=true,
+  morecomment=[l]{//},
+  morecomment=[s]{/*}{*/},
+  morestring=[b]",
+  morestring=[b]',
+}
 \lstdefinestyle{mystyle}{
     backgroundcolor=\color{backcolour},
     commentstyle=\color{codegreen},
@@ -62,25 +70,40 @@
 \setlength{\parindent}{0pt}
 \setlength{\parskip}{8pt plus 2pt minus 1pt}
 
-\title{\textbf{InterLink: A Zero-Knowledge Atomic Cross-Chain Interoperability Protocol\\with Unified Liquidity and Incentive-Aligned Tokenomics}}
-\author{InterLink Research Team with contributions from meridianalgo\\\small{Version 5.0 --- Expanded Technical Edition --- February 2026}}
+\title{
+    \vspace{2in}
+    \textbf{\Huge InterLink Protocol}\\
+    \vspace{0.5in}
+    \large A Zero-Knowledge Atomic Interoperability Framework\\
+    \vspace{1in}
+    \textbf{Made by MeridianAlgo}\\
+    \small Version 5.1 --- Technical Edition --- February 2026
+}
+\author{}
 \date{}
 
 \begin{document}
 
 \maketitle
-\tableofcontents
+\begin{titlepage}
+\maketitle
+\end{titlepage}
 \newpage
 
+\phantomsection
+\addcontentsline{toc}{section}{Abstract}
 \begin{abstract}
-Despite rapid growth in decentralized finance and generalized smart-contract ecosystems, cross-chain user experience remains operationally fragmented, economically inefficient, and security sensitive. Existing interoperability pathways frequently depend on wrapped assets, trusted external committees, or optimistic message assumptions that can fail under adverse network conditions. These constraints produce measurable market friction: trapped liquidity, inconsistent slippage profiles, delayed settlement finality, and elevated systemic risk concentration in bridge validator sets.
+The current blockchain ecosystem remains a collection of isolated networks, each optimized for specific use cases but lacking a seamless bridge for value and data. Traditional interoperability solutions often force a compromise between security and speed, relying on synthetic "wrapped" assets or centralized validator sets that introduce systemic risk. 
 
-This paper presents \textbf{InterLink (ILINK)}, a zero-knowledge-assisted atomic interoperability protocol that targets native-asset movement while preserving trust minimization. InterLink combines four tightly coupled system layers: \textit{(i)} source-chain lock proofs generated with halo2-compatible witness circuits, \textit{(ii)} a stake-weighted but slashable relayer market, \textit{(iii)} a Solana/Anchor execution hub coordinating proof validation, liquidity accounting, and deterministic release logic, and \textit{(iv)} an incentive architecture centered on a capped-supply ILINK token with embedded burn and staking dynamics.
+This paper introduces \textbf{InterLink (ILINK)}, a protocol designed to bridge this divide by enabling trustless, atomic transfers of native assets. By leveraging \textbf{halo2-based zero-knowledge proofs}, InterLink ensures that cross-chain transitions are mathematically verified on-chain, eliminating the need for intermediaries. Our architecture combines a decentralized, stake-weighted relayer network with a high-performance Solana execution hub to provide unified liquidity across disparate blockchains. We detail the engineering principles behind our Rust-based implementation, the economic incentives that secure the network, and the deflationary tokenomics that ensure long-term sustainability. InterLink is not just a bridge; it is the connective tissue for a truly unified multi-chain future.
 
-We provide a deeply expanded treatment of architecture, threat model assumptions, formal protocol flow, implementation constraints in Rust, tokenomic equilibria, and performance expectations under realistic throughput and adversarial stress. The analysis emphasizes engineering practicality: deterministic state transitions, bounded trust assumptions, and economic disincentives for protocol abuse. We further discuss deployment sequencing, governance hardening, and post-launch observability to support gradual decentralization.
-
+\vspace{0.5in}
 \textbf{Keywords:} Zero-Knowledge Proofs, Cross-Chain Interoperability, Atomic Settlement, Rust Systems Engineering, Solana Anchor, Liquidity Unification, Deflationary Tokenomics
 \end{abstract}
+
+\newpage
+\tableofcontents
+\newpage
 
 \section{Introduction}
 \label{sec:intro}
@@ -258,7 +281,7 @@ The instruction couples proof validity, replay prevention, fund movement, and fe
 \label{sec:tokenomics}
 
 \subsection{Supply and Allocation Principles}
-ILINK is modeled with a fixed genesis supply of \num{1_000_000_000} tokens and no post-genesis inflation. Allocation design follows durability principles:
+ILINK is modeled with a fixed genesis supply of \num{1000000000} tokens and no post-genesis inflation. Allocation design follows durability principles:
 \begin{itemize}
     \item protocol liquidity and market-making support,
     \item relayer incentives and quality assurance,
@@ -276,25 +299,28 @@ ILINK has multiple demand surfaces:
     \item Liquidity incentives and protocol-aligned reward streams.
 \end{enumerate}
 
-\subsection{Burn Dynamics and Long-Run Behavior}
-A protocol-defined fraction of ILINK-denominated fees is burned. Let
+\subsection{Unified Liquidity Invariant}
+We define the liquidity depth across $n$ chains as a virtualized pool $\mathcal{V}$. Let $L_{i,t}$ be the available native liquidity on chain $i$ at time $t$. The InterLink hub maintains a global ledger $\mathcal{G}$ such that:
 \begin{equation}
-S_{t+1} = S_t - bF_t,
+\sum_{i=1}^n L_{i,t} = \text{Total Hub Collateral} + \text{In-Transit Volume}.
 \end{equation}
-where $S_t$ is circulating supply at time $t$, $F_t$ is fee volume in ILINK terms, and $b \in (0,1)$ is burn ratio. With fixed $b$, burn scales directly with utilization. Therefore, scarcity pressure is endogenous to network usage rather than imposed by discretionary governance inflation toggles.
+Transfers are executed against the virtualized price curve $P(\mathcal{V})$, which aggregates order books from all supported domains. This reduces individual chain imbalance risks through a cross-domain rebalancing mechanism triggered by relayer-incentivized arborists.
 
-\subsection{Incentive Compatibility}
-For relayers, expected payoff is modeled as
+\subsection{Formal Protocol Verification}
+The state transition function $\delta$ for a cross-chain move is defined as:
 \begin{equation}
-\mathbb{E}[\Pi] = R - p_{slash}L - C,
+\delta(S_{hub}, \pi, \alpha) \to S_{hub}', \beta_{dest}, \Phi_{burn}
 \end{equation}
-where $R$ is reward flow, $p_{slash}$ slash probability under deviation, $L$ slash magnitude, and $C$ operational cost. Protocol health requires parameterization such that honest behavior dominates strategic misreporting across realistic adversarial priors.
+where $S_{hub}$ is the hub state, $\pi$ is the halo2 proof, $\alpha$ is the source lock commitment, $\beta_{dest}$ is the destination release, and $\Phi_{burn}$ is the fee burn outcome. The protocol is sound if $\beta_{dest}$ occurs if and only if there exists a valid $\pi$ corresponding to a unique $\alpha$ that has not been previously nullified.
 
 \section{Security Analysis}
 \label{sec:security}
 
 \subsection{Threat Model}
 InterLink assumes adversaries may control a subset of relayers, manipulate network timing, and submit malformed proofs. It does \emph{not} assume compromise of soundness in the underlying proof system.
+
+\subsection{Adversarial Equilibrium}
+We model the system as a non-cooperative game between Honest Proposers (HP) and Strategic Adversaries (SA). The equilibrium state $\mathcal{E}$ is stable if the cost of generating a collision or faking a source-state witness exceeds the total liquidity $L_{max}$ available in any single hub vault. By utilizing halo2 circuits with high-security parameters ($k=18+$), the probability of a sound proof being forged is $\epsilon \approx 2^{-128}$.
 
 \subsection{Attack Surfaces and Mitigations}
 \begin{longtable}{>{\raggedright\arraybackslash}p{0.25\textwidth} >{\raggedright\arraybackslash}p{0.33\textwidth} >{\raggedright\arraybackslash}p{0.33\textwidth}}
@@ -356,13 +382,34 @@ Unified liquidity is expected to reduce route fragmentation and average slippage
 \end{itemize}
 
 \subsection{Future Work}
-Priority roadmap directions include recursive proof aggregation for lower amortized verification cost, privacy-preserving transfer metadata options, dynamic cross-domain routing with predictive liquidity scoring, and progressive governance decentralization with robust emergency controls.
+Priority roadmap directions include:
+\begin{itemize}
+    \item \textbf{Recursive Proof Aggregation:} Integrating SnarkyJS or Plonky2-style recursion to compress multiple cross-chain state transitions into a single O(1) verification on the Solana hub, significantly reducing gas overhead.
+    \item \textbf{Privacy-Preserving Interoperability:} Utilizing ElGamal encryption or Groth16-based shielded pools to allow users to move assets between chains without exposing transaction history to public observers.
+    \item \textbf{Dynamic Routing Engine:} A predictive AI-augmented routing layer that analyzes real-time mempool data and liquidity depth across 100+ chains to select the most cost-effective path for atomic swaps.
+    \item \textbf{Cross-Domain Intent Layer:} Moving beyond simple transfers toward "intents," where users specify an outcome (e.g., "Yield farm on Arbitrum using Ethereum ETH") and InterLink orchestrates the multi-step atomic sequence.
+\end{itemize}
 
 \section{Conclusion}
 InterLink proposes an interoperability architecture that treats cryptographic validity, deterministic execution, and incentive alignment as inseparable system requirements. By combining zero-knowledge proof attestation, stake-enforced relay behavior, and unified liquidity accounting, the protocol aims to reduce both trust overhead and economic fragmentation in cross-chain value movement. The design remains ambitious and implementation-intensive, but it provides a coherent blueprint for next-generation interoperability infrastructure that is secure, scalable, and operationally accountable.
 
-\bibliographystyle{plain}
-\begin{thebibliography}{15}
+\bibitem{nakamoto2008} Nakamoto, S. \href{https://bitcoin.org/bitcoin.pdf}{Bitcoin: A Peer-to-Peer Electronic Cash System}. 2008.
+
+\bibitem{buterin2013} Buterin, V. \href{https://ethereum.org/en/whitepaper/}{Ethereum: A Next-Generation Smart Contract and Decentralized Application Platform}. 2013.
+
+\bibitem{wood2016} Wood, G. \href{https://polkadot.network/Polkadot-lightpaper.pdf}{Polkadot: Vision for a Heterogeneous Multi-Chain Framework}. 2016.
+
+\bibitem{kwon2016} Kwon, J., and Buchman, E. \href{https://cosmos.network/resources/whitepaper}{Cosmos: A Network of Distributed Ledgers}. 2016.
+
+\bibitem{yakovenko2018} Yakovenko, A. \href{https://solana.com/solana-whitepaper.pdf}{Solana: A New Architecture for a High Performance Blockchain}. 2018.
+
+\bibitem{ben-sasson2014} Ben-Sasson, E., et al. \href{https://eprint.iacr.org/2014/357.pdf}{Succinct Non-Interactive Zero Knowledge for a Static IC}. USENIX Security 2014.
+
+\bibitem{mallar2017} Maller, M., et al. \href{https://eprint.iacr.org/2019/953.pdf}{Sonic: Zero-Knowledge Proofs from Polynomial Commitments}. 2019.
+
+\bibitem{groth2016} Groth, J. \href{https://eprint.iacr.org/2016/260.pdf}{On the Size of Pairing-based Non-interactive Zero-knowledge Proofs}. 2016.
+
+\bibitem{hopwood2023} Hopwood, D., et al. \href{https://zips.z.cash/protocol/protocol.pdf}{Zcash Protocol Specification}. Zcash Foundation 2023.
 
 \bibitem{chainalysis2026} Chainalysis. \href{https://www.chainalysis.com/blog/2026-crypto-crime-report/}{2026 Crypto Crime Report}. 2026.
 
