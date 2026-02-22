@@ -157,7 +157,7 @@ Existing solutions ask users to trust a third party. InterLink asks users to tru
 InterLink is not envisioned just as a message-passing protocol; it is being built as a liquidity unification layer. By using Solana as a high-performance execution hub, we aim to aggregate liquidity from all connected chains into a single, efficient market. A user will be able to swap a token on Ethereum for a token on Cosmos in a single atomic transaction, with the trade routed and settled through the InterLink Hub on Solana.
 
 \subsubsection{Sovereignty and Scalability}
-We have chosen a modular architecture that respects the sovereignty of each chain while leveraging the speed of Solana. The heavy lifting of proof generation happens off-chain by a decentralized network of relayers, while the verification happens on-chain. This design ensures that InterLink can scale to handle thousands of cross-chain transactions per second without congesting the source or destination chains.
+We have chosen a modular architecture that respects the sovereignty of each chain while leveraging the speed of Solana. The heavy lifting of proof generation happens off-chain by a decentralized network of relayers, while the verification on-chain. This design ensures that InterLink can scale to handle thousands of cross-chain transactions per second without congesting the source or destination chains.
 
 InterLink represents our vision for the "Internet of Blockchains"---a seamless, secure, and scalable network where value flows as freely as information. We are actively developing the core circuits and smart contracts described in this paper to turn this vision into reality.
 
@@ -279,7 +279,7 @@ A decentralized network of off-chain nodes. The Relayer utilizes the \textbf{Hal
 Implemented as an Anchor Program on Solana.
 \begin{itemize}
     \item \textbf{Verifier Contract:} Contains the verification keys for the supported circuits. It executes the pairing checks (or validates the accumulation scheme).
-    \item \textbf{State Registry:} Maintains a mapping of \texttt{sequence\_number $\rightarrow$ message\_hash} to prevent replay attacks.
+    \item \textbf{State Registry:} Maintains a mapping of \texttt{sequence\_number} $\rightarrow$ \texttt{message\_hash} to prevent replay attacks.
     \item \textbf{Liquidity Pools:} Implements a concentrated liquidity AMM (CLMM) where cross-chain swaps are executed.
     \item \textbf{Messenger:} Queues outbound messages to destination chains.
 \end{itemize}
@@ -369,10 +369,10 @@ impl InterlinkConfig {
 \subsubsection{The Merkle Inclusion Chip}
 We encapsulate logic into "Chips." The \texttt{MerkleChip} is responsible for verifying that a leaf exists in a tree. It takes a \texttt{Path} (witness) and a \texttt{Root} (public input) and enforces the hashing path.
 \begin{itemize}
-    \item \textbf{Input:} Leaf Node $L$, Path Elements $P_0, ..., P_n$, Path Indices $I_0, ..., I_n$ (0 for left, 1 for right).
-    \item \textbf{Logic:} For each level, compute $H_{i+1} = \text{Hash}(L_i, P_i)$ if $I_i=0$, else $\text{Hash}(P_i, L_i)$.
-    \item \textbf{Output:} The computed Root $R_{calc}$.
-    \item \textbf{Constraint:} $R_{calc} == R_{public}$.
+    \item \textbf{Input:} Leaf Node $L$, Path Elements $P_0, \dots, P_n$, Path Indices $I_0, \dots, I_n$ (0 for left, 1 for right).
+    \item \textbf{Logic:} For each level, compute $H_{i+1} = \text{Hash}(L_i, P_i)$ if $I_i=0$, else $H_{i+1} = \text{Hash}(P_i, L_i)$.
+    \item \textbf{Output:} The computed Root $R_{\text{calc}}$.
+    \item \textbf{Constraint:} $R_{\text{calc}} == R_{\text{public}}$.
 \end{itemize}
 
 \subsection{Relayer Infrastructure}
@@ -500,7 +500,7 @@ The ILINK token is the economic fuel of the InterLink ecosystem. It is designed 
 
 \subsection{Utility A: The Security Bond}
 Relayers must stake ILINK to participate in the network.
-$$ \text{Stake}_{min} = 100,000 \text{ ILINK} $$
+$$ \text{Stake}_{\text{min}} = 100,000 \text{ ILINK} $$
 If a Relayer submits an invalid proof (which is caught by the Verifier), their stake is slashed.
 $$ \text{SlashAmount} = \text{Stake} \times 50\% $$
 The slashed funds are burned, instantly reducing the total supply. This creates a strong economic disincentive for malicious behavior.
@@ -554,10 +554,10 @@ We analyze the protocol as a game between a Relayer $R$ and the Protocol $P$.
 \caption{Relayer-Protocol Payoff Matrix}
 \end{table}
 
-Let $S$ be the staked amount. Let $G$ be the potential gain from a hack (Total Value Locked). Let $\mathbb{P}_{verif}$ be the probability the verifier catches a cheat. In a ZK system, $\mathbb{P}_{verif} = 1$ (soundness).
+Let $S$ be the staked amount. Let $G$ be the potential gain from a hack (Total Value Locked). Let $\mathbb{P}_{\text{verif}}$ be the probability the verifier catches a cheat. In a ZK system, $\mathbb{P}_{\text{verif}} = 1$ (soundness).
 Therefore, the expected payoff for malicious behavior is:
-$$ E[Malicious] = (1 - \mathbb{P}_{verif}) \times G - \mathbb{P}_{verif} \times S $$
-Since $\mathbb{P}_{verif} \approx 1$, $E[Malicious] \approx -S$.
+$$ E[\text{Malicious}] = (1 - \mathbb{P}_{\text{verif}}) \times G - \mathbb{P}_{\text{verif}} \times S $$
+Since $\mathbb{P}_{\text{verif}} \approx 1$, $E[\text{Malicious}] \approx -S$.
 A rational actor will never attack the system as long as the cost of generating a false proof (breaking the cryptography) is sufficiently high (computationally infeasible).
 
 \subsection{Specific Attack Vectors \& Mitigations}
@@ -621,7 +621,7 @@ Cosmos IBC & Light Client & Low & Low & Instant & Trustless & Low \\ \bottomrule
 \end{table}
 
 \subsection{InterLink vs. LayerZero}
-LayerZero uses "Ultra Light Nodes" (ULNs). In v1, security relied on the independence of the Oracle and Relayer. In v2, it relies on Decentralized Verifier Networks (DVNs). While flexible, it ultimately trusts a set of external parties (like Google Cloud or Polyhedra). InterLink replaces these parties with a ZK proof. You don't trust the Relayer; you verify their work.
+LayerZero uses Ultra Light Nodes (ULNs). In v1, security relied on the independence of the Oracle and Relayer. In v2, it relies on Decentralized Verifier Networks (DVNs). While flexible, it ultimately trusts a set of external parties (like Google Cloud or Polyhedra). InterLink replaces these parties with a ZK proof. You don't trust the Relayer; you verify their work.
 
 \subsection{InterLink vs. Axelar}
 Axelar is a blockchain itself. It uses a PoS validator set to vote on state changes. This is secure but adds an intermediary consensus layer. If the Axelar chain halts or is taken over, the bridge stops. InterLink is not a chain; it is a protocol. Its security inherits directly from the source and destination chains.
