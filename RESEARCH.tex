@@ -621,7 +621,7 @@ Cosmos IBC & Light Client & Low & Low & Instant & Trustless & Low \\ \bottomrule
 \end{table}
 
 \subsection{InterLink vs. LayerZero}
-LayerZero uses Ultra Light Nodes (ULNs). In v1, security relied on the independence of the Oracle and Relayer. In v2, it relies on Decentralized Verifier Networks (DVNs). While flexible, it ultimately trusts a set of external parties (like Google Cloud or Polyhedra). InterLink replaces these parties with a ZK proof. You don't trust the Relayer; you verify their work.
+LayerZero uses "Ultra Light Nodes" (ULNs). In v1, security relied on the independence of the Oracle and Relayer. In v2, it relies on Decentralized Verifier Networks (DVNs). While flexible, it ultimately trusts a set of external parties (like Google Cloud or Polyhedra). InterLink replaces these parties with a ZK proof. You don't trust the Relayer; you verify their work.
 
 \subsection{InterLink vs. Axelar}
 Axelar is a blockchain itself. It uses a PoS validator set to vote on state changes. This is secure but adds an intermediary consensus layer. If the Axelar chain halts or is taken over, the bridge stops. InterLink is not a chain; it is a protocol. Its security inherits directly from the source and destination chains.
@@ -642,14 +642,16 @@ The future of blockchain is not about which chain wins. It is about how they all
 
 As we move forward, our development focus remains on three core pillars: cryptographic efficiency, economic sustainability, and developer experience. We are not just building a bridge; we are building the internet's value layer. By making cross-chain interaction as simple as a local function call, we unlock a new class of decentralized applications that were previously impossible.
 
+The protocol we propose is more than just a technical specification; it is a foundational substrate for the next generation of decentralized finance and sovereign digital identity. By unifying the fragmented state of modern blockchains, InterLink enables a level of capital efficiency and user sovereignty that was hitherto theoretical. We believe that true decentralization requires a system where security is rooted in verifiable math rather than institutional reputation.
+
 We invite the global research community, developers, and users to contribute to this open-source effort. Whether through formal security audits, circuit optimizations, or the creation of new cross-chain primitives, your participation is vital to realizing the vision of a unified, trustless digital economy. Together, we can turn the fragmented multi-chain reality into a cohesive, interoperable ecosystem where innovation knows no borders.
 
 \subsection{Future Work}
 Our roadmap includes several key research directions:
 \begin{itemize}
-    \item \textbf{Privacy-Preserving Bridging:} integrating \textbf{Aztec}-style privacy proofs to allow users to bridge assets without revealing the amount or the recipient.
-    \item \textbf{Hardware Acceleration:} Developing FPGA and ASIC designs specifically optimized for the FFT (Fast Fourier Transforms) and MSM (Multi-Scalar Multiplications) operations in the Halo2 prover, aiming to reduce proof generation time to sub-second latency.
-    \item \textbf{L3 Fractal Scaling:} Allowing app-chains to settle directly on the InterLink Hub, using it as a DA and Settlement layer.
+    \item Privacy-Preserving Bridging: integrating Aztec-style privacy proofs to allow users to bridge assets without revealing the amount or the recipient.
+    \item Hardware Acceleration: Developing FPGA and ASIC designs specifically optimized for the FFT (Fast Fourier Transforms) and MSM (Multi-Scalar Multiplications) operations in the Halo2 prover, aiming to reduce proof generation time to sub-second latency.
+    \item L3 Fractal Scaling: Allowing app-chains to settle directly on the InterLink Hub, using it as a DA and Settlement layer.
 \end{itemize}
 
 \newpage
