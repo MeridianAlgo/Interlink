@@ -147,19 +147,19 @@ Each blockchain operates as a sovereign digital nation with its own rules, conse
 \subsubsection{The Security Vulnerability of Bridges}
 Traditional bridges have proven to be the Achilles' heel of the crypto ecosystem. Most rely on a "middleman" approach: a set of trusted validators (often a small multisig of 5-10 people) who verify transactions. If these validators are compromised or collude, they can steal all the funds locked in the bridge. This centralization risk contradicts the core ethos of blockchain. In 2022 alone, bridge hacks accounted for over \$2 billion in losses, highlighting the desperate need for a trustless solution.
 
-\subsection{The Genesis of InterLink: Why We Created It}
-We created \textbf{InterLink} to solve the interoperability trilemma—Scalability, Security, and Generalizability—without compromise. We recognized that the future is not "multi-chain" (many isolated chains) but "cross-chain native" (one unified network of chains).
+\subsection{The Genesis of InterLink: A Proposal for Unification}
+We propose \textbf{InterLink} as a robust solution to the interoperability trilemma—Scalability, Security, and Generalizability—without compromise. Recognizing that the future is not "multi-chain" (many isolated chains) but "cross-chain native" (one unified network of chains), we are currently architecting this protocol to serve as the connective tissue of the decentralized web.
 
 \subsubsection{From Trust to Truth}
-Existing solutions ask users to trust a third party. InterLink asks users to trust mathematics. By leveraging \textbf{Zero-Knowledge Proofs (zk-SNARKs)}, specifically the \textbf{Halo2} proving system, InterLink allows one blockchain to cryptographically verify the state of another. A relayer can generate a succinct proof that a transaction occurred on Ethereum, and the Solana blockchain can verify this proof in milliseconds. This removes the need for trusted validators. If the proof is valid, the transaction is valid. Period.
+Existing solutions ask users to trust a third party. InterLink asks users to trust mathematics. By leveraging \textbf{Zero-Knowledge Proofs (zk-SNARKs)}, specifically the \textbf{Halo2} proving system, InterLink is designed to allow one blockchain to cryptographically verify the state of another. In our proposed architecture, a relayer generates a succinct proof that a transaction occurred on Ethereum, and the Solana blockchain verifies this proof in milliseconds. This removes the need for trusted validators. If the proof is valid, the transaction is valid. Period.
 
 \subsubsection{Unified Liquidity}
-InterLink is not just a message-passing protocol; it is a liquidity unification layer. By using Solana as a high-performance execution hub, we can aggregate liquidity from all connected chains into a single, efficient market. A user can swap a token on Ethereum for a token on Cosmos in a single atomic transaction, with the trade routed and settled through the InterLink Hub on Solana.
+InterLink is not envisioned just as a message-passing protocol; it is being built as a liquidity unification layer. By using Solana as a high-performance execution hub, we aim to aggregate liquidity from all connected chains into a single, efficient market. A user will be able to swap a token on Ethereum for a token on Cosmos in a single atomic transaction, with the trade routed and settled through the InterLink Hub on Solana.
 
 \subsubsection{Sovereignty and Scalability}
-We chose a modular architecture that respects the sovereignty of each chain while leveraging the speed of Solana. The heavy lifting of proof generation happens off-chain by a decentralized network of relayers, while the verification happens on-chain. This ensures that InterLink can scale to handle thousands of cross-chain transactions per second without congesting the source or destination chains.
+We have chosen a modular architecture that respects the sovereignty of each chain while leveraging the speed of Solana. The heavy lifting of proof generation happens off-chain by a decentralized network of relayers, while the verification happens on-chain. This design ensures that InterLink can scale to handle thousands of cross-chain transactions per second without congesting the source or destination chains.
 
-InterLink is the realization of the "Internet of Blockchains"—a seamless, secure, and scalable network where value flows as freely as information.
+InterLink represents our vision for the "Internet of Blockchains"—a seamless, secure, and scalable network where value flows as freely as information. We are actively developing the core circuits and smart contracts described in this paper to turn this vision into reality.
 
 \section{Preliminaries}
 \label{sec:prelim}
