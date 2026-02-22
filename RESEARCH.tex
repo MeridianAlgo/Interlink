@@ -148,7 +148,7 @@ Each blockchain operates as a sovereign digital nation with its own rules, conse
 Traditional bridges have proven to be the Achilles' heel of the crypto ecosystem. Most rely on a "middleman" approach: a set of trusted validators (often a small multisig of 5-10 people) who verify transactions. If these validators are compromised or collude, they can steal all the funds locked in the bridge. This centralization risk contradicts the core ethos of blockchain. In 2022 alone, bridge hacks accounted for over \$2 billion in losses, highlighting the desperate need for a trustless solution.
 
 \subsection{The Genesis of InterLink: A Proposal for Unification}
-We propose \textbf{InterLink} as a robust solution to the interoperability trilemma—Scalability, Security, and Generalizability—without compromise. Recognizing that the future is not "multi-chain" (many isolated chains) but "cross-chain native" (one unified network of chains), we are currently architecting this protocol to serve as the connective tissue of the decentralized web.
+We propose \textbf{InterLink} as a robust solution to the interoperability trilemma---Scalability, Security, and Generalizability---without compromise. Recognizing that the future is not "multi-chain" (many isolated chains) but "cross-chain native" (one unified network of chains), we are currently architecting this protocol to serve as the connective tissue of the decentralized web.
 
 \subsubsection{From Trust to Truth}
 Existing solutions ask users to trust a third party. InterLink asks users to trust mathematics. By leveraging \textbf{Zero-Knowledge Proofs (zk-SNARKs)}, specifically the \textbf{Halo2} proving system, InterLink is designed to allow one blockchain to cryptographically verify the state of another. In our proposed architecture, a relayer generates a succinct proof that a transaction occurred on Ethereum, and the Solana blockchain verifies this proof in milliseconds. This removes the need for trusted validators. If the proof is valid, the transaction is valid. Period.
@@ -159,7 +159,7 @@ InterLink is not envisioned just as a message-passing protocol; it is being buil
 \subsubsection{Sovereignty and Scalability}
 We have chosen a modular architecture that respects the sovereignty of each chain while leveraging the speed of Solana. The heavy lifting of proof generation happens off-chain by a decentralized network of relayers, while the verification happens on-chain. This design ensures that InterLink can scale to handle thousands of cross-chain transactions per second without congesting the source or destination chains.
 
-InterLink represents our vision for the "Internet of Blockchains"—a seamless, secure, and scalable network where value flows as freely as information. We are actively developing the core circuits and smart contracts described in this paper to turn this vision into reality.
+InterLink represents our vision for the "Internet of Blockchains"---a seamless, secure, and scalable network where value flows as freely as information. We are actively developing the core circuits and smart contracts described in this paper to turn this vision into reality.
 
 \section{Preliminaries}
 \label{sec:prelim}
@@ -237,7 +237,7 @@ Solana differs fundamentally from EVM-based chains.
 \begin{itemize}
     \item \textbf{Stateless Execution:} Programs (smart contracts) are stateless; state is stored in separate "Accounts."
     \item \textbf{Parallelism:} Transactions specify all accounts they will read or write upfront. This allows the runtime to schedule non-overlapping transactions in parallel.
-    \item \textbf{PDAs (Program Derived Addresses):} Addresses deterministically derived from a program ID and seeds (e.g., `hash("user_vault", user_pubkey)`). This allows us to map a user's Ethereum address to a specific Solana account without needing a private key for that account.
+    \item \textbf{PDAs (Program Derived Addresses):} Addresses deterministically derived from a program ID and seeds (e.g., \texttt{hash("user\_vault", user\_pubkey)}). This allows us to map a user's Ethereum address to a specific Solana account without needing a private key for that account.
 \end{itemize}
 
 \section{System Architecture}
@@ -257,7 +257,7 @@ This $O(N)$ connection complexity is superior to the $O(N^2)$ complexity of pair
 Deployed on every supported chain (e.g., Ethereum), the Gateway is a set of smart contracts responsible for:
 \begin{itemize}
     \item \textbf{Asset Custody:} Holding user funds in a non-custodial vault.
-    \item \textbf{Event Emission:} Emitting canonical logs (e.g., `LogMessagePublished`) that Relayers can subscribe to.
+    \item \textbf{Event Emission:} Emitting canonical logs (e.g., \texttt{LogMessagePublished}) that Relayers can subscribe to.
     \item \textbf{Message Ingestion:} Receiving verified instructions from the Hub to unlock assets.
 \end{itemize}
 \textbf{Safety Module:} The Gateway includes a "Guardian" role (controlled by the DAO) that can pause the contract in the event of a detected anomaly, providing an emergency circuit breaker.
@@ -279,7 +279,7 @@ A decentralized network of off-chain nodes. The Relayer utilizes the \textbf{Hal
 Implemented as an Anchor Program on Solana.
 \begin{itemize}
     \item \textbf{Verifier Contract:} Contains the verification keys for the supported circuits. It executes the pairing checks (or validates the accumulation scheme).
-    \item \textbf{State Registry:} Maintains a mapping of `sequence_number -> message_hash` to prevent replay attacks.
+    \item \textbf{State Registry:} Maintains a mapping of \texttt{sequence\_number $\rightarrow$ message\_hash} to prevent replay attacks.
     \item \textbf{Liquidity Pools:} Implements a concentrated liquidity AMM (CLMM) where cross-chain swaps are executed.
     \item \textbf{Messenger:} Queues outbound messages to destination chains.
 \end{itemize}
@@ -288,11 +288,11 @@ Implemented as an Anchor Program on Solana.
 To fully understand the system, we must examine the lifecycle of a message as it traverses the stack.
 
 \begin{enumerate}
-    \item \textbf{Inbound Trigger (The User Action):} The process begins when a user interacts with the Source Chain Gateway. For example, a user on Arbitrum calls `InterLinkRouter.send(dest=Solana, payload=...)`. This action locks assets or queues a message and emits an on-chain event containing the `destination_chain`, `recipient_address`, and `payload_hash`. This event serves as the immutable "truth" that the Relayer Network must observe.
+    \item \textbf{Inbound Trigger (The User Action):} The process begins when a user interacts with the Source Chain Gateway. For example, a user on Arbitrum calls \texttt{InterLinkRouter.send(dest=Solana, payload=...)}. This action locks assets or queues a message and emits an on-chain event containing the \texttt{destination\_chain}, \texttt{recipient\_address}, and \texttt{payload\_hash}. This event serves as the immutable "truth" that the Relayer Network must observe.
     
     \item \textbf{Block Finality (The Safety Buffer):} Relayers do not act immediately upon seeing an event. They must wait for the source chain's consensus to finalize the block containing the transaction. On Ethereum L1, this is the time until the "finalized" epoch (approx. 12-15 minutes). On L2s like Arbitrum, this involves waiting for the sequencer to post the batch to L1. This step prevents the bridge from acting on a block that could be reorganized (reorged) out of existence.
     
-    \item \textbf{Witness Extraction (The Data Gathering):} Once finality is reached, the Relayer queries an Archive Node. It fetches the Merkle Proof (the "witness") that cryptographically links the specific transaction receipt to the block's `receiptsRoot`. This proof is the private input to the SNARK circuit.
+    \item \textbf{Witness Extraction (The Data Gathering):} Once finality is reached, the Relayer queries an Archive Node. It fetches the Merkle Proof (the "witness") that cryptographically links the specific transaction receipt to the block's \texttt{receiptsRoot}. This proof is the private input to the SNARK circuit.
     
     \item \textbf{Proof Composition (The Computation):} The Relayer runs the ZK-circuit.
         \begin{itemize}
@@ -301,9 +301,9 @@ To fully understand the system, we must examine the lifecycle of a message as it
             \item \textit{Circuit 3 (Aggregation):} Compresses Circuit 1 and Circuit 2 into a single, succinct proof $\pi$.
         \end{itemize}
         
-    \item \textbf{Solana Submission (The Handover):} The final proof $\pi$ is submitted to the InterLink Hub on Solana via a transaction. This transaction includes the `public_inputs` (the message hash and the block root) which are visible to everyone.
+    \item \textbf{Solana Submission (The Handover):} The final proof $\pi$ is submitted to the InterLink Hub on Solana via a transaction. This transaction includes the \texttt{public\_inputs} (the message hash and the block root) which are visible to everyone.
     
-    \item \textbf{On-Chain Verification (The Check):} The Solana Runtime executes the `verify` instruction within the Anchor program. This involves performing elliptic curve pairing checks (for KZG) or inner product arguments (for IPA). If the mathematics hold, the program updates the state: `processed_seq_eth = 55`.
+    \item \textbf{On-Chain Verification (The Check):} The Solana Runtime executes the \texttt{verify} instruction within the Anchor program. This involves performing elliptic curve pairing checks (for KZG) or inner product arguments (for IPA). If the mathematics hold, the program updates the state: \texttt{processed\_seq\_eth = 55}.
     
     \item \textbf{Execution (The Result):} Once the message is marked as "verified" in the Program Derived Address (PDA), an "Executor" bot (which can be the same entity as the Relayer) triggers the destination logic. This effectively mints the wrapped token or executes the swap on the Solana CLMM.
 \end{enumerate}
@@ -319,13 +319,13 @@ This means InterLink inherits the full security of the connected chain's consens
 \section{Rust Implementation \& Engineering}
 \label{sec:impl}
 
-The engineering philosophy of InterLink prioritizes safety, performance, and maintainability. We leverage the Rust programming language across the entire stack—from the off-chain Relayers to the on-chain Solana programs—to ensure memory safety and type correctness.
+The engineering philosophy of InterLink prioritizes safety, performance, and maintainability. We leverage the Rust programming language across the entire stack---from the off-chain Relayers to the on-chain Solana programs---to ensure memory safety and type correctness.
 
 \subsection{Circuit Engineering with Halo2}
 The heart of InterLink is the ZK-circuit. We use the \textbf{halo2-ce} (Community Edition) crate for its flexibility and support for the KZG commitment scheme.
 
 \subsubsection{Circuit Configuration}
-A Plonk-ish circuit is defined by a matrix of columns and rows. We define a custom `InterlinkConfig` struct to manage these resources.
+A Plonk-ish circuit is defined by a matrix of columns and rows. We define a custom \texttt{InterlinkConfig} struct to manage these resources.
 \begin{lstlisting}[language=Rust, caption={Halo2 Circuit Configuration}]
 #[derive(Clone, Debug)]
 pub struct InterlinkConfig {
@@ -367,7 +367,7 @@ impl InterlinkConfig {
 \end{lstlisting}
 
 \subsubsection{The Merkle Inclusion Chip}
-We encapsulate logic into "Chips." The `MerkleChip` is responsible for verifying that a leaf exists in a tree. It takes a `Path` (witness) and a `Root` (public input) and enforces the hashing path.
+We encapsulate logic into "Chips." The \texttt{MerkleChip} is responsible for verifying that a leaf exists in a tree. It takes a \texttt{Path} (witness) and a \texttt{Root} (public input) and enforces the hashing path.
 \begin{itemize}
     \item \textbf{Input:} Leaf Node $L$, Path Elements $P_0, ..., P_n$, Path Indices $I_0, ..., I_n$ (0 for left, 1 for right).
     \item \textbf{Logic:} For each level, compute $H_{i+1} = \text{Hash}(L_i, P_i)$ if $I_i=0$, else $\text{Hash}(P_i, L_i)$.
@@ -379,10 +379,10 @@ We encapsulate logic into "Chips." The `MerkleChip` is responsible for verifying
 The Relayer node is a high-performance Rust binary designed for 24/7 operation.
 
 \subsubsection{Concurrency Model}
-We utilize `tokio` for asynchronous runtime execution. The architecture follows a producer-consumer pattern:
+We utilize \texttt{tokio} for asynchronous runtime execution. The architecture follows a producer-consumer pattern:
 \begin{enumerate}
-    \item \textbf{Event Watcher (Producer):} Polls Ethereum logs via WebSocket (`ethers-rs`). Pushes events to a bounded `mpsc` channel.
-    \item \textbf{Proof Generator (Consumer):} Pulls events, fetches witness data (Merkle proofs) from an archive node, and runs the CPU-intensive proving algorithm. This runs in a separate thread pool (`rayon`) to avoid blocking the async runtime.
+    \item \textbf{Event Watcher (Producer):} Polls Ethereum logs via WebSocket (\texttt{ethers-rs}). Pushes events to a bounded \texttt{mpsc} channel.
+    \item \textbf{Proof Generator (Consumer):} Pulls events, fetches witness data (Merkle proofs) from an archive node, and runs the CPU-intensive proving algorithm. This runs in a separate thread pool (\texttt{rayon}) to avoid blocking the async runtime.
     \item \textbf{Transaction Manager:} Queues the generated proof and manages the Solana transaction lifecycle (retries, priority fees).
 \end{enumerate}
 
@@ -446,7 +446,7 @@ pub fn handler(ctx: Context<VerifyAndMint>, amount: u64) -> Result<()> {
 \subsubsection{Compute Budget Optimization}
 Solana has a strict compute unit (CU) limit (200k per instruction, 1.4M per transaction). Verifying a Pairing Check is expensive.
 \begin{itemize}
-    \item \textbf{Strategy:} We use the `ed25519_program` for signature verification where possible, and highly optimized BPF assembly for the pairing engine. 
+    \item \textbf{Strategy:} We use the \texttt{ed25519\_program} for signature verification where possible, and highly optimized BPF assembly for the pairing engine. 
     \item \textbf{Address Lookup Tables (LUTs):} We use LUTs to load more accounts in a single transaction, allowing us to split the verification into multiple instructions if necessary.
 \end{itemize}
 
@@ -454,7 +454,7 @@ Solana has a strict compute unit (CU) limit (200k per instruction, 1.4M per tran
 To achieve the sub-second latency required for a high-frequency bridge, we implement several optimization strategies.
 
 \subsubsection{Parallel Proof Generation}
-The process of generating a Zero-Knowledge Proof involves heavy mathematical operations, primarily Fast Fourier Transforms (FFTs) and Multi-Scalar Multiplications (MSMs). These operations are "embarrassingly parallel." We utilize the `rayon` crate in Rust to spawn a thread pool that matches the number of physical CPU cores. 
+The process of generating a Zero-Knowledge Proof involves heavy mathematical operations, primarily Fast Fourier Transforms (FFTs) and Multi-Scalar Multiplications (MSMs). These operations are "embarrassingly parallel." We utilize the \texttt{rayon} crate in Rust to spawn a thread pool that matches the number of physical CPU cores. 
 \begin{lstlisting}[language=Rust, caption={Parallel MSM Example}]
 // Pseudo-code for parallel MSM
 let scalars = ...;
@@ -595,7 +595,7 @@ We employ an \textbf{Open Relayer Set}. Unlike permissioned bridges where only a
 To mitigate Smart Contract Risk, InterLink undergoes a rigorous pipeline:
 \begin{enumerate}
     \item \textbf{Static Analysis:} Automated scanning with tools like Slither (for Solidity) and Soteria (for Solana) to catch common vulnerabilities like reentrancy or integer overflows.
-    \item \textbf{Fuzzing:} Property-based testing using `proptest` and `trident` to feed millions of random inputs to the contracts and circuits, checking for invariants (e.g., "Total supply of wrapped tokens must always equal total assets locked").
+    \item \textbf{Fuzzing:} Property-based testing using \texttt{proptest} and \texttt{trident} to feed millions of random inputs to the contracts and circuits, checking for invariants (e.g., "Total supply of wrapped tokens must always equal total assets locked").
     \item \textbf{Formal Verification:} We are working with firms like \textit{Veridise} to mathematically prove that our ZK circuits exactly match the intended logic (constraint satisfaction). This proves that there are no "under-constrained" circuits where a hacker could create a valid proof for an invalid state.
 \end{enumerate}
 

@@ -1,6 +1,22 @@
 [package]
 name = "interlink-core"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
 
 [dependencies]
+# ZK Proving
+halo2_proofs = "0.3.0"
+
+# Async Runtime
+tokio = { version = "1.0", features = ["full"] }
+futures = "0.3"
+
+# Networking & serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tracing = "0.1"
+tracing-subscriber = "0.3"
+
+[dev-dependencies]
+# For testing circuits
+halo2_proofs = { version = "0.3.0", features = ["dev-graph"] }
