@@ -263,7 +263,7 @@ Deployed on every supported chain (e.g., Ethereum), the Gateway is a set of smar
 \textbf{Safety Module:} The Gateway includes a "Guardian" role (controlled by the DAO) that can pause the contract in the event of a detected anomaly, providing an emergency circuit breaker.
 
 \subsubsection{The Relayer Network (The Transport)}
-A decentralized network of off-chain nodes.
+A decentralized network of off-chain nodes. The Relayer utilizes the \textbf{Halo2} proving system (defined in Sec 2.2), which is a high-performance zk-SNARK implementation that allows for the creation of efficient, recursive proofs.
 \begin{itemize}
     \item \textbf{Listener:} Uses WebSocket connections to full nodes of connected chains to listen for Gateway events.
     \item \textbf{Prover (The Engine):} The most computationally intensive component. It runs the Halo2 proving stack.
@@ -275,7 +275,7 @@ A decentralized network of off-chain nodes.
     \item \textbf{Submitter:} Monitors the Solana Hub. When a batch is ready, it submits the proof and the public inputs as a Solana transaction.
 \end{itemize}
 
-\subsubsection{3. The Solana Execution Hub (The Core)}
+\subsubsection{The Solana Execution Hub (The Core)}
 Implemented as an Anchor Program on Solana.
 \begin{itemize}
     \item \textbf{Verifier Contract:} Contains the verification keys for the supported circuits. It executes the pairing checks (or validates the accumulation scheme).
@@ -288,18 +288,24 @@ Implemented as an Anchor Program on Solana.
 To fully understand the system, we must examine the lifecycle of a message as it traverses the stack.
 
 \begin{enumerate}
-    \item \textbf{Inbound Trigger:} A user on Arbitrum calls `InterLinkRouter.send(dest=Solana, payload=...)`. The contract emits an event with a unique sequence number.
-    \item \textbf{Block Finality:} Relayers wait for the Arbitrum sequencer to post the batch to Ethereum L1, and for that L1 block to be finalized (approx. 12-15 mins for full security, or soft-finality for optimistic mode).
-    \item \textbf{Witness Extraction:} The Relayer queries an Archive Node for the Merkle Proof of the transaction receipt against the block's `receiptsRoot`.
-    \item \textbf{Proof Composition:}
+    \item \textbf{Inbound Trigger (The User Action):} The process begins when a user interacts with the Source Chain Gateway. For example, a user on Arbitrum calls `InterLinkRouter.send(dest=Solana, payload=...)`. This action locks assets or queues a message and emits an on-chain event containing the `destination_chain`, `recipient_address`, and `payload_hash`. This event serves as the immutable "truth" that the Relayer Network must observe.
+    
+    \item \textbf{Block Finality (The Safety Buffer):} Relayers do not act immediately upon seeing an event. They must wait for the source chain's consensus to finalize the block containing the transaction. On Ethereum L1, this is the time until the "finalized" epoch (approx. 12-15 minutes). On L2s like Arbitrum, this involves waiting for the sequencer to post the batch to L1. This step prevents the bridge from acting on a block that could be reorganized (reorged) out of existence.
+    
+    \item \textbf{Witness Extraction (The Data Gathering):} Once finality is reached, the Relayer queries an Archive Node. It fetches the Merkle Proof (the "witness") that cryptographically links the specific transaction receipt to the block's `receiptsRoot`. This proof is the private input to the SNARK circuit.
+    
+    \item \textbf{Proof Composition (The Computation):} The Relayer runs the ZK-circuit.
         \begin{itemize}
-            \item \textit{Circuit 1 (Transaction):} Verifies the Merkle Path.
-            \item \textit{Circuit 2 (Consensus):} Verifies the Block Header signatures.
-            \item \textit{Circuit 3 (Aggregation):} Compresses Circuit 1 and Circuit 2 into a single proof.
+            \item \textit{Circuit 1 (Transaction):} Proves "I possess a Merkle Path showing transaction T is in Block B."
+            \item \textit{Circuit 2 (Consensus):} Proves "Block B was signed by >66\% of the validator set."
+            \item \textit{Circuit 3 (Aggregation):} Compresses Circuit 1 and Circuit 2 into a single, succinct proof $\pi$.
         \end{itemize}
-    \item \textbf{Solana Submission:} The final proof is submitted to the InterLink Hub. The transaction includes the `public_inputs` (the message hash, the block root).
-    \item \textbf{On-Chain Verification:} The Solana Runtime executes the `verify` instruction. If successful, the message hash is marked as "verified" in the PDA state.
-    \item \textbf{Execution:} An "Executor" bot (can be the same as Relayer) sees the verified state and executes the payload (e.g., minting a token, executing a swap).
+        
+    \item \textbf{Solana Submission (The Handover):} The final proof $\pi$ is submitted to the InterLink Hub on Solana via a transaction. This transaction includes the `public_inputs` (the message hash and the block root) which are visible to everyone.
+    
+    \item \textbf{On-Chain Verification (The Check):} The Solana Runtime executes the `verify` instruction within the Anchor program. This involves performing elliptic curve pairing checks (for KZG) or inner product arguments (for IPA). If the mathematics hold, the program updates the state: `processed_seq_eth = 55`.
+    
+    \item \textbf{Execution (The Result):} Once the message is marked as "verified" in the Program Derived Address (PDA), an "Executor" bot (which can be the same entity as the Relayer) triggers the destination logic. This effectively mints the wrapped token or executes the swap on the Solana CLMM.
 \end{enumerate}
 
 \subsection{Consensus Verification in Circuits}
@@ -400,7 +406,7 @@ pub async fn process_event(event: DepositEvent, params: &Params<Eq>) -> Result<P
 \subsection{Solana Anchor Development}
 The Verification Layer is built with the Anchor framework, which provides safety checks and serialization for Solana programs.
 
-\subsubsection{Instruction Context & CPIs}
+\subsubsection{Instruction Context \& CPIs}
 When a proof is verified, the program must mint tokens. This requires a Cross-Program Invocation (CPI) to the SPL Token Program.
 \begin{lstlisting}[language=Rust, caption={Anchor CPI for Minting}]
 #[derive(Accounts)]
@@ -440,18 +446,39 @@ pub fn handler(ctx: Context<VerifyAndMint>, amount: u64) -> Result<()> {
 \subsubsection{Compute Budget Optimization}
 Solana has a strict compute unit (CU) limit (200k per instruction, 1.4M per transaction). Verifying a Pairing Check is expensive.
 \begin{itemize}
-    \item \textbf{Strategy:} We use the `ed25519_program` for signature verification where possible, and highly optimized BPF assembly for the pairing engine.
+    \item \textbf{Strategy:} We use the `ed25519_program` for signature verification where possible, and highly optimized BPF assembly for the pairing engine. 
     \item \textbf{Address Lookup Tables (LUTs):} We use LUTs to load more accounts in a single transaction, allowing us to split the verification into multiple instructions if necessary.
 \end{itemize}
 
 \subsection{Performance Optimization}
-To achieve the sub-second latency required for a high-frequency bridge, we implement several optimization strategies:
+To achieve the sub-second latency required for a high-frequency bridge, we implement several optimization strategies.
 
+\subsubsection{Parallel Proof Generation}
+The process of generating a Zero-Knowledge Proof involves heavy mathematical operations, primarily Fast Fourier Transforms (FFTs) and Multi-Scalar Multiplications (MSMs). These operations are "embarrassingly parallel." We utilize the `rayon` crate in Rust to spawn a thread pool that matches the number of physical CPU cores. 
+\begin{lstlisting}[language=Rust, caption={Parallel MSM Example}]
+// Pseudo-code for parallel MSM
+let scalars = ...;
+let points = ...;
+let result = rayon::join(
+    || msm(&scalars[0..n/2], &points[0..n/2]),
+    || msm(&scalars[n/2..n], &points[n/2..n])
+);
+\end{lstlisting}
+This reduces the proving time $T$ from $O(N)$ to $O(N/C)$ where $C$ is the core count.
+
+\subsubsection{Batching}
+Verifying a single proof on-chain consumes a fixed amount of gas (e.g., 300k gas on EVM). By aggregating $N$ transactions into a single batch proof, we amortize this cost.
+$$ \text{Cost per Tx} = \frac{\text{Verification Cost}}{N} + \text{Marginal Data Cost} $$
+If we batch 100 transactions, the verification cost per user drops by 99\%.
+
+\subsubsection{Pipeline Architecture}
+The Relayer node operates as a staged pipeline to maximize throughput.
 \begin{itemize}
-    \item \textbf{Parallel Proof Generation:} The Halo2 prover supports multi-threading for FFTs (Fast Fourier Transforms) and MSMs (Multi-Scalar Multiplications). We use `rayon` to saturate all CPU cores during the proving phase.
-    \item \textbf{Batching:} Instead of generating one proof per transaction, we aggregate $N$ transactions into a single batch. The verification cost on Solana is paid once per batch, amortizing the cost to $Cost / N$.
-    \item \textbf{Pipeline Architecture:} The Relayer uses a pipelined approach (Fetch -> Prove -> Submit). While Batch $i$ is being submitted, Batch $i+1$ is being proven, and Batch $i+2$ is being fetched.
+    \item \textbf{Stage 1 (Fetch):} Asynchronously fetches witness data for Block $i+2$.
+    \item \textbf{Stage 2 (Prove):} Computes the SNARK for Block $i+1$ using CPU resources.
+    \item \textbf{Stage 3 (Submit):} Submits the already computed proof for Block $i$ to Solana via RPC.
 \end{itemize}
+This ensures that network I/O does not block CPU-intensive tasks.
 
 \section{Tokenomics: The ILINK Standard}
 \label{sec:tokenomics}
@@ -533,26 +560,43 @@ $$ E[Malicious] = (1 - \mathbb{P}_{verif}) \times G - \mathbb{P}_{verif} \times 
 Since $\mathbb{P}_{verif} \approx 1$, $E[Malicious] \approx -S$.
 A rational actor will never attack the system as long as the cost of generating a false proof (breaking the cryptography) is sufficiently high (computationally infeasible).
 
-\subsection{Specific Attack Vectors & Mitigations}
+\subsection{Specific Attack Vectors \& Mitigations}
 
-\subsubsection{1. Long-Range Attacks}
-\textbf{Threat:} An attacker creates a private fork of the source chain starting from a point far in the past, eventually overtaking the canonical chain with a different state.
-\textbf{Mitigation:} InterLink implements \textbf{Checkpointing}. The Solana Hub stores a history of finalized block headers. Once a header is finalized on Solana, it cannot be reverted, even if the source chain reorgs deep in the past (beyond the finality threshold).
+\subsubsection{Long-Range Attacks}
+\paragraph{Threat:} 
+An attacker creates a private fork of the source chain starting from a point far in the past. In Proof-of-Stake systems, validators who have since unstaked (and can no longer be slashed) could sell their old private keys to an attacker. The attacker then builds a valid chain from that past point, eventually overtaking the canonical chain with a different state. If the bridge light client naively follows the "heaviest chain," it might accept this forged history.
 
-\subsubsection{2. Data Availability (DA) Attacks}
-\textbf{Threat:} A Relayer provides a valid proof of a state transition, but the data required to reconstruct that state is withheld from the public.
-\textbf{Mitigation:} InterLink requires \textbf{DA Attestation}. The proof must include a commitment to the data being available on a robust DA layer (like Ethereum CallData or Celestia). The circuit verifies that the data was posted.
+\paragraph{Mitigation:} 
+InterLink implements \textbf{Checkpointing} (or "Weak Subjectivity"). The Solana Hub stores a history of finalized block headers. Once a header is finalized on Solana, it is considered immutable by the bridge logic. Even if the source chain undergoes a deep reorg that presents a heavier chain, the bridge will reject any path that contradicts its own finalized history.
+\begin{lstlisting}[language=Rust]
+// Pseudo-code for Checkpoint Verification
+if incoming_header.height < last_finalized_height {
+    if incoming_header.hash != stored_history[incoming_header.height] {
+        return Error("Long Range Attack Detected");
+    }
+}
+\end{lstlisting}
 
-\subsubsection{3. Censorship}
-\textbf{Threat:} Relayers collude to ignore transactions from specific users.
-\textbf{Mitigation:} \textbf{Open Relayer Set.} Anyone can become a Relayer by staking ILINK. If the major Relayers censor a user, a new Relayer can spin up, process that specific transaction, collect the fee, and shut down. This "Free Market" approach guarantees liveness.
+\subsubsection{Data Availability (DA) Attacks}
+\paragraph{Threat:} 
+A malicious Relayer provides a valid ZK-proof that a state transition occurred (e.g., "I moved 100 USDC to Alice"), but they withhold the data required to reconstruct the new state (e.g., they don't reveal that the 100 USDC is now in Alice's balance). The proof validates the math, but without the data, the system enters an unrecoverable state where funds are locked because no one knows who owns them.
 
-\subsection{Auditing & Formal Verification}
+\paragraph{Mitigation:} 
+InterLink requires a \textbf{DA Attestation}. The ZK-circuit has an additional public input: a commitment (hash) to the data blob. The verification logic on Solana checks that this data blob has been posted to a robust Data Availability Layer (like Ethereum CallData, Celestia, or EigenDA). If the DA Layer does not confirm receipt of the data, the bridge rejects the proof, even if the ZK math is correct.
+
+\subsubsection{Censorship}
+\paragraph{Threat:} 
+The set of Relayers colludes to ignore transactions from specific users or addresses (e.g., OFAC sanctioned addresses, or competitors). While this doesn't steal funds, it breaks the "permissionless" guarantee of the blockchain.
+
+\paragraph{Mitigation:} 
+We employ an \textbf{Open Relayer Set}. Unlike permissioned bridges where only a whitelist can relay, InterLink allows anyone to become a Relayer by staking ILINK. If the major Relayers censor a user, a new, independent Relayer can spin up, process that specific censored transaction (collecting the fee), and then shut down. This "Free Market" approach guarantees liveness as long as there is at least one honest rational actor in the world.
+
+\subsection{Auditing \& Formal Verification}
 To mitigate Smart Contract Risk, InterLink undergoes a rigorous pipeline:
 \begin{enumerate}
-    \item \textbf{Static Analysis:} Automated scanning with tools like Slither (for Solidity) and Soteria (for Solana).
-    \item \textbf{Fuzzing:} Property-based testing using `proptest` and `trident` to feed random inputs to the contracts and circuits, checking for invariants (e.g., "Total supply never exceeds 1B").
-    \item \textbf{Formal Verification:} We are working with \textit{Veridise} to mathematically prove that our circuits exactly match the intended logic (constraint satisfaction).
+    \item \textbf{Static Analysis:} Automated scanning with tools like Slither (for Solidity) and Soteria (for Solana) to catch common vulnerabilities like reentrancy or integer overflows.
+    \item \textbf{Fuzzing:} Property-based testing using `proptest` and `trident` to feed millions of random inputs to the contracts and circuits, checking for invariants (e.g., "Total supply of wrapped tokens must always equal total assets locked").
+    \item \textbf{Formal Verification:} We are working with firms like \textit{Veridise} to mathematically prove that our ZK circuits exactly match the intended logic (constraint satisfaction). This proves that there are no "under-constrained" circuits where a hacker could create a valid proof for an invalid state.
 \end{enumerate}
 
 \section{Comparison with State of the Art}
@@ -576,17 +620,17 @@ Cosmos IBC & Light Client & Low & Low & Instant & Trustless & Low \\ \bottomrule
 \label{tab:comparison_detailed}
 \end{table}
 
-\subsection{vs. LayerZero}
-LayerZero uses "Ultra Light Nodes" (ULNs). In v1, security relied on the independence of the Oracle and Relayer. In v2, it relies on Decentralized Verifier Networks (DVNs). While flexible, it ultimately trusts a set of external parties (like Google Cloud or Polyhedra). InterLink \textit{replaces} these parties with a ZK proof. You don't trust the Relayer; you verify their work.
+\subsection{InterLink vs. LayerZero}
+LayerZero uses Ultra Light Nodes (ULNs). In v1, security relied on the independence of the Oracle and Relayer. In v2, it relies on Decentralized Verifier Networks (DVNs). While flexible, it ultimately trusts a set of external parties (like Google Cloud or Polyhedra). InterLink replaces these parties with a ZK proof. You don't trust the Relayer; you verify their work.
 
-\subsection{vs. Axelar}
+\subsection{InterLink vs. Axelar}
 Axelar is a blockchain itself. It uses a PoS validator set to vote on state changes. This is secure but adds an intermediary consensus layer. If the Axelar chain halts or is taken over, the bridge stops. InterLink is not a chain; it is a protocol. Its security inherits directly from the source and destination chains.
 
-\subsection{vs. Wormhole}
-Wormhole relies on a "Guardian Set" of 19 reputable entities. While they have a strong track record, it is a Proof-of-Authority system. It is not censorship-resistant by design. InterLink's open relayer network is permissionless.
+\subsection{InterLink vs. Wormhole}
+Wormhole relies on a Guardian Set of 19 reputable entities. While they have a strong track record, it is a Proof-of-Authority system. It is not censorship-resistant by design. InterLink's open relayer network is permissionless.
 
-\subsection{vs. Cosmos IBC}
-IBC is the gold standard for trustless interoperability. However, it is expensive to verify on non-Cosmos chains (like Ethereum) due to the cost of checking Ed25519 signatures in EVM. InterLink is effectively "IBC with ZK." We use ZK proofs to compress the consensus verification, making it affordable to run an IBC-style light client on any chain.
+\subsection{InterLink vs. Cosmos IBC}
+IBC is the gold standard for trustless interoperability. However, it is expensive to verify on non-Cosmos chains (like Ethereum) due to the cost of checking Ed25519 signatures in EVM. InterLink is effectively IBC with ZK. We use ZK proofs to compress the consensus verification, making it affordable to run an IBC-style light client on any chain.
 
 \section{Conclusion}
 
@@ -594,15 +638,21 @@ InterLink represents the maturity of the interoperability landscape. We have mov
 
 By combining the cryptographic guarantees of \textbf{halo2 zk-SNARKs} with the high-performance execution environment of \textbf{Solana}, InterLink solves the Trilemma. It offers the trustlessness of a light client with the cost-effectiveness of a multisig. The result is a Unified Liquidity Layer that empowers developers to build applications that transcend chain boundaries.
 
-The future of blockchain is not about which chain wins. It is about how they all work together. InterLink is the common language that allows them to speak.
+The future of blockchain is not about which chain wins. It is about how they all work together. InterLink is the common language that allows them to speak. We envision a future where users are unaware of which chain they are on; they simply interact with applications, and InterLink handles the complex routing of value and data in the background. This "Chain Abstraction" is the final frontier for mass adoption.
+
+As we move forward, our development focus remains on three core pillars: cryptographic efficiency, economic sustainability, and developer experience. We are not just building a bridge; we are building the internet's value layer. By making cross-chain interaction as simple as a local function call, we unlock a new class of decentralized applications that were previously impossible.
+
+We invite the global research community, developers, and users to contribute to this open-source effort. Whether through formal security audits, circuit optimizations, or the creation of new cross-chain primitives, your participation is vital to realizing the vision of a unified, trustless digital economy. Together, we can turn the fragmented multi-chain reality into a cohesive, interoperable ecosystem where innovation knows no borders.
 
 \subsection{Future Work}
 Our roadmap includes several key research directions:
 \begin{itemize}
     \item \textbf{Privacy-Preserving Bridging:} integrating \textbf{Aztec}-style privacy proofs to allow users to bridge assets without revealing the amount or the recipient.
-    \item \textbf{Hardware Acceleration:} Developing FPGA and ASIC designs specifically optimized for the FFT (Fast Fourier Transform) and MSM (Multi-Scalar Multiplication) operations in the Halo2 prover, aiming to reduce proof generation time to sub-second latency.
+    \item \textbf{Hardware Acceleration:} Developing FPGA and ASIC designs specifically optimized for the FFT (Fast Fourier Transforms) and MSM (Multi-Scalar Multiplications) operations in the Halo2 prover, aiming to reduce proof generation time to sub-second latency.
     \item \textbf{L3 Fractal Scaling:} Allowing app-chains to settle directly on the InterLink Hub, using it as a DA and Settlement layer.
 \end{itemize}
+
+\newpage
 
 \begin{thebibliography}{99}
 
