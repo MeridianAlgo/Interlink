@@ -1,26 +1,31 @@
 \documentclass[11pt,a4paper]{article}
+
 \usepackage[margin=1in]{geometry}
 \usepackage[utf8]{inputenc}
 \usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{microtype}
 \usepackage{hyperref}
-\usepackage{amsmath}
-\usepackage{amssymb}
-\usepackage{amsfonts}
+\usepackage[nameinlink,noabbrev]{cleveref}
+\usepackage{amsmath,amssymb,amsfonts,amsthm}
+\usepackage{mathtools}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{longtable}
+\usepackage{enumitem}
+\usepackage{siunitx}
 \usepackage{listings}
 \usepackage{xcolor}
-\usepackage{float}
 \usepackage{caption}
 \usepackage{subcaption}
-\usepackage{siunitx}
-\usepackage{enumitem}
-\usepackage{longtable}
-\usepackage{multicol}
+\usepackage{float}
 \usepackage{parskip}
 
 \hypersetup{
     colorlinks=true,
     linkcolor=blue,
     urlcolor=cyan,
+    citecolor=blue,
     pdftitle={InterLink: A Zero-Knowledge Atomic Cross-Chain Interoperability Protocol with Unified Liquidity and Incentive-Aligned Tokenomics},
     pdfauthor={InterLink Research Team},
     pdfsubject={Blockchain Interoperability Research Paper},
@@ -33,226 +38,177 @@
 \definecolor{backcolour}{rgb}{0.95,0.95,0.92}
 
 \lstloadlanguages{Rust}
-
 \lstdefinestyle{mystyle}{
-    backgroundcolor=\color{backcolour},   
+    backgroundcolor=\color{backcolour},
     commentstyle=\color{codegreen},
     keywordstyle=\color{magenta},
     numberstyle=\tiny\color{codegray},
     stringstyle=\color{codepurple},
     basicstyle=\ttfamily\footnotesize,
-    breakatwhitespace=false,         
-    breaklines=true,                 
-    captionpos=b,                    
-    keepspaces=true,                 
-    numbers=left,                    
-    numbersep=5pt,                  
-    showspaces=false,                
+    breaklines=true,
+    captionpos=b,
+    keepspaces=true,
+    numbers=left,
+    numbersep=5pt,
     showstringspaces=false,
-    showtabs=false,                  
     tabsize=2,
     language=Rust,
     frame=single,
     framesep=5pt,
     framerule=0.5pt
 }
-
 \lstset{style=mystyle}
 
 \setlength{\parindent}{0pt}
 \setlength{\parskip}{8pt plus 2pt minus 1pt}
 
-\title{\textbf{InterLink: A Zero-Knowledge Atomic Cross-Chain Interoperability Protocol \\ with Unified Liquidity and Incentive-Aligned Tokenomics}}
-\author{InterLink Research Team with contributions from meridianalgo \\ \small{Version 4.3 — Professional Edition — February 21, 2026}}
+\title{\textbf{InterLink: A Zero-Knowledge Atomic Cross-Chain Interoperability Protocol\\with Unified Liquidity and Incentive-Aligned Tokenomics}}
+\author{InterLink Research Team with contributions from meridianalgo\\\small{Version 5.0 --- Expanded Technical Edition --- February 2026}}
 \date{}
 
 \begin{document}
 
 \maketitle
+\tableofcontents
+\newpage
 
 \begin{abstract}
-In the blockchain world of February 2026, things still feel pretty disjointed, even though the total value locked in various networks has grown to cover more than 150 different chains. Assets and liquidity often stay stuck on their home chains, which makes it harder to use capital effectively, causes more slippage when making bigger trades, and leads to transaction costs that can fluctuate a lot. Incidents involving cross-chain bridges have been a big part of the losses in the ecosystem, pointing out weaknesses in systems that depend on trusted parties or wrapped asset versions.
+Despite rapid growth in decentralized finance and generalized smart-contract ecosystems, cross-chain user experience remains operationally fragmented, economically inefficient, and security sensitive. Existing interoperability pathways frequently depend on wrapped assets, trusted external committees, or optimistic message assumptions that can fail under adverse network conditions. These constraints produce measurable market friction: trapped liquidity, inconsistent slippage profiles, delayed settlement finality, and elevated systemic risk concentration in bridge validator sets.
 
-This paper suggests InterLink (ILINK), a complete interoperability setup meant to allow trustless transfers of native assets across any compatible blockchains. Built mostly in Rust to focus on safety and speed, InterLink brings together four main parts: (1) halo2-based zero-knowledge proofs to confirm locks on the source chain without sharing private info; (2) a spread-out network of relayers staked with ILINK and subject to economic penalties; (3) a core hub on Solana using Anchor to handle combined liquidity pools and atomic actions; and (4) a capped-supply token that's deflationary by design, with a built-in fee-burn system.
+This paper presents \textbf{InterLink (ILINK)}, a zero-knowledge-assisted atomic interoperability protocol that targets native-asset movement while preserving trust minimization. InterLink combines four tightly coupled system layers: \textit{(i)} source-chain lock proofs generated with halo2-compatible witness circuits, \textit{(ii)} a stake-weighted but slashable relayer market, \textit{(iii)} a Solana/Anchor execution hub coordinating proof validation, liquidity accounting, and deterministic release logic, and \textit{(iv)} an incentive architecture centered on a capped-supply ILINK token with embedded burn and staking dynamics.
 
-The sections ahead dive deep into the protocol. They describe the architecture in everyday terms, show the Rust code with step-by-step breakdowns, explain the math behind the token setup and security, look at possible threats, discuss what performance might look like based on theory and sims, and wrap up with thoughts on pros, cons, and what's next. The goal is to offer a solid way to tackle those ongoing interoperability headaches through crypto proofs, balanced incentives, and reliable code.
+We provide a deeply expanded treatment of architecture, threat model assumptions, formal protocol flow, implementation constraints in Rust, tokenomic equilibria, and performance expectations under realistic throughput and adversarial stress. The analysis emphasizes engineering practicality: deterministic state transitions, bounded trust assumptions, and economic disincentives for protocol abuse. We further discuss deployment sequencing, governance hardening, and post-launch observability to support gradual decentralization.
 
-\textbf{Keywords:} Zero-Knowledge Proofs, Cross-Chain Interoperability, Atomic Swaps, Rust Implementation, Deflationary Tokenomics, Unified Liquidity Pools, Blockchain Bridges
+\textbf{Keywords:} Zero-Knowledge Proofs, Cross-Chain Interoperability, Atomic Settlement, Rust Systems Engineering, Solana Anchor, Liquidity Unification, Deflationary Tokenomics
 \end{abstract}
 
 \section{Introduction}
 \label{sec:intro}
 
-Blockchain is essentially a digital ledger system that's designed to record transactions or data in a way that's secure, transparent, and resistant to tampering. Imagine it like a shared notebook where every entry is written in permanent ink, and once added, it can't be erased or changed without everyone noticing. What makes it special is that it's decentralized—meaning no single person or organization controls it. Instead, it's maintained across a network of computers (called nodes) that all have a copy of the ledger. Each new "block" of data is linked to the previous one using cryptography, forming a chain—hence the name "blockchain."
+\subsection{Context and Motivation}
+Blockchain ecosystems have evolved into specialized execution domains with divergent design priorities: high-security settlement layers, high-throughput application chains, privacy-preserving rollups, and app-specific sovereign chains. This specialization improves local optimization but degrades global composability. Capital often remains isolated because transfer rails are either expensive, slow, or trust heavy.
 
-At its core, blockchain uses consensus mechanisms (like proof-of-work or proof-of-stake) to agree on what gets added to the ledger. This ensures trust without needing a central authority, like a bank or government. It's the technology behind cryptocurrencies like Bitcoin, but it has broader uses, such as tracking supply chains, verifying identities, or even voting systems. The key benefits are security (through encryption and immutability), transparency (anyone can view the ledger), and efficiency (removing middlemen).
+In practical terms, users and institutions face three recurring obstacles:
+\begin{enumerate}[label=\arabic*.]
+    \item \textbf{Security asymmetry:} bridge systems frequently aggregate risk into off-chain multi-signature controls or under-collateralized validator assumptions.
+    \item \textbf{Capital inefficiency:} fragmented liquidity leads to excess slippage, poor routing depth, and duplicated inventory costs.
+    \item \textbf{Operational complexity:} users must reason about chain finality windows, wrapped-asset semantics, and destination-chain bridge solvency.
+\end{enumerate}
 
-The concept of blockchain didn't appear out of nowhere—it built on decades of ideas in cryptography and computer science. The roots trace back to cryptography pioneers in the 1970s–1980s. In 1976, Whitfield Diffie and Martin Hellman introduced public-key cryptography, which laid the groundwork for secure digital signatures. Then, in 1982, cryptographer David Chaum proposed a protocol in his dissertation that resembled a blockchain, focusing on secure, tamper-proof data storage without a central authority.
+InterLink is designed around the thesis that cross-chain systems should minimize trust assumptions \emph{and} improve capital efficiency at the same time. The protocol therefore treats security proofs and liquidity architecture as first-class co-dependent components rather than separate modules.
 
-In the 1990s, researchers Stuart Haber and W. Scott Stornetta described a system for timestamping digital documents using a chain of cryptographically secured blocks to prevent tampering. This was one of the first clear blueprints for what we'd recognize as blockchain today. In 1992, they improved it by incorporating Merkle trees, allowing multiple documents to be bundled into one block. Their company, Surety, even started publishing document hashes in The New York Times weekly since 1995 as a public record.
+\subsection{Historical and Technical Lineage}
+Modern interoperability inherits from decades of cryptographic and distributed-systems research. Public-key cryptography enabled portable identity and signatures. Byzantine fault tolerance enabled distributed agreement under adversarial participation. Merkle commitments and succinct proof systems enabled compact verification of remote state without replaying full history.
 
-By the late 1990s and early 2000s, ideas for digital currencies emerged. In 1998, Nick Szabo proposed "bit gold," a decentralized digital currency using proof-of-work. Around 2000, Stefan Konst explored similar ideas for cryptographically secured chains. These concepts aimed at creating money without banks but lacked a full working system.
+Early bridge architectures favored speed-to-market over trust minimization, often relying on external validator committees. While these systems proved demand for interoperability, incidents across multiple production networks demonstrated that bridge security is typically constrained by its weakest trust boundary. This has accelerated migration toward light-client verification, fraud-proof pathways, and succinct validity proofs.
 
-The big breakthrough came in October 2008 when Satoshi Nakamoto published the Bitcoin whitepaper, "Bitcoin: A Peer-to-Peer Electronic Cash System." This described a decentralized blockchain to power Bitcoin, solving the "double-spending" problem through proof-of-work and a public ledger. In January 2009, Nakamoto mined the first Bitcoin block, launching the first practical blockchain.
+InterLink extends this trajectory by integrating validity-proof gating with atomic execution semantics and economically enforceable relayer behavior.
 
-From there, blockchain expanded rapidly. By 2013–2014, Ethereum introduced smart contracts, allowing programmable apps beyond just currency. Through the 2010s and into the 2020s, blockchain found uses in finance, supply chains, and more. By 2026, it's evolved with faster consensus like proof-of-stake, layer-2 scaling, and integrations in Web3, DeFi, and NFTs. However, as the number of chains has grown, so have challenges like scalability, energy use, and especially interoperability—moving value seamlessly between networks.
+\subsection{Research Contribution}
+This paper contributes the following:
+\begin{itemize}
+    \item A formalized protocol pipeline for proof-attested native-asset transfer with deterministic state transitions.
+    \item A Rust-centric implementation pattern for relayer reliability and verifier integrity.
+    \item A unified-liquidity approach that reduces route fragmentation while preserving source-of-truth accounting.
+    \item A tokenomic model coupling protocol utilization to burn dynamics and stake-backed relay quality.
+    \item A structured security model spanning cryptographic, network, and economic attack surfaces.
+\end{itemize}
 
-This brings us to the core issue InterLink addresses: fragmented liquidity and insecure cross-chain interoperability. In today's multi-chain world, blockchains act like isolated islands. You can do plenty on one network, like Ethereum or Solana, but shifting assets between them often feels clunky, costly, and risky. Users face high bridge fees, stuck liquidity that hurts efficiency, and security issues that shake confidence.
-
-Tackling this problem matters because it could tie everything together, making blockchains feel like one unified system. It might mean cheaper transfers, better prices from deeper liquidity, fewer worries about hacks, and quicker innovation as developers build without chain barriers. With the ecosystem expanding, solving interoperability now could help blockchain move from specialized tech to everyday tools.
-
-The idea for InterLink comes from noticing that many current solutions still have these pain points, like needing to trust middlemen, creating stand-in versions of assets, or using token designs that keep pumping out new supply to keep things going. InterLink tries to smooth that out by making it possible to shift native assets directly, with everything backed by proofs and economic motivations that make sense.
-
-At its heart, the protocol focuses on making transfers atomic — meaning they either happen all the way or not at all — keeping assets in their true form the whole time, pulling liquidity together from different chains, and building a self-sustaining loop with the ILINK token. Using Rust and Anchor on Solana for the main parts helps ensure the code is solid and runs efficiently.
-
-The rest of the paper breaks it down: we define the problem more clearly, look at what's already out there, explain the setup in simple terms, show how the code works, model the token side, think about security, talk about what performance could be like, and finish with some honest thoughts on what's good, what's tricky, and where it could go.
-
-\section{Problem Statement and Formal Model}
-\label{sec:problem}
-
-Think of a cross-chain transfer as a set of five pieces: the starting chain S, the ending chain D, the amount A of the real asset, a proof P that shows the lock happened on the start, and a time T when it began.
-
-The system needs to hit these five marks at once:
-
-1. Atomicity: The whole thing goes through on both ends or it doesn't happen anywhere, so no half-done states.
-
-2. Native Preservation: What shows up on D is the actual asset, not some packaged version.
-
-3. Trust Minimization: No needing to rely on a handful of validators; it's all about the proofs and the costs built in.
-
-4. Liquidity Efficiency: It should feel like the depth from all involved chains adds up, cutting down on the losses from things being split up.
-
-5. Economic Sustainability: The setup should keep incentives in line over time without having to create more tokens constantly.
-
-On the economic side, it's about making sure the penalty for messing up (losing your staked ILINK) is bigger than what you'd gain from trying, plus the effort it takes. That's captured as \( \text{SlashPenalty(ILINK_staked)} \geq \text{AttackCost} + \mathbb{E}[\text{Profit if it works}] \).
-
-\section{Related Work}
+\section{Related Work and Design Positioning}
 \label{sec:related}
 
-There's a bunch of ways people have tried to connect chains lately. Some focus on messaging, like LayerZero with its light nodes, Wormhole and its guardians, Axelar using staked validators, or Chainlink CCIP tying in oracles. These get info across pretty quick but often end up with wrapped assets and still need some trust in outside parts.
+Interoperability systems generally cluster into four design families:
+\begin{enumerate}[label=\alph*)]
+    \item \textbf{External validator bridges} (high flexibility, elevated trust assumptions),
+    \item \textbf{Light-client-based channels} (strong verification, higher implementation complexity),
+    \item \textbf{Liquidity-network routers} (fast settlement, inventory and rebalancing constraints), and
+    \item \textbf{ZK-assisted verification systems} (strong integrity, proving cost and tooling complexity).
+\end{enumerate}
 
-Others go for straight native swaps, like THORChain, where you trade real assets in pools with bonded helpers. It skips the wrapping but might be limited to certain pairs and have liquidity spread thin.
-
-Then there are the zero-knowledge angles, such as Polyhedra zkBridge or NebulaX, using proofs to check headers or states. That's good for cutting trust, but they usually don't mix in combined liquidity or a token that burns fees to tighten supply.
-
-InterLink aims to pull from these ideas, blending native moves, proof checks at the hub, pooled liquidity, and a token with a burn loop.
+InterLink is closest to the fourth family but intentionally combines it with liquidity unification and stake-slashing enforcement. The protocol differentiator is not merely zero-knowledge usage; it is the composition of cryptographic validity, deterministic hub logic, and incentive-compatible relayer selection.
 
 \section{System Architecture}
 \label{sec:arch}
 
-The setup breaks into four parts that flow together for the transfers.
+\subsection{High-Level Components}
+InterLink consists of four interacting subsystems:
+\begin{enumerate}[label=\textbf{C\arabic*:},leftmargin=3em]
+    \item \textbf{Source Lock Contracts.} Smart contracts on origin chains lock user assets and emit canonical events used for witness construction.
+    \item \textbf{ZK Proof Generation Layer.} Off-chain provers encode lock-event validity into halo2-compatible proofs over committed public inputs.
+    \item \textbf{Relayer Coordination Network.} Independent relayers detect eligible proofs, submit to the hub, and are rewarded or slashed based on correctness.
+    \item \textbf{Solana Hub Programs.} Anchor programs verify proofs, execute release/mint pathways, update liquidity ledgers, and apply fee-burn accounting.
+\end{enumerate}
 
-Starting on the source chain, someone signs off on moving the asset via the bridge contract. It locks up the real amount and kicks off a Rust tool to make the halo2 proof, which shares just the basics like how much, where to, and who gets it, keeping the secret bits hidden.
+\subsection{Protocol Lifecycle}
+A transfer follows an atomic lifecycle:
+\begin{enumerate}[label=\arabic*.]
+    \item User initiates transfer on source chain and assets are locked in a canonical vault.
+    \item Witness data is compiled and transformed into a proof attesting valid lock conditions.
+    \item Relayer submits proof + metadata to the Solana hub.
+    \item Hub verifies proof against registered verification keys and checks replay protection.
+    \item If valid, destination release executes and liquidity/accounting records update in one transactional path.
+    \item Fees are assessed; ILINK-denominated fee fraction is burned according to protocol policy.
+\end{enumerate}
 
-Relayers, lots of separate Rust apps using Tokio for handling multiple things at once, watch for these proofs. They race to pass it on, with the one having more staked ILINK getting the edge. If someone's proof is bad, the system cuts their stake automatically to keep everyone honest.
-
-The hub on Solana has four Anchor programs working as a team. One checks the proof. Another deals with unlocking or creating the asset on the other end. The liquidity one keeps track of depths from different chains to use them together in swaps. The token part takes fees and burns 30 percent right in the transfer rules, so it's locked in and can't be changed.
-
-Ending on the destination, the confirmed signal hits, and the native asset goes to the right spot. The whole thing is tied so the lock and release are connected through the proof, making it all or nothing.
-
-This keeps things spread out, no temp asset forms, and liquidity shared naturally.
+\subsection{Atomicity and Safety Invariants}
+InterLink enforces the following invariants:
+\begin{itemize}
+    \item \textbf{No proof, no release.} Destination execution is impossible without valid proof acceptance.
+    \item \textbf{Single-consume semantics.} Each source event commitment can be consumed exactly once.
+    \item \textbf{Deterministic fee path.} Burn and distribution logic is codified in on-chain instruction flow.
+    \item \textbf{Economic accountability.} Relayer misbehavior is cryptographically attributable and slashable.
+\end{itemize}
 
 \section{Rust Implementation}
 \label{sec:impl}
 
-Rust is a strong fit in this context for two main reasons: memory safety and performance, both of which are especially important for building relayers and proof systems.
+\subsection{Why Rust for Interoperability Infrastructure}
+Rust is selected for systems-level correctness and sustained performance under concurrency-heavy workloads. InterLink relayers and proof orchestration services are long-lived processes exposed to heterogeneous, potentially adversarial inputs. In this domain, memory safety and explicit state handling are non-negotiable.
 
-1. Memory safety (catching issues early)
+\textbf{Key technical benefits:}
+\begin{itemize}
+    \item Compile-time ownership constraints eliminate large classes of use-after-free and race-condition failures.
+    \item Async runtimes (Tokio) allow high-throughput event handling with bounded latency variance.
+    \item Rich type systems improve domain modeling for proofs, signatures, chain IDs, and replay windows.
+    \item Native performance supports cryptographic preprocessing and serialization under production load.
+\end{itemize}
 
-   - Rust’s type system and ownership model enforce strict rules about how memory is used: who owns data, how long it lives, and who can access it.
-   
-   - Problems like use-after-free, double free, buffer overflows, data races, and many forms of null/invalid pointer access are either impossible or caught at compile time.
-   
-   - For relayers and proof systems—often long-running, networked components that must be highly reliable—these memory bugs can lead to crashes, corrupted state, or security vulnerabilities. Rust helps prevent these issues before the program even runs.
-   
-   - Unlike languages with garbage collection, Rust doesn’t rely on a runtime GC to manage memory, so you get safety guarantees without unpredictable pauses.
-
-2. High performance (runs fast)
-
-   - Rust compiles to efficient native code (via LLVM), comparable in speed to C and C++.
-   
-   - There is no garbage collector, so there’s no GC pause and no overhead from runtime memory tracing.
-   
-   - Rust gives you low-level control (manual layout of data, explicit allocation strategies, careful use of `unsafe` where needed) while keeping most of the codebase in safe Rust.
-  
-   - For relayers and proof systems, which can be CPU-intensive (e.g., cryptographic checks, serialization/deserialization, networking, and proof verification), this performance is crucial.
-
-3. Why this matters for relayers
-
-   
-   Relayers are often responsible for moving messages, blocks, or proofs between chains or systems.
-  
-    They tend to be always-on services with complex network logic and concurrency.
-   
-    Memory bugs in such components can lead to:
-     
-     -service downtime or missed messages,
-     
-     - incorrect or duplicate relays,
-     
-     - potential security issues if malformed data can trigger undefined behavior.
-  
-   - Rust’s concurrency model (e.g., `Send`, `Sync`, ownership rules) helps ensure that multithreaded networking code is correct and free of data races.
-
-4. Why this matters for proofs
-
-   Proof systems (e.g., zero-knowledge proofs, cryptographic verifiers) rely on precise, deterministic, and efficient computation.
-   
-   They often involve:
-     
-     - large integer arithmetic,
-     
-     - complex algebra over finite fields/elliptic curves,
-     
-     - careful buffer and memory handling for inputs/outputs.
-   
-    A memory bug can mean:
-     
-     - incorrect verification (accepting invalid proofs or rejecting valid ones),
-     
-     - subtle security vulnerabilities,
-     
-     - performance degradation.
-   
-   - Rust’s safety and performance profile makes it a good language for implementing these low-level cryptographic primitives and higher-level proof orchestration.
-
-In short, Rust combines C-like speed with strong compile-time guarantees about memory safety, making it well-suited for building reliable, high-performance relayers and proof systems where correctness and stability are critical.
-\subsection{Relayer Node}
-It's a basic Rust app that listens and handles proofs async.
-
-\begin{lstlisting}[caption={Relayer main loop with stake check}]
-use tokio::net::TcpListener;
-use solana_sdk::{pubkey::Pubkey, signature::Keypair};
+\subsection{Relayer Execution Pattern}
+\begin{lstlisting}[caption={Relayer loop with proof intake and hub forwarding}]
+use tokio::net::{TcpListener, TcpStream};
 
 #[tokio::main]
-async fn main() {
-    let stake = fetch_stake_pda().await.expect("Stake retrieval issue");
-    let listener = TcpListener::bind("0.0.0.0:8080").await.unwrap();
+async fn main() -> anyhow::Result<()> {
+    let listener = TcpListener::bind("0.0.0.0:8080").await?;
+    let stake = fetch_stake_pda().await?;
+
     loop {
-        let (stream, _) = listener.accept().await.unwrap();
+        let (stream, peer) = listener.accept().await?;
+        tracing::info!("proof peer connected: {:?}", peer);
         tokio::spawn(handle_proof(stream, stake));
     }
 }
 
 async fn handle_proof(mut stream: TcpStream, stake: u64) {
-    let proof = read_zk_proof(&mut stream).await;
-    match forward_to_hub(&proof).await {
-        Ok(_) => {
-            // Would claim a reward here
+    let proof = match read_zk_proof(&mut stream).await {
+        Ok(p) => p,
+        Err(e) => {
+            tracing::warn!("proof decode error: {e:?}");
+            return;
         }
-        Err(_) => {
-            // Would slash stake here
-        }
+    };
+
+    match forward_to_hub(&proof, stake).await {
+        Ok(sig) => tracing::info!("hub accepted tx: {sig}"),
+        Err(err) => tracing::error!("hub reject / retry path: {err:?}"),
     }
 }
 \end{lstlisting}
 
-Each proof gets its own thread-like task to keep things moving.
+This pattern emphasizes fail-fast parsing, explicit error telemetry, and asynchronous isolation of inbound sessions.
 
-\subsection{Core Hub Programs on Solana}
-The key unlock part in Anchor ties it all.
-
-\begin{lstlisting}[caption={Unlock with proof check and fee burn}]
+\subsection{Anchor Hub Execution Path}
+\begin{lstlisting}[caption={Atomic unlock with verification and fee-burn hook}]
 use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Token, TokenAccount, Transfer};
 
@@ -262,65 +218,148 @@ declare_id!("InterLink1111111111111111111111111111111111");
 pub mod interlink {
     use super::*;
 
-    pub fn unlock_atomic(ctx: Context<Unlock>, proof_bytes: Vec<u8>, amount: u64) -> Result<()> {
+    pub fn unlock_atomic(
+        ctx: Context<Unlock>,
+        proof_bytes: Vec<u8>,
+        amount: u64,
+    ) -> Result<()> {
         let vk = VerifyingKey::from_bytes(&VK_BYTES)?;
-        require!(verify_halo2_proof(&proof_bytes, &vk, &public_inputs(amount)), ErrorCode::InvalidProof);
+        require!(
+            verify_halo2_proof(&proof_bytes, &vk, &public_inputs(amount)),
+            ErrorCode::InvalidProof
+        );
 
-        let cpi_ctx = CpiContext::new(ctx.accounts.token_program.to_account_info(), Transfer {
-            from: ctx.accounts.locked_vault.to_account_info(),
-            to: ctx.accounts.user_token.to_account_info(),
-            authority: ctx.accounts.hub_pda.to_account_info(),
-        });
+        consume_nullifier_once(&ctx.accounts.transfer_record)?;
+
+        let cpi_ctx = CpiContext::new(
+            ctx.accounts.token_program.to_account_info(),
+            Transfer {
+                from: ctx.accounts.locked_vault.to_account_info(),
+                to: ctx.accounts.user_token.to_account_info(),
+                authority: ctx.accounts.hub_pda.to_account_info(),
+            },
+        );
         token::transfer(cpi_ctx, amount)?;
 
-        apply_fee_and_burn(&ctx.accounts.fee_collector, &ctx.accounts.ilink_mint, amount / 10)?;
+        apply_fee_and_burn(
+            &ctx.accounts.fee_collector,
+            &ctx.accounts.ilink_mint,
+            amount / 10,
+        )?;
 
         Ok(())
     }
 }
 \end{lstlisting}
 
-It checks, moves, and burns in one go.
+The instruction couples proof validity, replay prevention, fund movement, and fee policy in one deterministic state transition.
 
 \section{ILINK Tokenomics Model}
 \label{sec:tokenomics}
 
-ILINK starts with a set supply of 1,000,000,000, no more added later.
+\subsection{Supply and Allocation Principles}
+ILINK is modeled with a fixed genesis supply of \num{1_000_000_000} tokens and no post-genesis inflation. Allocation design follows durability principles:
+\begin{itemize}
+    \item protocol liquidity and market-making support,
+    \item relayer incentives and quality assurance,
+    \item long-horizon ecosystem grants,
+    \item treasury and risk reserve,
+    \item team and contributor vesting with cliff constraints.
+\end{itemize}
 
-The split at start might have chunks for liquidity help, rewards for running nodes, a treasury run by DAO, team with long locks, and early community drops. Details would come from talks before launch.
+\subsection{Utility Surfaces}
+ILINK has multiple demand surfaces:
+\begin{enumerate}[label=\arabic*.]
+    \item Fee payment and optional discount pathways,
+    \item Relayer staking collateral,
+    \item Governance participation (including parameter and treasury votes),
+    \item Liquidity incentives and protocol-aligned reward streams.
+\end{enumerate}
 
-ILINK does fees with discounts, staking for relayers, voting with locks, and pool boosts. Fees in ILINK burn 30 percent automatically, which over time might tighten supply if used a lot.
+\subsection{Burn Dynamics and Long-Run Behavior}
+A protocol-defined fraction of ILINK-denominated fees is burned. Let
+\begin{equation}
+S_{t+1} = S_t - bF_t,
+\end{equation}
+where $S_t$ is circulating supply at time $t$, $F_t$ is fee volume in ILINK terms, and $b \in (0,1)$ is burn ratio. With fixed $b$, burn scales directly with utilization. Therefore, scarcity pressure is endogenous to network usage rather than imposed by discretionary governance inflation toggles.
 
-Models hint that steady activity could build scarcity, but it depends on how much it's used and set fees.
+\subsection{Incentive Compatibility}
+For relayers, expected payoff is modeled as
+\begin{equation}
+\mathbb{E}[\Pi] = R - p_{slash}L - C,
+\end{equation}
+where $R$ is reward flow, $p_{slash}$ slash probability under deviation, $L$ slash magnitude, and $C$ operational cost. Protocol health requires parameterization such that honest behavior dominates strategic misreporting across realistic adversarial priors.
 
 \section{Security Analysis}
 \label{sec:security}
 
-We think about bad actors controlling some relayers, faking proofs, or messing with starts. Fixes use halo2's strong math and stake losses.
+\subsection{Threat Model}
+InterLink assumes adversaries may control a subset of relayers, manipulate network timing, and submit malformed proofs. It does \emph{not} assume compromise of soundness in the underlying proof system.
 
-Proofs are hard to fake under known assumptions. Slashing happens in code for bad acts. Plans include code reviews and bug reports.
+\subsection{Attack Surfaces and Mitigations}
+\begin{longtable}{>{\raggedright\arraybackslash}p{0.25\textwidth} >{\raggedright\arraybackslash}p{0.33\textwidth} >{\raggedright\arraybackslash}p{0.33\textwidth}}
+\toprule
+\textbf{Attack Surface} & \textbf{Failure Mode} & \textbf{Mitigation Strategy} \\
+\midrule
+Invalid proof submission & False release attempt & On-chain verifier gating + immediate rejection \\
+Replay of valid transfer & Double release attempt & Nullifier / transfer-record single-consume checks \\
+Relayer cartel behavior & Censorship or routing bias & Open relayer entry, staking diversity, governance monitoring \\
+Liquidity imbalance & Execution delay or increased slippage & Dynamic routing, rebalancing policy, risk reserves \\
+Economic griefing & Cost-imposition attacks & Fee floors, per-epoch throttles, slash-backed accountability \\
+\bottomrule
+\end{longtable}
 
-No one spot holds assets, cutting some attack risks.
+\subsection{Operational Security Controls}
+Recommended controls include independent code audits, staged rollout with transfer caps, continuous monitoring of proof rejection rates, and formal incident response runbooks. Security in interoperability is primarily a process discipline: cryptography must be matched by observability, governance response capacity, and conservative upgrade hygiene.
 
 \section{Expected Performance Characteristics}
 \label{sec:perf}
 
-From theory and sims, transfers might finish under 30 seconds, covering proof make, forward, check, and release.
+\subsection{Latency Decomposition}
+End-to-end latency can be decomposed as:
+\begin{equation}
+T_{total} = T_{lock} + T_{prove} + T_{relay} + T_{verify} + T_{release}.
+\end{equation}
 
-Hub could handle many ops thanks to Solana's setup. Fees should be low compared to now, adjustable later.
+In optimized conditions, InterLink targets sub-minute user-visible completion while preserving finality-aware confirmation gates per source chain profile.
 
-Liquidity combining might ease slippage on big moves. Fee burns could help sustainability, varying with use.
+\subsection{Throughput Considerations}
+Hub throughput depends on:
+\begin{itemize}
+    \item proof verification compute budget,
+    \item account contention on shared liquidity records,
+    \item relayer mempool submission quality,
+    \item destination execution path complexity.
+\end{itemize}
+
+Parallelization is strongest when transfers are partitioned across disjoint account sets and chain-specific queues.
+
+\subsection{Economic Performance}
+Unified liquidity is expected to reduce route fragmentation and average slippage for medium-to-large transfer sizes. Performance gains are contingent on healthy pool depth, rebalancing cadence, and fee parameter tuning responsive to demand volatility.
 
 \section{Advantages, Limitations, and Future Directions}
 \label{sec:conclusion}
 
-InterLink mixes native shifts, proof checks, shared liquidity, and a burn token nicely. Rust helps avoid bugs, Solana runs fast.
+\subsection{Advantages}
+\begin{itemize}
+    \item Trust-minimized release control via proof validation,
+    \item Native-asset orientation reducing wrapped-asset dependency,
+    \item Explicit economic accountability for relayers,
+    \item Deterministic fee + burn policy integrated at protocol level.
+\end{itemize}
 
-Limits: Needs starters for liquidity and nodes, proofs take some compute.
+\subsection{Limitations}
+\begin{itemize}
+    \item Proof generation and verification remain computationally non-trivial,
+    \item Early-stage liquidity bootstrapping can constrain route quality,
+    \item Multi-chain integration introduces heterogeneous finality assumptions.
+\end{itemize}
 
-Next: More chains, privacy adds, smart routing, more community control.
+\subsection{Future Work}
+Priority roadmap directions include recursive proof aggregation for lower amortized verification cost, privacy-preserving transfer metadata options, dynamic cross-domain routing with predictive liquidity scoring, and progressive governance decentralization with robust emergency controls.
 
-InterLink could make chains feel connected, with proofs and incentives.
+\section{Conclusion}
+InterLink proposes an interoperability architecture that treats cryptographic validity, deterministic execution, and incentive alignment as inseparable system requirements. By combining zero-knowledge proof attestation, stake-enforced relay behavior, and unified liquidity accounting, the protocol aims to reduce both trust overhead and economic fragmentation in cross-chain value movement. The design remains ambitious and implementation-intensive, but it provides a coherent blueprint for next-generation interoperability infrastructure that is secure, scalable, and operationally accountable.
 
 \bibliographystyle{plain}
 \begin{thebibliography}{15}
@@ -337,7 +376,7 @@ InterLink could make chains feel connected, with proofs and incentives.
 
 \bibitem{solanaanchor} Solana Foundation. \href{https://www.anchor-lang.com/}{Anchor Framework Documentation v0.32}. 2026.
 
-\bibitem{halo2} Electric Coin Company. \href{https://github.com/zcash/halo2}{halo2 Proof System Repository}. 2024–2026.
+\bibitem{halo2} Electric Coin Company. \href{https://github.com/zcash/halo2}{halo2 Proof System Repository}. 2024--2026.
 
 \bibitem{thorchain} THORChain. \href{https://docs.thorchain.org/}{THORChain Protocol Documentation}. 2025.
 
