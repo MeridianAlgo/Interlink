@@ -14,30 +14,30 @@ jobs:
     name: Unified Protocol Verification
     runs-on: ubuntu-latest
     steps:
-      - name: 🛰️ Checkout Repository
+      - name: Checkout Repository
         uses: actions/checkout@v3
 
-      - name: 🦀 Setup Rust Environment (Downloaded Once)
+      - name: Setup Rust Environment
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
           components: rustfmt, clippy
 
-      - name: 💾 Intelligent Cache Layer
+      - name: Intelligent Cache Layer
         uses: Swatinem/rust-cache@v2
 
-      - name: 📜 Stage 1: Syntax & Security Audit (fmt/check)
+      - name: "Stage 1: Syntax and Security Audit"
         run: |
           cargo fmt --all -- --check
           cargo check --all-targets --all-features
 
-      - name: 🛠️ Stage 2: Core Daemon & Relayer Synthesis
+      - name: "Stage 2: Core Daemon and Relayer Synthesis"
         run: cargo build --verbose
 
-      - name: 🧬 Stage 3: Halo2 ZK Circuits Compilation
+      - name: "Stage 3: Halo2 ZK Circuits Compilation"
         run: cargo build -p circuits --verbose
 
-      - name: ⛓️ Stage 4: Multi-Chain Gateway Deployment Verification
+      - name: "Stage 4: Multi-Chain Gateway Deployment Verification"
         run: |
           echo "Building Solana Gateway Hub..."
           cd contracts/solana && cargo build --verbose
@@ -46,35 +46,35 @@ jobs:
           cargo build --target wasm32-unknown-unknown --verbose
           cd ../..
 
-      - name: 🧪 Stage 5: High-Fidelity Test Suite execution
+      - name: "Stage 5: High-Fidelity Test Suite execution"
         run: cargo test --all --verbose
 
-      - name: 📊 Generate InterLink Premium Summary
+      - name: Generate InterLink Premium Summary
         if: always()
         run: |
-          echo "## ⚡ InterLink Protocol v0.3.0 CI Intelligence" >> $GITHUB_STEP_SUMMARY
-          echo "### � Pipeline Flow Matrix" >> $GITHUB_STEP_SUMMARY
+          echo "## InterLink Protocol v0.3.0 CI Intelligence" >> $GITHUB_STEP_SUMMARY
+          echo "### Pipeline Flow Matrix" >> $GITHUB_STEP_SUMMARY
           echo '```mermaid' >> $GITHUB_STEP_SUMMARY
           echo 'graph LR' >> $GITHUB_STEP_SUMMARY
-          echo '    Setup[🦀 Environment Setup] --> Audit[📜 Lint & Audit]' >> $GITHUB_STEP_SUMMARY
-          echo '    Audit --> Core[🛠️ Daemon & Relayer]' >> $GITHUB_STEP_SUMMARY
-          echo '    Audit --> ZK[🧬 ZK SNARK Circuits]' >> $GITHUB_STEP_SUMMARY
-          echo '    Audit --> Contracts[⛓️ Cross-Chain Gateways]' >> $GITHUB_STEP_SUMMARY
-          echo '    Core --> Verify[🛡️ Unified Verification]' >> $GITHUB_STEP_SUMMARY
+          echo '    Setup[Environment Setup] --> Audit[Lint and Audit]' >> $GITHUB_STEP_SUMMARY
+          echo '    Audit --> Core[Daemon and Relayer]' >> $GITHUB_STEP_SUMMARY
+          echo '    Audit --> ZK[ZK SNARK Circuits]' >> $GITHUB_STEP_SUMMARY
+          echo '    Audit --> Contracts[Cross-Chain Gateways]' >> $GITHUB_STEP_SUMMARY
+          echo '    Core --> Verify[Unified Verification]' >> $GITHUB_STEP_SUMMARY
           echo '    ZK --> Verify' >> $GITHUB_STEP_SUMMARY
           echo '    Contracts --> Verify' >> $GITHUB_STEP_SUMMARY
-          echo '    Verify --> Final[🚀 Ready for Mainnet]' >> $GITHUB_STEP_SUMMARY
+          echo '    Verify --> Final[Ready for Mainnet]' >> $GITHUB_STEP_SUMMARY
           echo '    style Setup fill:#003366,color:#fff,stroke:#fff,stroke-width:2px' >> $GITHUB_STEP_SUMMARY
           echo '    style Final fill:#006600,color:#fff,stroke:#fff,stroke-width:2px' >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
-          echo "#### 📉 Performance Metrics" >> $GITHUB_STEP_SUMMARY
+          echo "#### Performance Metrics" >> $GITHUB_STEP_SUMMARY
           echo "| Metric | Value | Status |" >> $GITHUB_STEP_SUMMARY
           echo "| :--- | :--- | :--- |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Rust Download** | 1x (Optimized) | 🟢 Cached |" >> $GITHUB_STEP_SUMMARY
-          echo "| **ZK Constraints** | Halo2 v0.3.0 | 🟢 Verified |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Solana Gateway** | Anchor v0.29.0 | 🟢 Verified |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Cosmos Gateway** | Wasm32 | 🟢 Verified |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Relayer Runtime** | Tokio 1.0 | 🟢 Optimized |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Rust Download** | 1x (Optimized) | success |" >> $GITHUB_STEP_SUMMARY
+          echo "| **ZK Constraints** | Halo2 v0.3.0 | success |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Solana Gateway** | Anchor v0.29.0 | success |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Cosmos Gateway** | Wasm32 | success |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Relayer Runtime** | Tokio 1.0 | success |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "> [!TIP]" >> $GITHUB_STEP_SUMMARY
           echo "> The environment was automatically shared across stages to prevent redundant toolchain downloads." >> $GITHUB_STEP_SUMMARY
