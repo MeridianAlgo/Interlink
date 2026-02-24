@@ -21,7 +21,7 @@
 \usepackage{float}
 \usepackage{parskip}
 \usepackage{tikz}
-\usetikzlibrary{shapes.geometric, arrows}
+\usetikzlibrary{shapes.geometric, arrows, positioning}
 
 \hypersetup{
     colorlinks=true,
@@ -78,10 +78,10 @@
     \vspace{0.5in}
     \large The Missing Link: A Zero-Knowledge Framework for Unified Liquidity\\
     \vspace{0.2in}
-    \textit{Trustless. Scalable. Human.}\\
+    \textit{Trustless. Scalable. Universal.}\\
     \vspace{1in}
     \textbf{MeridianAlgo Research Lab}\\
-    \small Version 6.1 --- Technical Compendium --- February 2026
+    \small Version 7.0 --- Technical Compendium --- February 2026
 }
 \author{}
 \date{}
@@ -101,11 +101,11 @@
 \addcontentsline{toc}{section}{Abstract}
 \begin{abstract}
 \section*{Abstract}
-Blockchains were promised as a revolution in trustless value transfer. Yet, as the ecosystem has exploded into hundreds of Layer-1 and Layer-2 networks, we've created a fractured landscape. Capital is trapped in silos, and moving assets between chains often feels like navigating a minefield. The industry's reliance on "trusted" bridges—often just small groups of people holding keys—has resulted in billions of dollars lost to hacks. We believe users deserve better. They shouldn't have to trust a middleman to move their own money.
+The blockchain industry stands at a crossroads. While the proliferation of Layer-1 and Layer-2 networks has driven innovation, it has also fractured the global liquidity pool into isolated silos. Today, a user's capital on Ethereum is effectively useless on Solana, and vice versa, without traversing complex, high-latency, and often insecure bridges. The prevailing "multi-chain" reality is marred by a reliance on centralized intermediaries—federated multisigs that have become the single largest point of failure in the crypto-economy, accounting for over \$2.5 billion in losses since 2021.
 
-This paper introduces \textbf{InterLink (ILINK)}, a protocol designed to heal this fragmentation using \textbf{recursive zero-knowledge proofs (zk-SNARKs)}. Instead of trusting a federation, InterLink allows blockchains to cryptographically verify each other. By combining the mathematical certainty of the \textbf{halo2} proving system with the raw speed of a \textbf{Solana Execution Hub}, we are building a system where state transitions are atomic and trustless.
+\textbf{InterLink (ILINK)} proposes a paradigm shift: from trust-based interoperability to \textbf{math-based verification}. By leveraging recursive \textbf{zk-SNARKs} (specifically the Halo2 proving system), InterLink allows blockchains to cryptographically verify each other's state without human intervention. We introduce a novel "Hub-and-Spoke" architecture where a high-performance Solana Execution Hub acts as the global clearinghouse for cross-chain intent, settling transactions atomically across heterogeneous environments.
 
-We don't just view this as a bridge; we see it as the "USB port" for blockchains—a universal standard that lets developers build applications that live everywhere at once. This document outlines our architecture, the economic incentives that keep it secure, and the cryptographic engineering that makes it possible.
+This paper details the cryptographic engineering, economic game theory, and governance structures that underpin InterLink. We present a system that not only solves the security crisis of bridging but also unlocks a new class of "Omnichain" applications—enabling developers to build software that lives everywhere at once. InterLink is not just a bridge; it is the TCP/IP layer for the decentralized web.
 
 \vspace{0.5in}
 \textbf{Keywords:} Zero-Knowledge Proofs, Recursive SNARKs, Atomic Composability, Rust, Solana Anchor, Unified Liquidity, Tokenomics, Game Theory, Interoperability, DeFi.
@@ -116,210 +116,240 @@ We don't just view this as a bridge; we see it as the "USB port" for blockchains
 \section{Introduction}
 \label{sec:intro}
 
-We are living through a fundamental shift in how the world handles value. We are moving from opaque, centralized databases to transparent, decentralized ledgers. But let's be honest: the user experience of crypto today is often frustrating. You have assets on Ethereum, you want to play a game on Solana, and you want to vote in a DAO on Cosmos. Today, connecting these dots is slow, expensive, and risky.
+We are witnessing the Cambrian explosion of decentralized networks. From the Turing-complete flexibility of Ethereum to the parallel processing power of Solana and the modular sovereignty of Cosmos, developers have more choices than ever. However, this diversity comes at a steep cost: \textbf{Fragmentation}.
 
-The success of the blockchain industry has paradoxically created its biggest problem: we have too many disconnected islands. We call this the "fragmentation crisis."
+\subsection{The Digital Archipelago}
+Imagine a world where the internet worked like blockchains do today. An email sent from a Google server would be unreadable by a Microsoft server. To send a message, you would need to pay a third-party courier to print it out, drive it to the other data center, and type it in manually. This is the state of cross-chain interoperability.
 
-\subsection{The Problem: Digital Islands}
-Imagine if the email you sent from Gmail couldn't be read by someone using Outlook. That is the current state of blockchains.
 \begin{itemize}
-    \item \textbf{Siloed Liquidity:} Capital is inefficient. A DEX on Arbitrum might have great prices for ETH, while a DEX on Solana has great prices for SOL, but they can't talk to each other to balance the market.
-    \item \textbf{The Bridge Hack Epidemic:} To fix this, developers built bridges. But most bridges are just "multisigs"—a wallet controlled by 5 or 10 people. If those people are hacked (or dishonest), the money is gone. In 2022 alone, over \$2 billion was stolen from bridges. This is not the trustless future we signed up for.
+    \item \textbf{Capital Inefficiency:} Liquidity is fractured. A lending protocol on Arbitrum cannot access collateral deposited on Optimism. This leads to high slippage and poor capital utilization.
+    \item \textbf{User Friction:} Users are forced to manage multiple wallets, gas tokens, and RPC endpoints. The cognitive load is a barrier to mass adoption.
+    \item \textbf{Systemic Risk:} To connect these chains, the industry built "bridges." But most bridges are merely multisig wallets controlled by a handful of signers. If these keys are compromised, the bridge collapses.
 \end{itemize}
 
-\subsection{Our Solution: Math, Not Trust}
-\textbf{InterLink} takes a different approach. We replace human trust with mathematical proof.
+\subsection{The InterLink Vision}
+We believe the future is not "multi-chain" (many disconnected chains) but "cross-chain native" (one unified network). \textbf{InterLink} is the infrastructure that makes this possible.
 
-By leveraging \textbf{Zero-Knowledge Proofs (zk-SNARKs)}, specifically the \textbf{Halo2} system, InterLink allows the Solana blockchain to verify the state of Ethereum (and other chains) directly. We don't ask users to trust a third party; we ask them to trust the code and the cryptography.
+We replace the "trusted courier" with a \textbf{Zero-Knowledge Proof}. Instead of trusting a federation of signers, users trust a cryptographic proof that certifies a transaction occurred. If the math checks out, the transaction is valid. No human intervention required.
 
-Our goal is simple: to make the boundaries between blockchains invisible. A user should be able to click "Swap" and have their transaction route through three different chains in seconds, without ever needing to know how it happened.
+\section{Market Analysis: The Case for ZK}
+\label{sec:market}
+
+To understand why InterLink is necessary, we must analyze the failures of the current landscape.
+
+\subsection{The History of Bridge Failures}
+The "Bridge Trilemma" suggests you can only have two of three: Trustlessness, Generalizability, and Extensibility. Most incumbents sacrificed Trustlessness for speed.
+
+\begin{itemize}
+    \item \textbf{The Poly Network Hack (\$610M):} A privileged access management issue allowed a hacker to instruct the bridge to move funds.
+    \item \textbf{The Ronin Bridge Hack (\$625M):} Five out of nine validator keys were compromised via social engineering. The bridge logic was sound, but the human element failed.
+    \item \textbf{The Nomad Hack (\$190M):} A smart contract bug allowed users to spoof messages. Because the bridge relied on an "optimistic" window rather than immediate verification, the funds were drained before anyone could stop it.
+\end{itemize}
+
+These events prove that \textbf{human-operated bridges are unsustainable}. As the value secured by blockchains grows into the trillions, the incentive to attack these centralized points of failure becomes infinite.
+
+\subsection{The ZK Advantage}
+Zero-Knowledge technology offers the only viable path forward.
+\begin{enumerate}
+    \item \textbf{Trust Minimization:} You don't trust the Relayer; you verify their proof. A malicious Relayer cannot forge a valid ZK proof of an invalid state transition.
+    \item \textbf{Capital Efficiency:} Unlike "Optimistic" bridges that require a 7-day challenge period (locking up capital), ZK proofs offer finality as soon as they are verified on-chain (minutes).
+    \item \textbf{Cost Scaling:} With recursive proofs, the cost of verifying a batch of 1,000 transactions is roughly the same as verifying one. This unlocks micro-transactions previously impossible on mainnet Ethereum.
+\end{enumerate}
 
 \section{Core Definitions}
 \label{sec:definitions}
 
-To keep things clear, here is a plain-English guide to the key players and concepts in our system.
+To ensure clarity, we define the key actors and components of the InterLink ecosystem.
 
 \begin{description}
-    \item[The Hub (Solana):] Think of this as the "Central Station." It's the high-speed core where all messages are sorted, verified, and routed. We use Solana because it's fast enough to handle global traffic.
-    \item[The Spoke (External Chain):] These are the destinations—Ethereum, Arbitrum, Cosmos, etc. They connect to the Hub to send and receive value.
-    \item[Gateway Contract:] The "Embassy" on each Spoke chain. It's a smart contract that holds funds safely and listens for instructions from the Hub.
-    \item[Relayer:] The "Courier." These are independent computers that watch the Spokes, generate the mathematical proofs of what happened, and deliver them to the Hub. They are the workhorses of the network.
-    \item[zk-SNARK:] A "Magic Receipt." It proves that a transaction happened and is valid, without revealing any private details. It's impossible to forge.
-    \item[Recursive Proof:] A "Stack of Receipts." Instead of checking 100 receipts one by one, we staple them together into one master receipt. Checking the master receipt proves that all 100 small receipts are valid. This saves massive amounts of computing power.
-    \item[Atomic Composability:] "All or Nothing." If you try to swap tokens across chains, either the whole thing happens perfectly, or it all reverts as if nothing happened. You never get stuck halfway with lost funds.
+    \item[The Hub (Solana):] The central coordination layer. We chose Solana for its high throughput (65k TPS) and low latency (400ms block times), making it the ideal "global order book" for cross-chain state.
+    \item[The Spoke (External Chain):] Any connected blockchain (Ethereum, Arbitrum, Sui, etc.). Spokes are passive; they only react to authenticated messages from the Hub.
+    \item[Gateway Contract:] The smart contract deployed on every Spoke. It acts as the "Embassy," holding assets in custody and validating incoming proofs.
+    \item[Relayer:] An off-chain node that observes Spoke events, generates ZK proofs, and submits them to the Hub. Relayers are permissionless but must stake ILINK tokens.
+    \item[zk-SNARK:] \textit{Zero-Knowledge Succinct Non-Interactive Argument of Knowledge}. A cryptographic receipt that proves a computation was performed correctly without revealing the underlying data.
+    \item[Recursive Proof:] A technique where a ZK proof verifies another ZK proof. This allows us to "roll up" entire blocks of transactions into a single, tiny proof for cheap verification.
+    \item[Atomic Composability:] The guarantee that a cross-chain transaction either fully succeeds or fully reverts. Funds are never left in limbo.
 \end{description}
 
-\section{Preliminaries}
-\label{sec:prelim}
-
-Before we dive into the architecture, let's briefly touch on the tools we're using. We've chosen our technology stack not because it's trendy, but because it's robust.
-
-\subsection{Why Zero-Knowledge?}
-The "Ali Baba Cave" analogy is a classic way to explain this. Imagine you want to prove you know a secret password to open a magic door in a cave, but you don't want to say the password out loud.
-\begin{enumerate}
-    \item You go into the cave and pick a path.
-    \item I stand outside and ask you to come out a specific path.
-    \item If you know the password, you can open the connecting door and always appear where I ask.
-    \item If we do this 100 times, and you succeed every time, I can be 100\% sure you know the password—even though I never heard it.
-\end{enumerate}
-In our case, the "password" is the cryptographic proof that a transaction is valid. The Solana blockchain is the verifier standing outside the cave.
-
-\subsection{The Tech Stack}
-\begin{itemize}
-    \item \textbf{Halo2:} A cutting-edge proving system that lets us build "recursive" proofs. This is crucial for scaling. It allows us to compress thousands of transactions into a tiny proof that fits on a blockchain.
-    \item \textbf{Rust:} We write everything in Rust. It's the industry standard for systems that cannot crash. It enforces memory safety, preventing entire classes of bugs that plague other languages.
-    \item \textbf{Solana Sealevel:} Solana's runtime allows us to process transactions in parallel. While other chains process one thing at a time, Solana processes thousands. This is essential for a global liquidity hub.
-\end{itemize}
-
-\section{System Architecture}
+\section{Technical Architecture}
 \label{sec:arch}
 
-\subsection{The Hub-and-Spoke Model}
-We designed InterLink like a global airline network. Instead of flying direct from every city to every other city (which is inefficient), you route flights through a major hub.
-\begin{itemize}
-    \item \textbf{Hub:} Solana.
-    \item \textbf{Spokes:} Ethereum, Optimism, Arbitrum, etc.
-\end{itemize}
-This means if we want to add a new chain, we just connect it to Solana, and it instantly connects to everyone else.
+InterLink's architecture resembles a "Hub-and-Spoke" network topology, similar to the global air travel system.
 
-\subsection{How It Works: A Message's Journey}
-Let's follow a message as it travels through InterLink.
+\subsection{The Hub: Solana Execution Layer}
+Why Solana? In a cross-chain system, the speed of the slowest link determines the user experience. By using Solana as the Hub, we ensure that the coordination layer adds negligible latency.
+\begin{itemize}
+    \item \textbf{State Registry:} The Hub maintains the "Global State Root"—a Merkle root representing the status of all connected chains.
+    \item \textbf{Verification Engine:} A set of on-chain programs (smart contracts) that verify Groth16 and PLONK proofs.
+    \item \textbf{Messaging Queue:} An ordered stream of outbound messages destined for Spokes.
+\end{itemize}
+
+\subsection{The Circuit Stack: Halo2}
+We utilize the \textbf{Halo2} proving system, developed by the Zcash team. Halo2 is particularly powerful because it supports:
+\begin{itemize}
+    \item \textbf{Custom Gates:} We can write specialized logic (like Keccak-256 hashing) directly into the circuit for maximum efficiency.
+    \item \textbf{Lookup Tables:} Essential for bitwise operations common in EVM compatibility.
+    \item \textbf{No Trusted Setup (IPA):} For the inner layers of recursion, we use the Inner Product Argument (IPA), which requires no trusted setup ceremony, eliminating a major security risk.
+\end{itemize}
+
+\subsection{The Life of a Cross-Chain Message}
+Let's trace a transaction from Ethereum to Arbitrum, routed via InterLink.
 
 \begin{enumerate}
-    \item \textbf{The Trigger:} You initiate a transaction on Ethereum (e.g., "Send 10 ETH to Solana"). The Ethereum Gateway locks your ETH.
-    \item \textbf{The Wait:} We wait for Ethereum to "finalize" the block (about 12 minutes). This ensures your transaction can't be reversed by a chain reorganization.
-    \item \textbf{The Proof:} A Relayer sees your transaction. It builds a zk-SNARK proof that says, "I certify that 10 ETH were locked in Block \#15000."
-    \item \textbf{The Handover:} The Relayer submits this proof to the Solana Hub.
-    \item \textbf{The Verification:} The Solana smart contract checks the math. If the proof is valid, it mints 10 wrapped-ETH to your Solana address.
-    \item \textbf{The Result:} You now have 10 wETH on Solana, fully backed by the locked ETH on Ethereum.
+    \item \textbf{Initiation:} User deposits ETH into the Ethereum Gateway.
+    \item \textbf{Finality Wait:} The Relayer waits for Ethereum finality (approx. 12 mins).
+    \item \textbf{Proof Generation:} The Relayer generates a ZK proof attesting that "The Ethereum Consensus Layer has signed Block $N$, which contains transaction $T$."
+    \item \textbf{Submission:} This proof is submitted to the Solana Hub.
+    \item \textbf{Verification \& Routing:} The Hub verifies the proof. It sees the destination is Arbitrum. It generates a new "Outbound Message" event.
+    \item \textbf{Delivery:} A Relayer (potentially a different one) sees the Solana event, proves it, and submits it to the Arbitrum Gateway.
+    \item \textbf{Execution:} The Arbitrum Gateway releases the funds to the user.
 \end{enumerate}
 
-\subsection{Consensus Verification}
-Most bridges just trust that a transaction happened. InterLink verifies the \textit{entire consensus} of the source chain. Our circuits actually check the digital signatures of the Ethereum validators. We are effectively running a "Light Client" inside a ZK circuit. This inherits the full security of Ethereum itself.
-
-\section{Engineering \& Implementation}
+\section{Engineering \& Implementation Details}
 \label{sec:impl}
 
-We believe in "Safety First." We use Rust everywhere because it prevents us from making silly mistakes that lead to hacks.
+Our engineering philosophy prioritizes safety and performance. The entire stack is written in \textbf{Rust}.
 
-\subsection{The Circuit}
-Our ZK circuits are built using the \textbf{halo2-ce} crate. We define "Chips"—modular pieces of logic like "Merkle Tree Verification" or "Signature Check." By combining these chips, we build a complete circuit that proves a transaction's validity.
+\subsection{Why Rust?}
+Rust provides memory safety without garbage collection. In the context of cryptography and high-stakes financial software, this is non-negotiable. Rust's type system prevents entire classes of bugs (like null pointer dereferences and buffer overflows) that have led to massive hacks in C++ based systems.
 
-\begin{lstlisting}[language=Rust, caption={Circuit Configuration Example}]
-// A simplified look at how we define a gate in our circuit
-meta.create_gate("poseidon_hash", |meta| {
-    let a = meta.query_advice(advice[0], Rotation::cur());
-    let b = meta.query_advice(advice[1], Rotation::cur());
-    let out = meta.query_advice(advice[2], Rotation::cur());
+\subsection{The Relayer Implementation}
+The Relayer is a complex piece of software designed for 24/7 uptime.
+\begin{lstlisting}[language=Rust, caption={Relayer Event Loop}]
+async fn run_relayer_loop() -> Result<()> {
+    let mut stream = eth_client.subscribe_logs(FILTER).await?;
     
-    // Enforce that 'out' is truly the hash of 'a' and 'b'
-    vec![s * (out - hash(a, b))]
+    while let Some(log) = stream.next().await {
+        // 1. Capture the event
+        let event = parse_event(log)?;
+        
+        // 2. Fetch the Merkle Witness (Parallelized)
+        let witness = tokio::spawn(fetch_witness(event.block_hash));
+        
+        // 3. Generate the Proof (CPU Intensive)
+        let proof = rayon::spawn(move || prover.prove(witness));
+        
+        // 4. Submit to Solana
+        solana_client.send_transaction(proof).await?;
+    }
+    Ok(())
+}
+\end{lstlisting}
+
+\subsection{Optimizing Solana Verification}
+Verifying a ZK proof on-chain is computationally expensive. To stay within Solana's compute budget (CUs), we employ several tricks:
+\begin{itemize}
+    \item \textbf{Precompiled Instructions:} We utilize Solana's native \texttt{ed25519} and \texttt{secp256k1} programs where possible.
+    \item \textbf{Alt-Bn128 Compression:} We use a Groth16 wrapper for the final proof layer, reducing the on-chain verification to just 4 pairing checks, which is cheap enough for a single transaction.
+\end{itemize}
+
+\section{Tokenomics: The ILINK Engine}
+\label{sec:tokenomics}
+
+The ILINK token is designed to align incentives between users, relayers, and the protocol itself. It is not just a governance token; it is a utility token essential for network security.
+
+\subsection{The Relayer Stake (The Stick)}
+To become a Relayer, one must stake a significant amount of ILINK (e.g., \$50,000 worth). This stake acts as a bond.
+\begin{itemize}
+    \item If a Relayer submits a valid proof, they earn fees.
+    \item If a Relayer submits an invalid proof (which the smart contract will reject), they lose a portion of their stake (Slashing).
+    \item \textbf{Note:} Because of ZK, a Relayer \textit{cannot} successfully steal funds. The worst they can do is spam the network with bad proofs. Slashing makes this economically irrational.
+\end{itemize}
+
+\subsection{The Buy-Back-and-Burn (The Carrot)}
+We implement a deflationary flywheel to accrue value to the token.
+\begin{enumerate}
+    \item \textbf{Fee Collection:} Users pay transaction fees in the source chain's native token (ETH, SOL, MATIC).
+    \item \textbf{Protocol Swap:} The protocol aggregates these fees and buys ILINK on the open market.
+    \item \textbf{Distribution:}
+        \begin{itemize}
+            \item \textbf{40\%} is burned immediately (removed from supply).
+            \item \textbf{40\%} is paid to the Relayer who did the work.
+            \item \textbf{20\%} goes to the DAO Treasury for future development.
+        \end{itemize}
+\end{enumerate}
+
+This creates a direct link between usage and scarcity: \textbf{More usage $\rightarrow$ More buying pressure $\rightarrow$ Less supply}.
+
+\section{Governance: The InterLink DAO}
+\label{sec:governance}
+
+InterLink is a public good, and its governance must be decentralized. The InterLink DAO holds the keys to the protocol's parameters.
+
+\subsection{What does the DAO control?}
+\begin{itemize}
+    \item \textbf{Supported Chains:} Adding a new Spoke (e.g., connecting a new L2) requires a governance vote to deploy the Gateway contracts.
+    \item \textbf{Fee Parameters:} Adjusting the base fee and the burn rate.
+    \item \textbf{Emergency Pause:} In the event of a catastrophic bug, the DAO (via a security council) can pause the contracts.
+\end{itemize}
+
+\subsection{Voting Mechanics}
+We utilize \textbf{Quadratic Voting} to prevent "whale" dominance. The cost of a vote is the square of the number of votes cast. This ensures that smaller holders have a voice and that passionate minorities can influence decisions that matter to them.
+
+\section{Developer Experience (DevEx)}
+\label{sec:devex}
+
+A protocol is only as good as the apps built on top of it. We have obsessed over making InterLink easy to use.
+
+\subsection{The InterLink SDK}
+Developers don't need to know Rust or ZK math. They just install our npm package.
+
+\begin{lstlisting}[language=JavaScript, caption={Sending a Cross-Chain Message}]
+import { InterLink } from '@interlink/sdk';
+
+const client = new InterLink({ signer: myWallet });
+
+// Send a message from Ethereum to Solana
+await client.send({
+    fromChain: 'ethereum',
+    toChain: 'solana',
+    token: 'USDC',
+    amount: '100.00',
+    recipient: 'Solana_Wallet_Address',
+    payload: { action: 'BUY_NFT', id: 420 } // Optional arbitrary data!
 });
 \end{lstlisting}
 
-\subsection{The Relayer Node}
-The Relayer is a piece of software that anyone can run. It's built on \textbf{Tokio} for high-performance asynchronous tasks. It listens to blockchains, crunches the numbers to generate proofs (using \textbf{Rayon} for parallelism), and submits them.
-
-\subsection{Solana Optimization}
-Solana is fast, but we still optimize every instruction. We use \textbf{Address Lookup Tables (LUTs)} to bundle complex transactions and strictly manage "Compute Units" to ensure our transactions never get dropped, even during network congestion.
-
-\section{Tokenomics: The ILINK Token}
-\label{sec:tokenomics}
-
-The ILINK token isn't just a speculative asset; it's the engine that secures the network.
-
-\subsection{Incentivizing Good Behavior}
-Relayers must stake ILINK to participate. If they try to cheat or spam the network, their stake is "slashed" (taken away). This creates a powerful economic reason to be honest.
-
-\subsection{The Deflationary Loop}
-We've designed the token economy to reward long-term holders.
-\begin{enumerate}
-    \item Users pay fees in the native token of the source chain (like ETH).
-    \item The protocol automatically swaps that ETH for ILINK on the open market.
-    \item **40\% of that ILINK is burned forever.**
-    \item The rest goes to the Relayers as payment.
-\end{enumerate}
-This means that as more people use InterLink, more ILINK is bought and burned, reducing the supply over time.
-
-\section{Security Analysis}
-\label{sec:security}
-
-Security is not a feature; it's the foundation. We assume everyone is trying to attack us, and we build accordingly.
-
-\subsection{Game Theory}
-It's simple: Cheating costs more than you can steal. Because our proofs are mathematically verified, you can't just "lie" about a transaction. You would have to break the cryptography itself, which is computationally impossible with current technology.
-
-\subsection{Defense in Depth}
+\subsection{Use Cases}
 \begin{itemize}
-    \item \textbf{Long-Range Attacks:} We use "Checkpointing." Once the Solana Hub finalizes a block history, it never looks back. Even if Ethereum was rewritten from a year ago, InterLink wouldn't be fooled.
-    \item \textbf{Censorship Resistance:} Our relayer network is open. If the big relayers refuse to process your transaction, you can spin up your own relayer and process it yourself. Permissionless access is non-negotiable.
-    \item \textbf{Audits:} We don't grade our own homework. We work with top-tier firms like \textit{Veridise} and use formal verification to prove our code does exactly what it says.
+    \item \textbf{Cross-Chain NFT Mints:} A project can launch an NFT collection on Ethereum but allow users to pay with SOL or MATIC.
+    \item \textbf{Unified Yield Aggregators:} A DeFi protocol can automatically move user funds to whichever chain offers the highest APY, transparently in the background.
+    \item \textbf{Global Identity:} A user can update their profile picture on one chain and have it propagate to all others.
 \end{itemize}
 
-\section{Practical Workflows and Examples}
-\label{sec:workflows}
+\section{Roadmap}
+\label{sec:roadmap}
 
-Let's look at how people will actually use InterLink in the real world.
+We are executing on a multi-year vision.
 
-\subsection{Scenario 1: The One-Click Swap}
-Alice has ETH, but she wants to buy a meme coin on Solana.
-\begin{enumerate}
-    \item Alice goes to a website and clicks "Swap."
-    \item Behind the scenes, InterLink locks her ETH.
-    \item A Relayer proves this lock to Solana.
-    \item The Solana Hub receives the proof, mints wETH, and immediately uses a DEX aggregator (like Jupiter) to swap that wETH for the meme coin.
-    \item The meme coin is deposited into Alice's Solana wallet.
-    \item \textbf{User Experience:} Alice just waited a few minutes. She didn't have to touch a bridge or manage gas on two chains.
-\end{enumerate}
-
-\subsection{Scenario 2: Cross-Chain Governance}
-A DAO lives on Cosmos, but it owns a treasury on Arbitrum.
-\begin{enumerate}
-    \item The DAO votes to move funds. The vote passes.
-    \item InterLink relays the result of that vote from Cosmos to Arbitrum.
-    \item The Arbitrum contract verifies the proof and executes the transfer.
-    \item The DAO controls assets everywhere from one home base.
-\end{enumerate}
-
-\subsection{What if it fails?}
-If a swap fails (maybe the price moved too much), we have an automatic "Refund" button. The system proves the failure on Solana and sends a message back to Ethereum to unlock Alice's original ETH. Her funds are never lost in limbo.
-
-\section{Comparison with Others}
-\label{sec:compare}
-
-\begin{table}[H]
-\centering
-\small
-\begin{tabular}{@{}lcccc@{}}
-\toprule
-\textbf{Protocol} & \textbf{Trust Model} & \textbf{Security} & \textbf{Cost} & \textbf{Vibe} \\ \midrule
-\textbf{InterLink} & \textbf{Math (ZK)} & \textbf{High} & \textbf{Low} & \textbf{Trustless} \\
-LayerZero & Oracles/Relayers & Variable & Low & Flexible \\
-Axelar & PoS Validators & Medium & Medium & Chain-based \\
-Wormhole & 19 Guardians & Trusted & Low & Established \\
-\bottomrule
-\end{tabular}
-\caption{The Landscape}
-\label{tab:comparison_detailed}
-\end{table}
-
-Competitors like Wormhole or LayerZero rely on trusted parties or complex validator sets. While they are great protocols, we believe ZK is the endgame. You shouldn't have to trust \textit{anyone}—just the math.
+\begin{itemize}
+    \item \textbf{Phase 1: Foundation (Q2 2026)}
+        \begin{itemize}
+            \item Mainnet launch connecting Ethereum and Solana.
+            \item Token Generation Event (TGE).
+            \item Open-source release of the Relayer node.
+        \end{itemize}
+    \item \textbf{Phase 2: Expansion (Q4 2026)}
+        \begin{itemize}
+            \item Integration with Arbitrum, Optimism, and Base.
+            \item Launch of the "Liquidity Layer" (internal AMM on the Hub).
+            \item Developer Grants Program.
+        \end{itemize}
+    \item \textbf{Phase 3: Ubiquity (2027)}
+        \begin{itemize}
+            \item Cosmos IBC integration.
+            \item Privacy-preserving transfers (using Aztec integration).
+            \item Hardware acceleration for Relayers (FPGA partnerships).
+        \end{itemize}
+\end{itemize}
 
 \section{Conclusion}
 
-InterLink is the result of years of research, failures, and breakthroughs. We are moving the industry from the "Wild West" of multisig bridges to the era of \textbf{Verifiable Interoperability}.
+We built InterLink because we were tired of being afraid. Afraid that our bridge would get hacked. Afraid that our assets were stuck. Afraid that the decentralized future we were promised was turning into a fragmented mess.
 
-We aren't just building a bridge; we're building the infrastructure for the next generation of the internet. A future where "chains" are just implementation details, and users simply interact with applications.
+InterLink is our answer. It is a return to first principles: \textbf{Don't Trust, Verify.}
 
-This paper is an invitation. We invite developers, researchers, and skeptics to review our code, break our testnets, and help us build a unified digital economy. The fragmentation ends now.
-
-\subsection{Future Work}
-We're just getting started. Next up:
-\begin{itemize}
-    \item \textbf{Privacy:} Bridging assets without revealing who you are (using Aztec-style proofs).
-    \item \textbf{Speed:} Custom hardware (FPGAs) to generate proofs in milliseconds, not seconds.
-    \item \textbf{Fractal Scaling:} Allowing new AppChains to launch directly on top of InterLink.
-\end{itemize}
+By combining the cryptographic certainty of zero-knowledge proofs with the economic security of a robust token model, we are building a bridge that cannot fall. We invite you to join us in building the unified internet of value.
 
 \newpage
 
@@ -342,6 +372,9 @@ Kate, A., Zaverucha, G.M., Goldberg, I. \textit{Constant-Size Commitments to Pol
 
 \bibitem{wormhole}
 Wormhole Team. \textit{Wormhole: Generic Message Passing}. 2020.
+
+\bibitem{nomad}
+Paradigm Research. \textit{The Nomad Bridge Hack: A Post-Mortem}. 2022.
 
 \end{thebibliography}
 
