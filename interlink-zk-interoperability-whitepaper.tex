@@ -97,6 +97,7 @@
 \tableofcontents
 \phantomsection
 \addcontentsline{toc}{section}{Abstract}
+\clearpage
 \begin{abstract}
 \section*{Abstract}
  Blockchain protocols have enabled trust-minimized value transfer and verifiable computation. Yet the rapid proliferation of Layer-1 (L1) and Layer-2 (L2) networks has produced a fragmented landscape in which users, liquidity, and application state remain isolated across heterogeneous execution environments. In practice, the popular ``multi-chain'' thesis has often devolved into a ``siloed-chain'' reality: liquidity is fractured, cross-chain workflows are high-latency, and composability is difficult to preserve. Many deployed interoperability systems rely on multisig federations or optimistic verification, introducing centralization risk and/or systemic delay. Historical bridge failures further demonstrate that trusted intermediaries frequently become the weakest link in the crypto-economic stack.
@@ -1811,26 +1812,6 @@ contract CrossChainApp {
 
 These examples demonstrate how InterLink enables previously impossible cross-chain operations, from simple token transfers to complex multi-chain DeFi strategies, all with strong guarantees of atomicity, security, and efficiency.
 
-\section{Comparison with State of the Art}
-\label{sec:compare}
-
-InterLink competes in a crowded market. However, its architecture offers distinct advantages over incumbents.
-
-\begin{table}[H]
-\centering
-\small
-\begin{tabular}{@{}lcccccc@{}}
-\toprule
-\textbf{Protocol} & \textbf{Trust Model} & \textbf{Latency} & \textbf{Gas Cost} & \textbf{Finality} & \textbf{Setup} & \textbf{Extensibility} \\ \midrule
-\textbf{InterLink} & \textbf{ZK-Light Client} & \textbf{Medium} & \textbf{Low (O(1))} & \textbf{Src Finality} & \textbf{Trustless} & \textbf{High} \\
-LayerZero v2 & DVNs (Multi-sig) & Low & Low & Instant & Permissioned & High \\
-Axelar & PoS Validators & Medium & Medium & 1-2 mins & Trusted & Medium \\
-Wormhole & Guardian Set (19/19) & Low & Low & Instant & Trusted & High \\
-Cosmos IBC & Light Client & Low & Low & Instant & Trustless & Low \\ \bottomrule
-\end{tabular}
-\caption{Comprehensive Competitive Analysis}
-\label{tab:comparison_detailed}
-\end{table}
 
 \section{Comparison with State of the Art}
 \label{sec:compare}

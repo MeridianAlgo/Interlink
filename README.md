@@ -6,7 +6,7 @@
 **Status:** Research & Architecture  
 **License:** MIT  
 
-[Read the Full Technical Whitepaper (interlink-zk-interoperability-whitepaper.tex)](interlink-zk-interoperability-whitepaper.tex)
+Read the Full Technical Whitepaper: [View as PDF](Interlink_Research.pdf) | [View LaTeX Source (.tex)](interlink-zk-interoperability-whitepaper.tex)
 
 ---
 
