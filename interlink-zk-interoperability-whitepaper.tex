@@ -1,0 +1,348 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{hyperref}
+\usepackage{amsmath,amssymb,amsfonts,amsthm}
+\usepackage{mathtools}
+\usepackage[nameinlink,noabbrev]{cleveref}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{longtable}
+\usepackage{enumitem}
+\usepackage{siunitx}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{float}
+\usepackage{parskip}
+\usepackage{tikz}
+\usetikzlibrary{shapes.geometric, arrows}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    urlcolor=cyan,
+    citecolor=blue,
+    pdftitle={InterLink: A Zero-Knowledge Atomic Cross-Chain Interoperability Protocol},
+    pdfauthor={MeridianAlgo},
+    pdfsubject={Blockchain Interoperability Research Paper},
+    pdflang={en}
+}
+
+\definecolor{codegreen}{rgb}{0,0.6,0}
+\definecolor{codegray}{rgb}{0.5,0.5,0.5}
+\definecolor{codepurple}{rgb}{0.58,0,0.82}
+\definecolor{backcolour}{rgb}{0.95,0.95,0.92}
+
+% Define Rust language for listings
+\lstdefinelanguage{Rust}{
+  morekeywords={abstract,as,async,await,become,box,break,const,continue,crate,do,dyn,else,enum,extern,false,fn,for,if,impl,in,let,loop,macro,match,mod,move,mut,pub,ref,return,self,Self,static,struct,super,trait,true,type,typeof,unsafe,unsized,use,virtual,where,while,yield},
+  sensitive=true,
+  morecomment=[l]{//},
+  morecomment=[s]{/*}{*/},
+  morestring=[b]",
+  morestring=[b]',
+}
+\lstdefinestyle{mystyle}{
+    backgroundcolor=\color{backcolour},
+    commentstyle=\color{codegreen},
+    keywordstyle=\color{magenta},
+    numberstyle=\tiny\color{codegray},
+    stringstyle=\color{codepurple},
+    basicstyle=\ttfamily\footnotesize,
+    breaklines=true,
+    captionpos=b,
+    keepspaces=true,
+    numbers=left,
+    numbersep=5pt,
+    showstringspaces=false,
+    tabsize=2,
+    language=Rust,
+    frame=single,
+    framesep=5pt,
+    framerule=0.5pt
+}
+\lstset{style=mystyle}
+
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{8pt plus 2pt minus 1pt}
+
+\title{
+    \vspace{2in}
+    \textbf{\Huge InterLink Protocol}\\
+    \vspace{0.5in}
+    \large The Missing Link: A Zero-Knowledge Framework for Unified Liquidity\\
+    \vspace{0.2in}
+    \textit{Trustless. Scalable. Human.}\\
+    \vspace{1in}
+    \textbf{MeridianAlgo Research Lab}\\
+    \small Version 6.1 --- Technical Compendium --- February 2026
+}
+\author{}
+\date{}
+
+\begin{document}
+
+\maketitle
+\begin{titlepage}
+\maketitle
+\end{titlepage}
+\newpage
+
+\tableofcontents
+\newpage
+
+\phantomsection
+\addcontentsline{toc}{section}{Abstract}
+\begin{abstract}
+\section*{Abstract}
+Blockchains were promised as a revolution in trustless value transfer. Yet, as the ecosystem has exploded into hundreds of Layer-1 and Layer-2 networks, we've created a fractured landscape. Capital is trapped in silos, and moving assets between chains often feels like navigating a minefield. The industry's reliance on "trusted" bridges—often just small groups of people holding keys—has resulted in billions of dollars lost to hacks. We believe users deserve better. They shouldn't have to trust a middleman to move their own money.
+
+This paper introduces \textbf{InterLink (ILINK)}, a protocol designed to heal this fragmentation using \textbf{recursive zero-knowledge proofs (zk-SNARKs)}. Instead of trusting a federation, InterLink allows blockchains to cryptographically verify each other. By combining the mathematical certainty of the \textbf{halo2} proving system with the raw speed of a \textbf{Solana Execution Hub}, we are building a system where state transitions are atomic and trustless.
+
+We don't just view this as a bridge; we see it as the "USB port" for blockchains—a universal standard that lets developers build applications that live everywhere at once. This document outlines our architecture, the economic incentives that keep it secure, and the cryptographic engineering that makes it possible.
+
+\vspace{0.5in}
+\textbf{Keywords:} Zero-Knowledge Proofs, Recursive SNARKs, Atomic Composability, Rust, Solana Anchor, Unified Liquidity, Tokenomics, Game Theory, Interoperability, DeFi.
+\end{abstract}
+
+\newpage
+
+\section{Introduction}
+\label{sec:intro}
+
+We are living through a fundamental shift in how the world handles value. We are moving from opaque, centralized databases to transparent, decentralized ledgers. But let's be honest: the user experience of crypto today is often frustrating. You have assets on Ethereum, you want to play a game on Solana, and you want to vote in a DAO on Cosmos. Today, connecting these dots is slow, expensive, and risky.
+
+The success of the blockchain industry has paradoxically created its biggest problem: we have too many disconnected islands. We call this the "fragmentation crisis."
+
+\subsection{The Problem: Digital Islands}
+Imagine if the email you sent from Gmail couldn't be read by someone using Outlook. That is the current state of blockchains.
+\begin{itemize}
+    \item \textbf{Siloed Liquidity:} Capital is inefficient. A DEX on Arbitrum might have great prices for ETH, while a DEX on Solana has great prices for SOL, but they can't talk to each other to balance the market.
+    \item \textbf{The Bridge Hack Epidemic:} To fix this, developers built bridges. But most bridges are just "multisigs"—a wallet controlled by 5 or 10 people. If those people are hacked (or dishonest), the money is gone. In 2022 alone, over \$2 billion was stolen from bridges. This is not the trustless future we signed up for.
+\end{itemize}
+
+\subsection{Our Solution: Math, Not Trust}
+\textbf{InterLink} takes a different approach. We replace human trust with mathematical proof.
+
+By leveraging \textbf{Zero-Knowledge Proofs (zk-SNARKs)}, specifically the \textbf{Halo2} system, InterLink allows the Solana blockchain to verify the state of Ethereum (and other chains) directly. We don't ask users to trust a third party; we ask them to trust the code and the cryptography.
+
+Our goal is simple: to make the boundaries between blockchains invisible. A user should be able to click "Swap" and have their transaction route through three different chains in seconds, without ever needing to know how it happened.
+
+\section{Core Definitions}
+\label{sec:definitions}
+
+To keep things clear, here is a plain-English guide to the key players and concepts in our system.
+
+\begin{description}
+    \item[The Hub (Solana):] Think of this as the "Central Station." It's the high-speed core where all messages are sorted, verified, and routed. We use Solana because it's fast enough to handle global traffic.
+    \item[The Spoke (External Chain):] These are the destinations—Ethereum, Arbitrum, Cosmos, etc. They connect to the Hub to send and receive value.
+    \item[Gateway Contract:] The "Embassy" on each Spoke chain. It's a smart contract that holds funds safely and listens for instructions from the Hub.
+    \item[Relayer:] The "Courier." These are independent computers that watch the Spokes, generate the mathematical proofs of what happened, and deliver them to the Hub. They are the workhorses of the network.
+    \item[zk-SNARK:] A "Magic Receipt." It proves that a transaction happened and is valid, without revealing any private details. It's impossible to forge.
+    \item[Recursive Proof:] A "Stack of Receipts." Instead of checking 100 receipts one by one, we staple them together into one master receipt. Checking the master receipt proves that all 100 small receipts are valid. This saves massive amounts of computing power.
+    \item[Atomic Composability:] "All or Nothing." If you try to swap tokens across chains, either the whole thing happens perfectly, or it all reverts as if nothing happened. You never get stuck halfway with lost funds.
+\end{description}
+
+\section{Preliminaries}
+\label{sec:prelim}
+
+Before we dive into the architecture, let's briefly touch on the tools we're using. We've chosen our technology stack not because it's trendy, but because it's robust.
+
+\subsection{Why Zero-Knowledge?}
+The "Ali Baba Cave" analogy is a classic way to explain this. Imagine you want to prove you know a secret password to open a magic door in a cave, but you don't want to say the password out loud.
+\begin{enumerate}
+    \item You go into the cave and pick a path.
+    \item I stand outside and ask you to come out a specific path.
+    \item If you know the password, you can open the connecting door and always appear where I ask.
+    \item If we do this 100 times, and you succeed every time, I can be 100\% sure you know the password—even though I never heard it.
+\end{enumerate}
+In our case, the "password" is the cryptographic proof that a transaction is valid. The Solana blockchain is the verifier standing outside the cave.
+
+\subsection{The Tech Stack}
+\begin{itemize}
+    \item \textbf{Halo2:} A cutting-edge proving system that lets us build "recursive" proofs. This is crucial for scaling. It allows us to compress thousands of transactions into a tiny proof that fits on a blockchain.
+    \item \textbf{Rust:} We write everything in Rust. It's the industry standard for systems that cannot crash. It enforces memory safety, preventing entire classes of bugs that plague other languages.
+    \item \textbf{Solana Sealevel:} Solana's runtime allows us to process transactions in parallel. While other chains process one thing at a time, Solana processes thousands. This is essential for a global liquidity hub.
+\end{itemize}
+
+\section{System Architecture}
+\label{sec:arch}
+
+\subsection{The Hub-and-Spoke Model}
+We designed InterLink like a global airline network. Instead of flying direct from every city to every other city (which is inefficient), you route flights through a major hub.
+\begin{itemize}
+    \item \textbf{Hub:} Solana.
+    \item \textbf{Spokes:} Ethereum, Optimism, Arbitrum, etc.
+\end{itemize}
+This means if we want to add a new chain, we just connect it to Solana, and it instantly connects to everyone else.
+
+\subsection{How It Works: A Message's Journey}
+Let's follow a message as it travels through InterLink.
+
+\begin{enumerate}
+    \item \textbf{The Trigger:} You initiate a transaction on Ethereum (e.g., "Send 10 ETH to Solana"). The Ethereum Gateway locks your ETH.
+    \item \textbf{The Wait:} We wait for Ethereum to "finalize" the block (about 12 minutes). This ensures your transaction can't be reversed by a chain reorganization.
+    \item \textbf{The Proof:} A Relayer sees your transaction. It builds a zk-SNARK proof that says, "I certify that 10 ETH were locked in Block \#15000."
+    \item \textbf{The Handover:} The Relayer submits this proof to the Solana Hub.
+    \item \textbf{The Verification:} The Solana smart contract checks the math. If the proof is valid, it mints 10 wrapped-ETH to your Solana address.
+    \item \textbf{The Result:} You now have 10 wETH on Solana, fully backed by the locked ETH on Ethereum.
+\end{enumerate}
+
+\subsection{Consensus Verification}
+Most bridges just trust that a transaction happened. InterLink verifies the \textit{entire consensus} of the source chain. Our circuits actually check the digital signatures of the Ethereum validators. We are effectively running a "Light Client" inside a ZK circuit. This inherits the full security of Ethereum itself.
+
+\section{Engineering \& Implementation}
+\label{sec:impl}
+
+We believe in "Safety First." We use Rust everywhere because it prevents us from making silly mistakes that lead to hacks.
+
+\subsection{The Circuit}
+Our ZK circuits are built using the \textbf{halo2-ce} crate. We define "Chips"—modular pieces of logic like "Merkle Tree Verification" or "Signature Check." By combining these chips, we build a complete circuit that proves a transaction's validity.
+
+\begin{lstlisting}[language=Rust, caption={Circuit Configuration Example}]
+// A simplified look at how we define a gate in our circuit
+meta.create_gate("poseidon_hash", |meta| {
+    let a = meta.query_advice(advice[0], Rotation::cur());
+    let b = meta.query_advice(advice[1], Rotation::cur());
+    let out = meta.query_advice(advice[2], Rotation::cur());
+    
+    // Enforce that 'out' is truly the hash of 'a' and 'b'
+    vec![s * (out - hash(a, b))]
+});
+\end{lstlisting}
+
+\subsection{The Relayer Node}
+The Relayer is a piece of software that anyone can run. It's built on \textbf{Tokio} for high-performance asynchronous tasks. It listens to blockchains, crunches the numbers to generate proofs (using \textbf{Rayon} for parallelism), and submits them.
+
+\subsection{Solana Optimization}
+Solana is fast, but we still optimize every instruction. We use \textbf{Address Lookup Tables (LUTs)} to bundle complex transactions and strictly manage "Compute Units" to ensure our transactions never get dropped, even during network congestion.
+
+\section{Tokenomics: The ILINK Token}
+\label{sec:tokenomics}
+
+The ILINK token isn't just a speculative asset; it's the engine that secures the network.
+
+\subsection{Incentivizing Good Behavior}
+Relayers must stake ILINK to participate. If they try to cheat or spam the network, their stake is "slashed" (taken away). This creates a powerful economic reason to be honest.
+
+\subsection{The Deflationary Loop}
+We've designed the token economy to reward long-term holders.
+\begin{enumerate}
+    \item Users pay fees in the native token of the source chain (like ETH).
+    \item The protocol automatically swaps that ETH for ILINK on the open market.
+    \item **40\% of that ILINK is burned forever.**
+    \item The rest goes to the Relayers as payment.
+\end{enumerate}
+This means that as more people use InterLink, more ILINK is bought and burned, reducing the supply over time.
+
+\section{Security Analysis}
+\label{sec:security}
+
+Security is not a feature; it's the foundation. We assume everyone is trying to attack us, and we build accordingly.
+
+\subsection{Game Theory}
+It's simple: Cheating costs more than you can steal. Because our proofs are mathematically verified, you can't just "lie" about a transaction. You would have to break the cryptography itself, which is computationally impossible with current technology.
+
+\subsection{Defense in Depth}
+\begin{itemize}
+    \item \textbf{Long-Range Attacks:} We use "Checkpointing." Once the Solana Hub finalizes a block history, it never looks back. Even if Ethereum was rewritten from a year ago, InterLink wouldn't be fooled.
+    \item \textbf{Censorship Resistance:} Our relayer network is open. If the big relayers refuse to process your transaction, you can spin up your own relayer and process it yourself. Permissionless access is non-negotiable.
+    \item \textbf{Audits:} We don't grade our own homework. We work with top-tier firms like \textit{Veridise} and use formal verification to prove our code does exactly what it says.
+\end{itemize}
+
+\section{Practical Workflows and Examples}
+\label{sec:workflows}
+
+Let's look at how people will actually use InterLink in the real world.
+
+\subsection{Scenario 1: The One-Click Swap}
+Alice has ETH, but she wants to buy a meme coin on Solana.
+\begin{enumerate}
+    \item Alice goes to a website and clicks "Swap."
+    \item Behind the scenes, InterLink locks her ETH.
+    \item A Relayer proves this lock to Solana.
+    \item The Solana Hub receives the proof, mints wETH, and immediately uses a DEX aggregator (like Jupiter) to swap that wETH for the meme coin.
+    \item The meme coin is deposited into Alice's Solana wallet.
+    \item \textbf{User Experience:} Alice just waited a few minutes. She didn't have to touch a bridge or manage gas on two chains.
+\end{enumerate}
+
+\subsection{Scenario 2: Cross-Chain Governance}
+A DAO lives on Cosmos, but it owns a treasury on Arbitrum.
+\begin{enumerate}
+    \item The DAO votes to move funds. The vote passes.
+    \item InterLink relays the result of that vote from Cosmos to Arbitrum.
+    \item The Arbitrum contract verifies the proof and executes the transfer.
+    \item The DAO controls assets everywhere from one home base.
+\end{enumerate}
+
+\subsection{What if it fails?}
+If a swap fails (maybe the price moved too much), we have an automatic "Refund" button. The system proves the failure on Solana and sends a message back to Ethereum to unlock Alice's original ETH. Her funds are never lost in limbo.
+
+\section{Comparison with Others}
+\label{sec:compare}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{@{}lcccc@{}}
+\toprule
+\textbf{Protocol} & \textbf{Trust Model} & \textbf{Security} & \textbf{Cost} & \textbf{Vibe} \\ \midrule
+\textbf{InterLink} & \textbf{Math (ZK)} & \textbf{High} & \textbf{Low} & \textbf{Trustless} \\
+LayerZero & Oracles/Relayers & Variable & Low & Flexible \\
+Axelar & PoS Validators & Medium & Medium & Chain-based \\
+Wormhole & 19 Guardians & Trusted & Low & Established \\
+\bottomrule
+\end{tabular}
+\caption{The Landscape}
+\label{tab:comparison_detailed}
+\end{table}
+
+Competitors like Wormhole or LayerZero rely on trusted parties or complex validator sets. While they are great protocols, we believe ZK is the endgame. You shouldn't have to trust \textit{anyone}—just the math.
+
+\section{Conclusion}
+
+InterLink is the result of years of research, failures, and breakthroughs. We are moving the industry from the "Wild West" of multisig bridges to the era of \textbf{Verifiable Interoperability}.
+
+We aren't just building a bridge; we're building the infrastructure for the next generation of the internet. A future where "chains" are just implementation details, and users simply interact with applications.
+
+This paper is an invitation. We invite developers, researchers, and skeptics to review our code, break our testnets, and help us build a unified digital economy. The fragmentation ends now.
+
+\subsection{Future Work}
+We're just getting started. Next up:
+\begin{itemize}
+    \item \textbf{Privacy:} Bridging assets without revealing who you are (using Aztec-style proofs).
+    \item \textbf{Speed:} Custom hardware (FPGAs) to generate proofs in milliseconds, not seconds.
+    \item \textbf{Fractal Scaling:} Allowing new AppChains to launch directly on top of InterLink.
+\end{itemize}
+
+\newpage
+
+\begin{thebibliography}{99}
+
+\bibitem{halo2}
+Electric Coin Co. \textit{The Halo2 Proving System}. 2024. \url{https://zcash.github.io/halo2/}
+
+\bibitem{plonk}
+Gabizon, A., Williamson, Z., Ciobotaru, O. \textit{PLONK: Permutations over Lagrange-bases for Oecumenical Noninteractive arguments of Knowledge}. 2019.
+
+\bibitem{solana}
+Yakovenko, A. \textit{Solana: A new architecture for a high performance blockchain}. 2018.
+
+\bibitem{layerzero}
+Zarick, R., et al. \textit{LayerZero: Trustless Omnichain Interoperability Protocol}. 2021.
+
+\bibitem{kzg}
+Kate, A., Zaverucha, G.M., Goldberg, I. \textit{Constant-Size Commitments to Polynomials and Their Applications}. 2010.
+
+\bibitem{wormhole}
+Wormhole Team. \textit{Wormhole: Generic Message Passing}. 2020.
+
+\end{thebibliography}
+
+\end{document}
