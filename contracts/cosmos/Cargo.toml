@@ -3,5 +3,7 @@ name = "cosmos-gateway"
 version = "0.1.0"
 edition = "2021"
 
+[workspace]
+
 [dependencies]
 cosmwasm-std = "1.5.0"

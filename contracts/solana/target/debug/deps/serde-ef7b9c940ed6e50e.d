@@ -1,0 +1,14 @@
+C:\Users\Ishaan\OneDrive\Desktop\Cobalt\contracts\solana\target\debug\deps\serde-ef7b9c940ed6e50e.d: C:\Users\Ishaan\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\lib.rs C:\Users\Ishaan\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\integer128.rs C:\Users\Ishaan\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\private\mod.rs C:\Users\Ishaan\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\private\de.rs C:\Users\Ishaan\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\private\ser.rs C:\Users\Ishaan\OneDrive\Desktop\Cobalt\contracts\solana\target\debug\build\serde-4f365f097c4b99ec\out/private.rs
+
+C:\Users\Ishaan\OneDrive\Desktop\Cobalt\contracts\solana\target\debug\deps\libserde-ef7b9c940ed6e50e.rlib: C:\Users\Ishaan\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\lib.rs C:\Users\Ishaan\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\integer128.rs C:\Users\Ishaan\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\private\mod.rs C:\Users\Ishaan\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\private\de.rs C:\Users\Ishaan\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\private\ser.rs C:\Users\Ishaan\OneDrive\Desktop\Cobalt\contracts\solana\target\debug\build\serde-4f365f097c4b99ec\out/private.rs
+
+C:\Users\Ishaan\OneDrive\Desktop\Cobalt\contracts\solana\target\debug\deps\libserde-ef7b9c940ed6e50e.rmeta: C:\Users\Ishaan\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\lib.rs C:\Users\Ishaan\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\integer128.rs C:\Users\Ishaan\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\private\mod.rs C:\Users\Ishaan\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\private\de.rs C:\Users\Ishaan\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\private\ser.rs C:\Users\Ishaan\OneDrive\Desktop\Cobalt\contracts\solana\target\debug\build\serde-4f365f097c4b99ec\out/private.rs
+
+C:\Users\Ishaan\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\lib.rs:
+C:\Users\Ishaan\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\integer128.rs:
+C:\Users\Ishaan\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\private\mod.rs:
+C:\Users\Ishaan\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\private\de.rs:
+C:\Users\Ishaan\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\private\ser.rs:
+C:\Users\Ishaan\OneDrive\Desktop\Cobalt\contracts\solana\target\debug\build\serde-4f365f097c4b99ec\out/private.rs:
+
+# env-dep:OUT_DIR=C:\\Users\\Ishaan\\OneDrive\\Desktop\\Cobalt\\contracts\\solana\\target\\debug\\build\\serde-4f365f097c4b99ec\\out

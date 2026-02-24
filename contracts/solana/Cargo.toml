@@ -3,5 +3,7 @@ name = "solana-gateway"
 version = "0.1.0"
 edition = "2021"
 
+[workspace]
+
 [dependencies]
 anchor-lang = "0.29.0"
