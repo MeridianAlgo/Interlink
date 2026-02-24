@@ -1,0 +1,7 @@
+/target/
+/contracts/*/target/
+**/*.rs.bk
+*.swp
+*.swo
+.DS_Store
+Cargo.lock
