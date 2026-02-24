@@ -1,6 +1,6 @@
 pub mod circuit;
-pub mod relayer;
 pub mod network;
+pub mod relayer;
 
 /// The core error type for the InterLink protocol.
 #[derive(Debug)]

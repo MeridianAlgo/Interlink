@@ -1,9 +1,9 @@
-use interlink_core::circuit::{PoseidonChip, PoseidonConfig};
 use halo2_proofs::{
     arithmetic::Field,
     circuit::{Layouter, SimpleFloorPlanner},
     plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Instance},
 };
+use interlink_core::circuit::{PoseidonChip, PoseidonConfig};
 
 #[derive(Clone, Debug)]
 pub struct MerkleConfig {
@@ -38,7 +38,7 @@ impl<F: Field> Circuit<F> for MerkleCircuit<F> {
 
         let path_elements = [meta.advice_column(), meta.advice_column()];
         let path_indices = meta.advice_column();
-        
+
         for col in path_elements.iter() {
             meta.enable_equality(*col);
         }
@@ -64,11 +64,11 @@ impl<F: Field> Circuit<F> for MerkleCircuit<F> {
             |mut region| {
                 // Simplified Merkle Extraction Logic Loop
                 // Typically you recurse PoseidonChip through path elements here
-                
+
                 chip.config.s_hash.enable(&mut region, 0)?;
 
                 Ok(())
-            }
+            },
         )
     }
 }

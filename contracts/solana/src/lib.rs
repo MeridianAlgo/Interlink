@@ -1,5 +1,5 @@
 use anchor_lang::prelude::*;
-use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer, Burn};
+use anchor_spl::token::{self, Burn, Mint, Token, TokenAccount, Transfer};
 
 declare_id!("Hub1111111111111111111111111111111111111111");
 
@@ -16,14 +16,17 @@ pub mod solana_gateway {
     }
 
     pub fn submit_proof(
-        ctx: Context<SubmitProof>, 
-        sequence: u64, 
-        _proof_data: Vec<u8>, 
-        payload_hash: [u8; 32]
+        ctx: Context<SubmitProof>,
+        sequence: u64,
+        _proof_data: Vec<u8>,
+        payload_hash: [u8; 32],
     ) -> Result<()> {
         let registry = &mut ctx.accounts.state_registry;
-        require!(sequence > registry.processed_sequences, HubError::SequenceAlreadyProcessed);
-        
+        require!(
+            sequence > registry.processed_sequences,
+            HubError::SequenceAlreadyProcessed
+        );
+
         // Mock ZK Verification here
         // If passed:
         registry.processed_sequences = sequence;

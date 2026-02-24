@@ -1,10 +1,10 @@
-use std::marker::PhantomData;
 use halo2_proofs::{
     arithmetic::Field,
     circuit::{Layouter, SimpleFloorPlanner, Value},
     plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Instance, Selector},
     poly::Rotation,
 };
+use std::marker::PhantomData;
 
 /// A custom chip for Poseidon hash operations within the circuit.
 pub struct PoseidonChip<F: Field> {
@@ -46,12 +46,16 @@ impl<F: Field> PoseidonChip<F> {
             let a = meta.query_advice(advice[0], Rotation::cur());
             let b = meta.query_advice(advice[1], Rotation::cur());
             let out = meta.query_advice(advice[2], Rotation::cur());
-            
+
             // Minimal constraint: out = (a + b)^2 (educational simplification)
             vec![s * (out - (a.clone() + b.clone()) * (a + b))]
         });
 
-        PoseidonConfig { advice, instance, s_hash }
+        PoseidonConfig {
+            advice,
+            instance,
+            s_hash,
+        }
     }
 }
 
@@ -104,7 +108,12 @@ impl<F: Field> Circuit<F> for InterlinkCircuit<F> {
                     || "out",
                     chip.config.advice[2],
                     0,
-                    || self.a.and_then(|a| self.b.map(|b| (a + b).square())).map(Value::known).unwrap_or_else(Value::unknown),
+                    || {
+                        self.a
+                            .and_then(|a| self.b.map(|b| (a + b).square()))
+                            .map(Value::known)
+                            .unwrap_or_else(Value::unknown)
+                    },
                 )?;
 
                 Ok(())

@@ -1,5 +1,5 @@
 use crate::Result;
-use tracing::{info, error};
+use tracing::{error, info};
 
 /// A client for interacting with blockchain networks.
 pub struct NetworkClient {
