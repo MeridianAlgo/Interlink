@@ -1,0 +1,43 @@
+name: CI Build & Test
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build_contracts:
+    name: Build Smart Contracts & Circuits
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build Relayer and Core
+        run: cargo build --verbose
+
+      - name: Build Circuits
+        run: cargo build -p circuits --verbose
+
+      - name: Build Solana Anchor Contract
+        run: cargo build -p solana-gateway --verbose
+
+      - name: Build Cosmos CosmWasm Contract
+        run: cargo build -p cosmos-gateway --target wasm32-unknown-unknown --verbose
+
+      - name: Check Formatting
+        run: cargo fmt --all -- --check
+
+      - name: Run Tests
+        run: cargo test --verbose
