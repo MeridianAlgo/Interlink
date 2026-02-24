@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 # ZK Proving
 halo2_proofs = "0.3.0"
+halo2curves = "0.1.0"
 
 # Async Runtime
 tokio = { version = "1.0", features = ["full", "tracing"] }

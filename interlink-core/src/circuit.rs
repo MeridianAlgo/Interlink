@@ -125,7 +125,8 @@ impl<F: Field> Circuit<F> for InterlinkCircuit<F> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
+    use halo2_proofs::dev::MockProver;
+    use halo2curves::bn256::Fr;
 
     #[test]
     fn test_interlink_circuit() {
