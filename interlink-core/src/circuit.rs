@@ -8,7 +8,7 @@ use halo2_proofs::{
 
 /// A custom chip for Poseidon hash operations within the circuit.
 pub struct PoseidonChip<F: Field> {
-    config: PoseidonConfig,
+    pub config: PoseidonConfig,
     _marker: PhantomData<F>,
 }
 
@@ -86,14 +86,14 @@ impl<F: Field> Circuit<F> for InterlinkCircuit<F> {
             |mut region| {
                 chip.config.s_hash.enable(&mut region, 0)?;
 
-                let a_cell = region.assign_advice(
+                let _a_cell = region.assign_advice(
                     || "a",
                     chip.config.advice[0],
                     0,
                     || self.a.map(Value::known).unwrap_or_else(Value::unknown),
                 )?;
 
-                let b_cell = region.assign_advice(
+                let _b_cell = region.assign_advice(
                     || "b",
                     chip.config.advice[1],
                     0,
