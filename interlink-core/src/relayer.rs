@@ -1,4 +1,4 @@
-use crate::{Result, Message};
+use crate::Result;
 use tokio::sync::mpsc;
 
 pub struct RelayerConfig {

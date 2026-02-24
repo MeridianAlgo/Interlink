@@ -1,13 +1,13 @@
 use std::marker::PhantomData;
 use halo2_proofs::{
-    arithmetic::FieldExt,
-    circuit::{AssignedCell, Layouter, SimpleFloorPlanner},
-    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Fixed, Instance, Selector},
+    arithmetic::Field,
+    circuit::{Layouter, SimpleFloorPlanner, Value},
+    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Instance, Selector},
     poly::Rotation,
 };
 
 /// A custom chip for Poseidon hash operations within the circuit.
-pub struct PoseidonChip<F: FieldExt> {
+pub struct PoseidonChip<F: Field> {
     config: PoseidonConfig,
     _marker: PhantomData<F>,
 }
@@ -19,7 +19,7 @@ pub struct PoseidonConfig {
     pub s_hash: Selector,
 }
 
-impl<F: FieldExt> PoseidonChip<F> {
+impl<F: Field> PoseidonChip<F> {
     pub fn construct(config: PoseidonConfig) -> Self {
         Self {
             config,
@@ -48,7 +48,7 @@ impl<F: FieldExt> PoseidonChip<F> {
             let out = meta.query_advice(advice[2], Rotation::cur());
             
             // Minimal constraint: out = (a + b)^2 (educational simplification)
-            vec![s * (out - (a + b) * (a + b))]
+            vec![s * (out - (a.clone() + b.clone()) * (a + b))]
         });
 
         PoseidonConfig { advice, instance, s_hash }
@@ -57,12 +57,12 @@ impl<F: FieldExt> PoseidonChip<F> {
 
 /// The core InterLink circuit.
 #[derive(Default)]
-pub struct InterlinkCircuit<F: FieldExt> {
+pub struct InterlinkCircuit<F: Field> {
     pub a: Option<F>,
     pub b: Option<F>,
 }
 
-impl<F: FieldExt> Circuit<F> for InterlinkCircuit<F> {
+impl<F: Field> Circuit<F> for InterlinkCircuit<F> {
     type Config = PoseidonConfig;
     type FloorPlanner = SimpleFloorPlanner;
 
@@ -79,7 +79,7 @@ impl<F: FieldExt> Circuit<F> for InterlinkCircuit<F> {
         config: Self::Config,
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
-        let chip = PoseidonChip::construct(config);
+        let chip = PoseidonChip::<F>::construct(config);
 
         layouter.assign_region(
             || "hash_round",
@@ -90,21 +90,21 @@ impl<F: FieldExt> Circuit<F> for InterlinkCircuit<F> {
                     || "a",
                     chip.config.advice[0],
                     0,
-                    || self.a.ok_or(Error::Synthesis),
+                    || self.a.map(Value::known).unwrap_or_else(Value::unknown),
                 )?;
 
                 let b_cell = region.assign_advice(
                     || "b",
                     chip.config.advice[1],
                     0,
-                    || self.b.ok_or(Error::Synthesis),
+                    || self.b.map(Value::known).unwrap_or_else(Value::unknown),
                 )?;
 
                 let _out_cell = region.assign_advice(
                     || "out",
                     chip.config.advice[2],
                     0,
-                    || (self.a.unwrap() + self.b.unwrap()).square().into(),
+                    || self.a.and_then(|a| self.b.map(|b| (a + b).square())).map(Value::known).unwrap_or_else(Value::unknown),
                 )?;
 
                 Ok(())

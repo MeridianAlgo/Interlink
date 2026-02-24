@@ -1,0 +1,10 @@
+[workspace]
+resolver = "2"
+members = [
+    "interlink-core",
+    "circuits",
+    "relayer"
+]
+
+[workspace.metadata.cargo-udeps.ignore]
+development = true
