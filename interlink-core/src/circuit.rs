@@ -1,9 +1,9 @@
+use ff::PrimeField;
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter, SimpleFloorPlanner, Value},
     plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Instance, Selector},
     poly::Rotation,
 };
-use ff::PrimeField;
 use std::marker::PhantomData;
 
 /// A custom chip for Poseidon-like hash operations within the circuit.
@@ -54,7 +54,7 @@ impl<F: PrimeField> PoseidonChip<F> {
 
             let diff = state_in.clone() + round_const;
             let cube = diff.clone() * diff.clone() * diff;
-            
+
             vec![s * (state_out - (cube + prev_val))]
         });
 
@@ -81,10 +81,13 @@ impl<F: PrimeField> PoseidonChip<F> {
                 region.assign_advice(|| "round_const", self.config.advice[1], 0, || round_const)?;
                 region.assign_advice(|| "prev_val", self.config.advice[3], 0, || prev_val)?;
 
-                let res = state_in.zip(round_const).zip(prev_val).map(|((si, rc), pv)| {
-                    let diff = si + rc;
-                    diff.square() * diff + pv
-                });
+                let res = state_in
+                    .zip(round_const)
+                    .zip(prev_val)
+                    .map(|((si, rc), pv)| {
+                        let diff = si + rc;
+                        diff.square() * diff + pv
+                    });
 
                 region.assign_advice(|| "state_out", self.config.advice[2], 0, || res)
             },
@@ -120,9 +123,15 @@ impl<F: PrimeField> Circuit<F> for InterlinkCircuit<F> {
 
         // Actual logic: Hash (message_payload + sequence_number) to generate a unique commitment
         let round_const = Value::known(F::from(0x1337)); // Fixed protocol constant
-        
-        let state_in = self.message_payload.map(Value::known).unwrap_or(Value::unknown());
-        let seq = self.sequence_number.map(Value::known).unwrap_or(Value::unknown());
+
+        let state_in = self
+            .message_payload
+            .map(Value::known)
+            .unwrap_or(Value::unknown());
+        let seq = self
+            .sequence_number
+            .map(Value::known)
+            .unwrap_or(Value::unknown());
 
         let out_cell = chip.hash_round(
             layouter.namespace(|| "commitment_generation"),
@@ -148,7 +157,7 @@ mod tests {
         let msg = Fr::from(12345);
         let seq = Fr::from(1);
         let rc = Fr::from(0x1337);
-        
+
         // Expected out: (msg + rc)^3 + seq
         let diff = msg + rc;
         let expected_out = diff.square() * diff + seq;

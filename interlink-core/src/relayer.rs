@@ -18,10 +18,11 @@ mod tests {
         let chain_id = 1u64;
 
         println!("\n[TEST] Testing Real ZK-SNARK generation (BN254/Multicore)...");
-        let proof = Relayer::generate_proof_sync(nonce, payload_hash, chain_id).expect("Proof generation failed");
-        
+        let proof = Relayer::generate_proof_sync(nonce, payload_hash, chain_id)
+            .expect("Proof generation failed");
+
         println!("[TEST] SNARK Generated. Length: {} bytes", proof.len());
-        assert!(proof.len() > 0, "Proof should not be empty");
+        assert!(!proof.is_empty(), "Proof should not be empty");
         // Verify it's significantly larger than a dummy (usually > 100 bytes for SNARKs)
         assert!(proof.len() > 100, "Proof size too small for a real SNARK");
     }
@@ -143,15 +144,15 @@ impl Relayer {
     }
 
     fn generate_proof_sync(nonce: u64, hash: [u8; 32], _chain_id: u64) -> Result<Vec<u8>> {
+        use crate::circuit::InterlinkCircuit;
+        use ff::PrimeField;
         use halo2_proofs::{
+            plonk::{create_proof, keygen_pk, keygen_vk},
             poly::commitment::Params,
-            plonk::{keygen_pk, keygen_vk, create_proof},
             transcript::{Blake2bWrite, Challenge255},
         };
         use halo2curves::bn256::{Fr, G1Affine};
         use rand_core::OsRng;
-        use crate::circuit::InterlinkCircuit;
-        use ff::PrimeField;
 
         println!("[PROVER] Generating Real ZK-SNARK for message #{}", nonce);
 
@@ -167,14 +168,16 @@ impl Relayer {
         };
 
         // 3. Key Generation
-        let vk = keygen_vk(&params, &circuit).map_err(|_| crate::InterlinkError::ProofGenerationFailed)?;
-        let pk = keygen_pk(&params, vk, &circuit).map_err(|_| crate::InterlinkError::ProofGenerationFailed)?;
+        let vk = keygen_vk(&params, &circuit)
+            .map_err(|_| crate::InterlinkError::ProofGenerationFailed)?;
+        let pk = keygen_pk(&params, vk, &circuit)
+            .map_err(|_| crate::InterlinkError::ProofGenerationFailed)?;
 
         // 4. Calculate Public Inputs
         let rc = Fr::from(0x1337);
         let diff = payload_f + rc;
         let commitment = diff.square() * diff + Fr::from(nonce);
-        
+
         // Correct nesting for public inputs: &[&[&[Scalar]]]
         // Here: 1 circuit, 1 instance column, 1 value
         let instances: &[&[Fr]] = &[&[commitment]];
@@ -189,7 +192,8 @@ impl Relayer {
             instances_ref,
             OsRng,
             &mut transcript,
-        ).map_err(|_| crate::InterlinkError::ProofGenerationFailed)?;
+        )
+        .map_err(|_| crate::InterlinkError::ProofGenerationFailed)?;
 
         let proof = transcript.finalize();
         println!("[PROVER] Proof successful. Size: {} bytes", proof.len());

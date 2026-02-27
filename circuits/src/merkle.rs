@@ -1,8 +1,8 @@
+use ff::PrimeField;
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
     plonk::{Advice, Circuit, Column, ConstraintSystem, Error},
 };
-use ff::PrimeField;
 use interlink_core::circuit::{PoseidonChip, PoseidonConfig};
 
 #[derive(Clone, Debug)]
@@ -32,7 +32,7 @@ impl<F: PrimeField> Circuit<F> for MerkleCircuit<F> {
 
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
         let poseidon_config = PoseidonChip::<F>::configure(meta);
-        
+
         // We reuse poseidon_config.instance instead of creating a new one
         let path_elements = [meta.advice_column(), meta.advice_column()];
         let path_indices = meta.advice_column();
@@ -80,8 +80,13 @@ impl<F: PrimeField> Circuit<F> for MerkleCircuit<F> {
                     chip.config.s_hash.enable(&mut region, 0)?;
 
                     // Assign current node as state_in
-                    current_node.copy_advice(|| "current_node", &mut region, chip.config.advice[0], 0)?;
-                    
+                    current_node.copy_advice(
+                        || "current_node",
+                        &mut region,
+                        chip.config.advice[0],
+                        0,
+                    )?;
+
                     // Assign path element as round_const
                     region.assign_advice(
                         || "path_element",
