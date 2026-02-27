@@ -52,7 +52,7 @@ jobs:
       - name: Generate InterLink Premium Summary
         if: always()
         run: |
-          echo "## InterLink Protocol v0.3.0 CI Intelligence" >> $GITHUB_STEP_SUMMARY
+          echo "## InterLink Protocol v0.5.0 CI Intelligence" >> $GITHUB_STEP_SUMMARY
           echo "### Pipeline Flow Matrix" >> $GITHUB_STEP_SUMMARY
           echo '```mermaid' >> $GITHUB_STEP_SUMMARY
           echo 'graph LR' >> $GITHUB_STEP_SUMMARY
