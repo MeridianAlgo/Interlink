@@ -5,8 +5,9 @@ edition = "2021"
 
 [dependencies]
 # ZK Proving
-halo2_proofs = "0.3.0"
+halo2_proofs = { version = "0.3.0", features = ["multicore"] }
 halo2curves = "0.1.0"
+ff = "0.13"
 
 # Async Runtime
 tokio = { version = "1.0", features = ["full", "tracing"] }
@@ -18,6 +19,10 @@ serde_json = "1.0"
 tracing = "0.1"
 tracing-subscriber = "0.3"
 
+# Crypto & PRNG
+rand = "0.8"
+rand_core = { version = "0.6", features = ["getrandom"] }
+
 # Blockchain SDKs
 ethers-core = { version = "2.0.14" }
 ethers-providers = { version = "2.0.14", features = ["ws"] }
@@ -26,4 +31,4 @@ reqwest = { version = "0.11", features = ["json"] }
 
 [dev-dependencies]
 # For testing circuits
-halo2_proofs = { version = "0.3.0", features = ["dev-graph"] }
+halo2_proofs = { version = "0.3.0", features = ["dev-graph", "multicore"] }

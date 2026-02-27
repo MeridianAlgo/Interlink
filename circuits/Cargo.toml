@@ -6,3 +6,5 @@ edition = "2021"
 [dependencies]
 halo2_proofs = "0.3.0"
 interlink-core = { path = "../interlink-core" }
+ff = "0.13"
+halo2curves = "0.1.0"

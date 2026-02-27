@@ -234,7 +234,9 @@ dependencies = [
 name = "circuits"
 version = "0.1.0"
 dependencies = [
+ "ff",
  "halo2_proofs",
+ "halo2curves",
  "interlink-core",
 ]
 
@@ -1412,9 +1414,12 @@ dependencies = [
  "ethers-contract",
  "ethers-core",
  "ethers-providers",
+ "ff",
  "futures",
  "halo2_proofs",
  "halo2curves",
+ "rand 0.8.5",
+ "rand_core 0.6.4",
  "reqwest",
  "serde",
  "serde_json",

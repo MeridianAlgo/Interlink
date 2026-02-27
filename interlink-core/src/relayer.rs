@@ -7,7 +7,25 @@ use serde_json::json;
 use std::str::FromStr;
 use std::sync::Arc;
 use tokio::sync::mpsc;
-use tokio::time::{sleep, Duration};
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_real_snark_generation() {
+        let nonce = 1u64;
+        let payload_hash = [1u8; 32];
+        let chain_id = 1u64;
+
+        println!("\n[TEST] Testing Real ZK-SNARK generation (BN254/Multicore)...");
+        let proof = Relayer::generate_proof_sync(nonce, payload_hash, chain_id).expect("Proof generation failed");
+        
+        println!("[TEST] SNARK Generated. Length: {} bytes", proof.len());
+        assert!(proof.len() > 0, "Proof should not be empty");
+        // Verify it's significantly larger than a dummy (usually > 100 bytes for SNARKs)
+        assert!(proof.len() > 100, "Proof size too small for a real SNARK");
+    }
+}
 
 abigen!(
     InterlinkGateway,
@@ -102,28 +120,17 @@ impl Relayer {
 
         println!("[WS] Subscribing to MessagePublished events...");
 
-        // In a real live environment, we would use subscribe().
-        // For testing/mocking where a live WS might not be pushing:
+        // In a real live environment, we use strictly the WebSocket provider.
         let events = contract.events();
         let mut block_stream = events.subscribe().await?;
 
-        // Fallback polling loop if stream is silent (dummy simulation logic)
-        let tx_clone = tx.clone();
-        tokio::spawn(async move {
-            let mut demo_nonce = 1;
-            loop {
-                sleep(Duration::from_secs(4)).await;
-                let hash = [0xabu8; 32];
-                let _ = tx_clone.send((demo_nonce, hash)).await;
-                demo_nonce += 1;
-            }
-        });
+        println!("[WS] Successfully subscribed. Monitoring chain for finalized messages...");
 
         while let Some(log) = block_stream.next().await {
             if let Ok(event) = log {
                 println!(
-                    "[WS] Captured Event: DestChain: {} | Sender: {:?}",
-                    event.destination_chain, event.sender
+                    "[WS] Captured Event: DestChain: {} | Sender: {:?} | Nonce: {}",
+                    event.destination_chain, event.sender, event.nonce
                 );
 
                 if tx.send((event.nonce, event.payload_hash)).await.is_err() {
@@ -135,32 +142,59 @@ impl Relayer {
         Ok(())
     }
 
-    fn generate_proof_sync(nonce: u64, hash: [u8; 32], chain_id: u64) -> Result<Vec<u8>> {
-        // CPU Bound: Use Rayon for Parrallel Multi-Scalar Multiplications (MSMs)
-        let _span = tracing::info_span!("generate_proof", nonce = nonce).entered();
+    fn generate_proof_sync(nonce: u64, hash: [u8; 32], _chain_id: u64) -> Result<Vec<u8>> {
+        use halo2_proofs::{
+            poly::commitment::Params,
+            plonk::{keygen_pk, keygen_vk, create_proof},
+            transcript::{Blake2bWrite, Challenge255},
+        };
+        use halo2curves::bn256::{Fr, G1Affine};
+        use rand_core::OsRng;
+        use crate::circuit::InterlinkCircuit;
+        use ff::PrimeField;
 
-        println!(
-            "[PROVER] Synthesizing Halo2 Snark Circuit for Tx on branch {}...",
-            chain_id
-        );
+        println!("[PROVER] Generating Real ZK-SNARK for message #{}", nonce);
 
-        // Here we would construct the MerkleCircuit with actual witness data
-        // e.g., circuit = MerkleCircuit { leaf: Some(F::from..), path: vec![..] }
-        // and run create_proof. For full completeness without blocking compile,
-        // we simulate the exact overhead computationally (FFTs).
+        // 1. Setup Parameters
+        let k = 6;
+        let params = Params::<G1Affine>::new(k);
 
-        use std::time::Instant;
-        let start = Instant::now();
-        std::thread::sleep(std::time::Duration::from_millis(1500)); // Simulate Intensive Compute
+        // 2. Initialize Circuit
+        let payload_f = Fr::from_repr(hash).unwrap_or(Fr::from(nonce));
+        let circuit = InterlinkCircuit {
+            message_payload: Some(payload_f),
+            sequence_number: Some(Fr::from(nonce)),
+        };
 
-        println!(
-            "[PROVER] Snark generated validly - O(1) Proof Matrix in {:?}",
-            start.elapsed()
-        );
+        // 3. Key Generation
+        let vk = keygen_vk(&params, &circuit).map_err(|_| crate::InterlinkError::ProofGenerationFailed)?;
+        let pk = keygen_pk(&params, vk, &circuit).map_err(|_| crate::InterlinkError::ProofGenerationFailed)?;
 
-        let mut proof_out = vec![0u8; 128];
-        proof_out[0..32].copy_from_slice(&hash);
-        Ok(proof_out)
+        // 4. Calculate Public Inputs
+        let rc = Fr::from(0x1337);
+        let diff = payload_f + rc;
+        let commitment = diff.square() * diff + Fr::from(nonce);
+        
+        // Correct nesting for public inputs: &[&[&[Scalar]]]
+        // Here: 1 circuit, 1 instance column, 1 value
+        let instances: &[&[Fr]] = &[&[commitment]];
+        let instances_ref: &[&[&[Fr]]] = &[instances];
+
+        // 5. Create Proof
+        let mut transcript = Blake2bWrite::<_, G1Affine, Challenge255<_>>::init(vec![]);
+        create_proof::<G1Affine, _, _, _, _>(
+            &params,
+            &pk,
+            &[circuit],
+            instances_ref,
+            OsRng,
+            &mut transcript,
+        ).map_err(|_| crate::InterlinkError::ProofGenerationFailed)?;
+
+        let proof = transcript.finalize();
+        println!("[PROVER] Proof successful. Size: {} bytes", proof.len());
+
+        Ok(proof)
     }
 
     async fn submit_to_hub(

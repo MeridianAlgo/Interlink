@@ -80,8 +80,10 @@
     \vspace{0.2in}
     \textit{Trustless. Scalable. Unified.}\\
     \vspace{1in}
-    \textbf{MeridianAlgo Research Lab}\\
-    \small Version 8.0 --- March 2026 \quad \textit{Audit-Candidate Draft}
+    \textbf{Ishaan Manoor}\\
+    MeridianAlgo Research Lab\\
+    Version v0.5.0\\
+    Audit-Candidate Draft
 }
 \author{}
 \date{}
@@ -188,7 +190,7 @@ To ensure clarity throughout this technical compendium, we define the following 
     \item[The Spoke (External Chain):] Any blockchain network connected to the InterLink Hub, such as Ethereum, Arbitrum, or the Cosmos Hub.
     \item[Gateway Contract:] A set of smart contracts deployed on a Spoke chain that escrows assets, emits canonical events, and executes verified messages.
     \item[Relayer:] An off-chain node that observes Gateway events on Spoke chains, generates zk-SNARK proofs about those events, and submits proofs and public inputs to the Hub.
-    \item[zk-SNARK (Zero-Knowledge Succinct Non-Interactive Argument of Knowledge):] A cryptographic proof that convinces a verifier that a statement is true without revealing the underlying private inputs beyond what is implied by correctness.
+    \item[zk-SNARK:] (Zero-Knowledge Succinct Non-Interactive Argument of Knowledge) A cryptographic proof that convinces a verifier that a statement is true without revealing the underlying private inputs beyond what is implied by correctness.
     \item[Recursive Proof:] A proof that verifies another proof. In InterLink, many transaction proofs are aggregated (``folded'') into a single recursive proof to reduce amortized on-chain verification costs.
     \item[Program Derived Address (PDA):] A Solana-specific construct where an address is deterministically derived from a program ID and seed values. InterLink uses PDAs to represent accounts and vaults on Solana without requiring corresponding private keys.
     \item[Atomic Composability:] The property that a multi-step, cross-chain operation either completes as a whole or fails as a whole, analogous to a single atomic transaction.
@@ -1312,7 +1314,12 @@ Users do not need to hold ILINK to use the bridge; they pay fees in the source c
 
 \subsubsection{Economic Impact}
 This creates a self-reinforcing flywheel:
-$$ \text{Increased Usage} \rightarrow \text{Increased Buy Pressure} \rightarrow \text{Increased Token Value} \rightarrow \text{Reduced Effective Fees} $$
+\begin{equation*}
+\begin{gathered}
+    \text{Increased Usage} \rightarrow \text{Increased Buy Pressure} \\
+    \rightarrow \text{Increased Token Value} \rightarrow \text{Reduced Effective Fees}
+\end{gathered}
+\end{equation*}
 
 As ILINK price increases, the same ETH fee buys fewer ILINK tokens to burn, effectively reducing the cost burden on users while increasing scarcity.
 
@@ -1389,9 +1396,9 @@ Suppose the network experiences high congestion with f = 0.1\%. The DAO proposes
 
 \textbf{Voting Power Calculation:}
 \begin{itemize}
-    \item Alice holds 1,000 ILINK: Can cast √1,000 = 31.6 votes
-    \item Bob holds 10,000 ILINK: Can cast √10,000 = 100 votes  
-    \item Charlie holds 100,000 ILINK: Can cast √100,000 = 316 votes
+    \item Alice holds 1,000 ILINK: Can cast $\sqrt{1,000} \approx 31.6$ votes
+    \item Bob holds 10,000 ILINK: Can cast $\sqrt{10,000} = 100$ votes  
+    \item Charlie holds 100,000 ILINK: Can cast $\sqrt{100,000} \approx 316$ votes
 \end{itemize}
 
 The quadratic mechanism ensures Alice's influence is 31.6/316 = 10\% of Charlie's, rather than 1\% under linear voting, creating more equitable governance.
@@ -1424,6 +1431,7 @@ soundness probability $P_{\text{verif}} = 1 - 2^{-128} \approx 1$.
 
 \begin{table}[H]
 \centering
+\small
 \begin{tabular}{l|c|c}
  & \textbf{Honest Relayer} & \textbf{Byzantine Relayer} \\ \hline
 \textbf{Protocol Accepts} &
@@ -2033,7 +2041,8 @@ InterLink competes in a crowded market. However, its architecture offers distinc
 
 \begin{table}[H]
 \centering
-\small
+\footnotesize
+\setlength{\tabcolsep}{4pt}
 \begin{tabular}{@{}lcccccc@{}}
 \toprule
 \textbf{Protocol} & \textbf{Trust Model} & \textbf{Latency} & \textbf{Gas Cost} & \textbf{Finality} & \textbf{Setup} & \textbf{Extensibility} \\ \midrule
@@ -2235,10 +2244,10 @@ InterLink achieves superior cost efficiency through:
 \begin{tabular}{@{}lccc@{}}
 \toprule
 \textbf{Security Property} & \textbf{InterLink} & \textbf{Competitors} & \textbf{Advantage} \\ \midrule
-Cryptographic Security & ✓ & ✗ & Mathematical guarantees \\
-Censorship Resistance & ✓ & ✗ & Permissionless relayers \\
-Economic Alignment & ✓ & Partial & Slashing + rewards \\
-Scalable Security & ✓ & ✗ & Stake-based, not committee \\
+Cryptographic Security & $\checkmark$ & $\times$ & Mathematical guarantees \\
+Censorship Resistance & $\checkmark$ & $\times$ & Permissionless relayers \\
+Economic Alignment & $\checkmark$ & Partial & Slashing + rewards \\
+Scalable Security & $\checkmark$ & $\times$ & Stake-based, not committee \\
 \end{tabular}
 \caption{Security Feature Comparison}
 \end{table}
@@ -2393,6 +2402,7 @@ Our roadmap encompasses multiple research vectors that will enhance InterLink's 
 
 \begin{table}[H]
 \centering
+\small
 \begin{tabular}{@{}lllll@{}}
 \toprule
 \textbf{Milestone} & \textbf{Target} & \textbf{Status} & \textbf{Auditor} & \textbf{Notes} \\
@@ -2537,11 +2547,11 @@ Wormhole Team. \textit{Wormhole: Generic Message Passing}. 2020.
 
 \bibitem{ronin-hack}
 Sky Mavis Security Team. \textit{Ronin Network Post-Mortem: \$625M Exploit Analysis}.
-March 2022. \url{https://roninblockchain.substack.com/p/community-alert-ronin-validators}
+March 2022. {\scriptsize \url{https://roninblockchain.substack.com/p/community-alert-ronin-validators}}
 
 \bibitem{wormhole-hack}
 Certora / Jump Crypto. \textit{Wormhole Bridge Exploit Post-Mortem: \$320M Infinite Mint Vulnerability}.
-February 2022. \url{https://extropy-io.medium.com/solanas-wormhole-hack-post-mortem-analysis-3b68b9e88e13}
+February 2022. {\scriptsize \url{https://extropy-io.medium.com/solanas-wormhole-hack-post-mortem-analysis-3b68b9e88e13}}
 
 \bibitem{bitcoin-book}
 Narayanan, A., Bonneau, J., Felten, E., Miller, A., Goldfeder, S.

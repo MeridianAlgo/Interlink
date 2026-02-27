@@ -1,25 +1,26 @@
 use halo2_proofs::{
-    arithmetic::Field,
-    circuit::{Layouter, SimpleFloorPlanner, Value},
+    circuit::{AssignedCell, Layouter, SimpleFloorPlanner, Value},
     plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Instance, Selector},
     poly::Rotation,
 };
+use ff::PrimeField;
 use std::marker::PhantomData;
 
-/// A custom chip for Poseidon hash operations within the circuit.
-pub struct PoseidonChip<F: Field> {
+/// A custom chip for Poseidon-like hash operations within the circuit.
+/// This implementation provides a more realistic gate structure for cross-chain proof verification.
+pub struct PoseidonChip<F: PrimeField> {
     pub config: PoseidonConfig,
     _marker: PhantomData<F>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Copy, Clone, Debug)]
 pub struct PoseidonConfig {
-    pub advice: [Column<Advice>; 3],
+    pub advice: [Column<Advice>; 4], // Added an extra column for state
     pub instance: Column<Instance>,
     pub s_hash: Selector,
 }
 
-impl<F: Field> PoseidonChip<F> {
+impl<F: PrimeField> PoseidonChip<F> {
     pub fn construct(config: PoseidonConfig) -> Self {
         Self {
             config,
@@ -32,6 +33,7 @@ impl<F: Field> PoseidonChip<F> {
             meta.advice_column(),
             meta.advice_column(),
             meta.advice_column(),
+            meta.advice_column(),
         ];
         let instance = meta.instance_column();
         let s_hash = meta.selector();
@@ -41,14 +43,19 @@ impl<F: Field> PoseidonChip<F> {
             meta.enable_equality(*column);
         }
 
+        // Real-world Poseidon rounds use MDS matrices and S-Boxes.
+        // We implement a cubic S-Box gate: out = (in + round_const)^3 + state_prev
         meta.create_gate("poseidon_round", |meta| {
             let s = meta.query_selector(s_hash);
-            let a = meta.query_advice(advice[0], Rotation::cur());
-            let b = meta.query_advice(advice[1], Rotation::cur());
-            let out = meta.query_advice(advice[2], Rotation::cur());
+            let state_in = meta.query_advice(advice[0], Rotation::cur());
+            let round_const = meta.query_advice(advice[1], Rotation::cur());
+            let state_out = meta.query_advice(advice[2], Rotation::cur());
+            let prev_val = meta.query_advice(advice[3], Rotation::cur());
 
-            // Minimal constraint: out = (a + b)^2 (educational simplification)
-            vec![s * (out - (a.clone() + b.clone()) * (a + b))]
+            let diff = state_in.clone() + round_const;
+            let cube = diff.clone() * diff.clone() * diff;
+            
+            vec![s * (state_out - (cube + prev_val))]
         });
 
         PoseidonConfig {
@@ -57,16 +64,42 @@ impl<F: Field> PoseidonChip<F> {
             s_hash,
         }
     }
+
+    pub fn hash_round(
+        &self,
+        mut layouter: impl Layouter<F>,
+        state_in: Value<F>,
+        round_const: Value<F>,
+        prev_val: Value<F>,
+    ) -> Result<AssignedCell<F, F>, Error> {
+        layouter.assign_region(
+            || "hash_round",
+            |mut region| {
+                self.config.s_hash.enable(&mut region, 0)?;
+
+                region.assign_advice(|| "state_in", self.config.advice[0], 0, || state_in)?;
+                region.assign_advice(|| "round_const", self.config.advice[1], 0, || round_const)?;
+                region.assign_advice(|| "prev_val", self.config.advice[3], 0, || prev_val)?;
+
+                let res = state_in.zip(round_const).zip(prev_val).map(|((si, rc), pv)| {
+                    let diff = si + rc;
+                    diff.square() * diff + pv
+                });
+
+                region.assign_advice(|| "state_out", self.config.advice[2], 0, || res)
+            },
+        )
+    }
 }
 
-/// The core InterLink circuit.
+/// The core InterLink circuit for verifying source chain message inclusion.
 #[derive(Default)]
-pub struct InterlinkCircuit<F: Field> {
-    pub a: Option<F>,
-    pub b: Option<F>,
+pub struct InterlinkCircuit<F: PrimeField> {
+    pub message_payload: Option<F>,
+    pub sequence_number: Option<F>,
 }
 
-impl<F: Field> Circuit<F> for InterlinkCircuit<F> {
+impl<F: PrimeField> Circuit<F> for InterlinkCircuit<F> {
     type Config = PoseidonConfig;
     type FloorPlanner = SimpleFloorPlanner;
 
@@ -85,40 +118,21 @@ impl<F: Field> Circuit<F> for InterlinkCircuit<F> {
     ) -> Result<(), Error> {
         let chip = PoseidonChip::<F>::construct(config);
 
-        layouter.assign_region(
-            || "hash_round",
-            |mut region| {
-                chip.config.s_hash.enable(&mut region, 0)?;
+        // Actual logic: Hash (message_payload + sequence_number) to generate a unique commitment
+        let round_const = Value::known(F::from(0x1337)); // Fixed protocol constant
+        
+        let state_in = self.message_payload.map(Value::known).unwrap_or(Value::unknown());
+        let seq = self.sequence_number.map(Value::known).unwrap_or(Value::unknown());
 
-                let _a_cell = region.assign_advice(
-                    || "a",
-                    chip.config.advice[0],
-                    0,
-                    || self.a.map(Value::known).unwrap_or_else(Value::unknown),
-                )?;
+        let out_cell = chip.hash_round(
+            layouter.namespace(|| "commitment_generation"),
+            state_in,
+            round_const,
+            seq,
+        )?;
 
-                let _b_cell = region.assign_advice(
-                    || "b",
-                    chip.config.advice[1],
-                    0,
-                    || self.b.map(Value::known).unwrap_or_else(Value::unknown),
-                )?;
-
-                let _out_cell = region.assign_advice(
-                    || "out",
-                    chip.config.advice[2],
-                    0,
-                    || {
-                        self.a
-                            .and_then(|a| self.b.map(|b| (a + b).square()))
-                            .map(Value::known)
-                            .unwrap_or_else(Value::unknown)
-                    },
-                )?;
-
-                Ok(())
-            },
-        )
+        // Expose the final commitment to the instance column for public verification
+        layouter.constrain_instance(out_cell.cell(), chip.config.instance, 0)
     }
 }
 
@@ -129,18 +143,22 @@ mod tests {
     use halo2curves::bn256::Fr;
 
     #[test]
-    fn test_interlink_circuit() {
-        let k = 4;
-        let a = Fr::from(2);
-        let b = Fr::from(3);
-        let out = (a + b).square();
+    fn test_interlink_circuit_valid() {
+        let k = 5;
+        let msg = Fr::from(12345);
+        let seq = Fr::from(1);
+        let rc = Fr::from(0x1337);
+        
+        // Expected out: (msg + rc)^3 + seq
+        let diff = msg + rc;
+        let expected_out = diff.square() * diff + seq;
 
         let circuit = InterlinkCircuit {
-            a: Some(a),
-            b: Some(b),
+            message_payload: Some(msg),
+            sequence_number: Some(seq),
         };
 
-        let public_inputs = vec![]; // Simplified for now
+        let public_inputs = vec![vec![expected_out]];
 
         let prover = MockProver::run(k, &circuit, public_inputs).unwrap();
         prover.assert_satisfied();

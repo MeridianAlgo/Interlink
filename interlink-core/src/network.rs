@@ -1,5 +1,7 @@
 use crate::Result;
-use tracing::{error, info};
+use tracing::info;
+use ethers_providers::{Provider, Http, Middleware};
+use std::convert::TryFrom;
 
 /// A client for interacting with blockchain networks.
 pub struct NetworkClient {
@@ -12,22 +14,35 @@ impl NetworkClient {
         Self { url }
     }
 
-    /// Simulates connecting to a remote node.
+    /// Connects to a remote node and validates the provider.
     pub async fn connect(&self) -> Result<()> {
         info!("Connecting to network at {}...", self.url);
-        // Simulation of a handshake
-        if self.url.is_empty() {
-            error!("Failed to connect: URL is empty");
-            return Err(crate::InterlinkError::NetworkError("Empty URL".to_string()));
-        }
-        info!("Connected successfully.");
+        
+        let provider = Provider::<Http>::try_from(&self.url)
+            .map_err(|e| crate::InterlinkError::NetworkError(e.to_string()))?;
+        
+        let chain_id = provider.get_chainid().await
+            .map_err(|e| crate::InterlinkError::NetworkError(e.to_string()))?;
+            
+        info!("Connected successfully to Chain ID: {}", chain_id);
         Ok(())
     }
 
-    /// Simulates fetching a block by height.
+    /// Fetches a block by height using the provider.
     pub async fn get_block(&self, height: u64) -> Result<Vec<u8>> {
         info!("Fetching block at height {}...", height);
-        // Mock data
-        Ok(vec![0u8; 1024])
+        
+        let provider = Provider::<Http>::try_from(&self.url)
+            .map_err(|e| crate::InterlinkError::NetworkError(e.to_string()))?;
+            
+        let block = provider.get_block(height).await
+            .map_err(|e| crate::InterlinkError::NetworkError(e.to_string()))?
+            .ok_or_else(|| crate::InterlinkError::NetworkError("Block not found".to_string()))?;
+            
+        // Serialize block data for circuit witness
+        let serialized = serde_json::to_vec(&block)
+            .map_err(|_| crate::InterlinkError::NetworkError("Serialization failed".to_string()))?;
+            
+        Ok(serialized)
     }
 }

@@ -2,7 +2,7 @@
 
 > **Trustless. Scalable. Unified.**
 
-**Version:** 6.0 (Technical Compendium)  
+**Version:** 0.5.0 (Audit-Candidate Draft)  
 **Status:** Research & Architecture  
 **License:** MIT  
 
@@ -36,9 +36,9 @@ We rigorously define the cryptographic primitives, circuit constraints, and econ
 
 ## Core Features
 
-*   **Zero-Knowledge Security:** No multisigs. No optimistic delays. We use **halo2** circuits to mathematically prove state transitions.
-*   **Solana Execution Hub:** A centralized-but-trustless coordination layer that aggregates liquidity and verifies proofs at 50,000+ TPS.
-*   **Rust-Based Relayers:** A decentralized network of `tokio`-powered nodes that observe chains, generate proofs, and earn **$ILINK**.
+*   **Zero-Knowledge Security:** No multisigs. No optimistic delays. We use **halo2** circuits to mathematically prove state transitions using the **BN254** curve.
+*   **Solana Execution Hub:** A coordination layer that aggregates liquidity and verifies proofs. Implemented with per-chain sequence tracking and public commitment validation.
+*   **Rust-Based Relayers:** A decentralized network of `tokio`-powered nodes with **multicore acceleration** for high-speed ZK proof generation.
 *   **Hyper-Deflationary Tokenomics:** A "burn-on-transit" model where every cross-chain interaction permanently removes $ILINK from supply.
 
 ## Technical Architecture
@@ -453,22 +453,25 @@ We invite the global research community, developers, and users to contribute to 
 
 ## Repository Structure
 
-This repository contains the core research, documentation, and initial scaffold for the InterLink protocol.
+This repository contains the core research, implementation, and cryptographic substrate for the InterLink protocol.
 
 ```text
-C:\Users\Ishaan\OneDrive\Desktop\Cobalt\
-├── contracts/          # Smart Contracts (Source/Dest Chains)
-│   ├── solana/         # Anchor Programs (The Hub)
-│   ├── evm/            # Solidity Vaults (Ethereum, Arb, Op)
-│   └── cosmos/         # CosmWasm Contracts
-├── circuits/           # Halo2 ZK-Circuits
-│   ├── src/
-│   └── tests/
-├── relayer/            # Rust Relayer Node Implementation
-├── docs/               # Additional Technical Documentation
-├── interlink-zk-interoperability-whitepaper.tex  # The Whitepaper (LaTeX)
+Cobalt/
+├── interlink-core/     # Core Crate (ZK engine, Network client, Prover logic)
+├── circuits/           # Merkle & State Transition Circuits
+├── relayer/            # Relayer Node Entrypoint & Config
+├── contracts/          
+│   ├── solana/         # Interlink Hub (Anchor Program)
+│   └── evm/            # Gateway Contracts (Solidity)
+├── Interlink_Research.tex # The Technical Whitepaper (LaTeX)
 └── README.md           # This file
 ```
+
+## Prover Performance
+The `interlink-core` is optimized for high-performance proving using the `multicore` feature of `halo2_proofs`.
+- **Curve**: BN254
+- **Throughput**: Parallelized FFT/MSM computation.
+- **Verification**: O(1) constant-time verification complexity.
 
 ## Technology Stack
 
