@@ -21,7 +21,12 @@
 \usepackage{float}
 \usepackage{parskip}
 \usepackage{tikz}
-\usetikzlibrary{shapes.geometric, arrows}
+\usetikzlibrary{shapes.geometric, arrows, positioning, calc}
+
+\tikzset{
+    box/.style={rectangle, draw, rounded corners, minimum width=2.5cm, minimum height=1cm, text centered, font=\small},
+    arrow/.style={thick,->,>=stealth}
+}
 
 \hypersetup{
     colorlinks=true,
@@ -90,7 +95,6 @@
 
 \begin{document}
 
-\maketitle
 \begin{titlepage}
 \maketitle
 \end{titlepage}
@@ -2495,32 +2499,6 @@ The journey ahead is ambitious, but the potential impact is transformative. We b
 
 \newpage
 
-\appendix
-\section{Background on Blockchain Technology}
-
-\subsection{Background on Blockchain Technology (Summary)}
-\label{sec:blockchain-bg}
-
-This appendix provides a condensed reference for readers new to blockchain fundamentals.
-For a comprehensive treatment, see Narayanan et al.\ \cite{bitcoin-book}.
-
-\subsubsection{Cryptographic Foundations}
-The integrity of a blockchain rests on two primary cryptographic primitives: hashing and public-key cryptography.
-\begin{itemize}
-    \item \textbf{Hashing:} A hash function maps an input of arbitrary length to a fixed-length digest. This mapping is deterministic and effectively one-way. In blockchains, each block typically commits to the previous block via its hash, forming a chain of commitments. If an adversary alters data in a prior block, the block hash changes and breaks all subsequent links, making tampering evident.
-    \item \textbf{Public-Key Cryptography:} Users control accounts using keypairs: a public key (address/identifier) and a private key used to authorize actions. Transactions are signed with the private key, proving control without revealing the secret itself. This ensures that only the legitimate key holder can authorize transfers or contract interactions.
-\end{itemize}
-
-\subsubsection{Consensus Mechanisms}
-To agree on the state of the ledger without a central authority, blockchains use consensus mechanisms.
-\begin{itemize}
-    \item \textbf{Proof of Work (PoW):} Popularized by Bitcoin, PoW selects block producers by requiring participants to perform computational work. While energy-intensive, it is highly robust: attacking the network typically requires sustaining a large fraction of global hashpower.
-    \item \textbf{Proof of Stake (PoS):} Used by networks such as Ethereum and Solana, PoS selects validators based on economic stake. Validators lock tokens as collateral, earn rewards for honest participation, and can be penalized (slashed) for provable misbehavior. PoS is more energy-efficient and can support higher throughput than PoW.
-\end{itemize}
-
-\subsubsection{Smart Contracts and Turing Completeness}
-While Bitcoin introduced decentralized money, Ethereum extended the model to decentralized computation. Smart contracts are programs deployed on-chain that execute deterministically when invoked, enabling applications such as decentralized exchanges (DEXs), lending protocols, and governance systems. This programmability (often described informally as ``Turing completeness'') is what enables rich on-chain financial and coordination systems, and it has driven the growth of Decentralized Finance (DeFi) and related ecosystems.
-
 \begin{thebibliography}{99}
 
 \bibitem{halo2}
@@ -2558,15 +2536,5 @@ Narayanan, A., Bonneau, J., Felten, E., Miller, A., Goldfeder, S.
 \textit{Bitcoin and Cryptocurrency Technologies}. Princeton University Press, 2016.
 
 \end{thebibliography}
-
-\bigskip
-\hrule
-\bigskip
-\noindent\textbf{Get involved:}
-\begin{itemize}
-  \item \textbf{GitHub:} \url{https://github.com/MeridianAlgo/Cobalt}
-  \item \textbf{We are hiring} Rust + zk engineers and circuit auditors.
-  \item \textbf{Audit timeline:} Q3 2026 (OtterSec / Trail of Bits engagement in progress).
-\end{itemize}
 
 \end{document}
