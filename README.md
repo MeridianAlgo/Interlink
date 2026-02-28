@@ -2,7 +2,7 @@
 
 > **Making blockchains play nice together. No middleman, just math.**
 
-**Hey there!** Welcome to the InterLink repository. We're building the connective tissue for the decentralized web. If you've ever tried moving assets between different blockchains, you know it can be a headache—slow, risky, and expensive. We're here to fix that.
+**Hey there!** Welcome to the InterLink repository. We're building the connective tissue for the decentralized web. If you've ever tried moving assets between different blockchains, you know it can be a headache, slow, risky, and expensive. We're here to fix that.
 
 ---
 
@@ -10,7 +10,7 @@
 
 Think of blockchains like separate islands. Right now, to go from "Ethereum Island" to "Solana Island," you have to board a ferry owned by a small group of people you have to trust. If they lose their keys or decide to take your money, you're stuck.
 
-**InterLink is the first trustless bridge that doesn't ask for your permission or your trust.** Instead of a "ferry" owned by people, we've built a "teleporter" powered by math—specifically, **Zero-Knowledge Proofs (zk-SNARKs)**. 
+**InterLink is the first trustless bridge that doesn't ask for your permission or your trust.** Instead of a "ferry" owned by people, we've built a "teleporter" powered by math, specifically, **Zero-Knowledge Proofs (zk-SNARKs)**. 
 
 With InterLink, you can move value and data across different chains instantly and securely. No multisigs, no "optimistic" 7-day waits. Just pure protocol-level magic.
 
