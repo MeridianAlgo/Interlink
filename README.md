@@ -496,4 +496,5 @@ pdflatex interlink-zk-interoperability-whitepaper.tex
 
 ---
 
-*“The future is not multi-chain; it is cross-chain native.”* — **MeridianAlgo Research**
+*“The future is not multi-chain; it is cross-chain native.”* 
+— **MeridianAlgo Research**
