@@ -8,3 +8,9 @@ members = [
 
 [workspace.metadata.cargo-udeps.ignore]
 development = true
+
+# ── Security patches ──────────────────────────────────────────────────────────
+# Overrides ring to >= 0.17.12 to fix RUSTSEC-2025-0009 (AES panic on overflow
+# checking). This crate is a transitive dep via ethers-providers → jsonwebtoken.
+[workspace.dependencies]
+ring = ">=0.17.12"

@@ -1,0 +1,14 @@
+# cargo audit configuration for the InterLink workspace
+# Generated: 2026-02-28
+
+[advisories]
+
+# RUSTSEC-2025-0009 / RUSTSEC-2025-0010: ring < 0.17.12 AES panic + unmaintained
+# Transitive dependency via: ethers-providers 2.0.14 → jsonwebtoken 8.x → ring 0.16
+# ethers-providers v2 hard-pins jsonwebtoken 8, which in turn hard-pins ring 0.16.
+# We cannot upgrade ethers without a full SDK migration. The panic is only
+# triggered with Rust debug overflow checks enabled (not in --release builds).
+# Tracked: https://github.com/MeridianAlgo/Interlink/issues/1
+# Mitigation: AES code path is only used for JWS parsing in provider WebSocket
+# authentication, which is never exercised in our relayer architecture.
+ignore = ["RUSTSEC-2025-0009", "RUSTSEC-2025-0010"]
