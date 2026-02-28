@@ -10,7 +10,7 @@ halo2curves = "0.1.0"
 ff = "0.13"
 
 # Async Runtime
-tokio = { version = "1.0", features = ["full", "tracing"] }
+tokio = { version = "1.32", features = ["full", "tracing"] }
 futures = "0.3"
 
 # Networking & serialization
@@ -28,6 +28,8 @@ ethers-core = { version = "2.0.14" }
 ethers-providers = { version = "2.0.14", features = ["ws"] }
 ethers-contract = { version = "2.0.14" }
 reqwest = { version = "0.11", features = ["json"] }
+base64 = "0.21"
+ed25519-dalek = "2.0"
 
 [dev-dependencies]
 # For testing circuits
