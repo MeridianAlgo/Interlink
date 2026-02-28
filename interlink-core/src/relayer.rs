@@ -208,7 +208,7 @@ impl Relayer {
         payload_hash: [u8; 32],
         proof: Vec<u8>,
     ) -> crate::Result<()> {
-        use ed25519_dalek::{SigningKey, Signer};
+        use ed25519_dalek::{Signer, SigningKey};
         use rand::{rngs::OsRng, RngCore};
 
         println!(
@@ -216,13 +216,13 @@ impl Relayer {
             rpc_url
         );
 
-        // Real-deal architecture: 
+        // Real-deal architecture:
         // 1. Initialize Relayer Keypair (signer) using lightweight dalek crate
         let mut seed = [0u8; 32];
         let mut rng = OsRng;
         rng.fill_bytes(&mut seed);
         let signing_key = SigningKey::from_bytes(&seed);
-        
+
         // 2. We calculate the commitment as public input matching the Halo2 output
         let mut commitment_input = [0u8; 32];
         for i in 0..32 {
@@ -243,9 +243,9 @@ impl Relayer {
         // For a full transaction, we'd add recent_blockhash and sign the message.
         // We perform a real signature for the final broadcast.
         let _signature = signing_key.sign(&data);
-        
+
         let client = Client::new();
-        use base64::{Engine as _, engine::general_purpose};
+        use base64::{engine::general_purpose, Engine as _};
         let payload_base64 = general_purpose::STANDARD.encode(&data);
 
         let request_body = json!({
@@ -264,9 +264,16 @@ impl Relayer {
                 if status.is_success() {
                     let result_json: serde_json::Value = res.json().await.unwrap_or_default();
                     let sig_resp = result_json["result"].as_str().unwrap_or("confirmed");
-                    println!("[SUBMITTER] HUB CONFIRMATION: Processed message #{} [Sig: {}...]", sequence, &sig_resp[..8]);
+                    println!(
+                        "[SUBMITTER] HUB CONFIRMATION: Processed message #{} [Sig: {}...]",
+                        sequence,
+                        &sig_resp[..8]
+                    );
                 } else {
-                    eprintln!("[SUBMITTER] Hub Rejected Transaction: {}", res.text().await.unwrap_or_default());
+                    eprintln!(
+                        "[SUBMITTER] Hub Rejected Transaction: {}",
+                        res.text().await.unwrap_or_default()
+                    );
                 }
             }
             Err(e) => eprintln!("[ERROR] Solana RPC Fetch Failed: {}", e),
