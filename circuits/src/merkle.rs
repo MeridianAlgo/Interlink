@@ -33,7 +33,7 @@ impl<F: PrimeField> Circuit<F> for MerkleCircuit<F> {
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
         let poseidon_config = PoseidonChip::<F>::configure(meta);
 
-        // We reuse poseidon_config.instance instead of creating a new one
+        // reusing the poseidon instance. don't want to bloat the circuit.
         let path_elements = [meta.advice_column(), meta.advice_column()];
         let path_indices = meta.advice_column();
 
@@ -56,7 +56,7 @@ impl<F: PrimeField> Circuit<F> for MerkleCircuit<F> {
     ) -> Result<(), Error> {
         let chip = PoseidonChip::<F>::construct(config.poseidon_config);
 
-        // 1. Assign the initial leaf
+        // step 1: stick the leaf in the circuit.
         let mut current_node = layouter.assign_region(
             || "init_leaf",
             |mut region| {
@@ -69,7 +69,7 @@ impl<F: PrimeField> Circuit<F> for MerkleCircuit<F> {
             },
         )?;
 
-        // 2. Iterate through the path and hash at each level
+        // step 2: walk the tree. hashing at every level.
         for i in 0..self.path.len() {
             let path_val = self.path[i];
             let index_val = self.indices[i];
@@ -79,7 +79,7 @@ impl<F: PrimeField> Circuit<F> for MerkleCircuit<F> {
                 |mut region| {
                     chip.config.s_hash.enable(&mut region, 0)?;
 
-                    // Assign current node as state_in
+                    // current node becomes the state input.
                     current_node.copy_advice(
                         || "current_node",
                         &mut region,
@@ -87,7 +87,7 @@ impl<F: PrimeField> Circuit<F> for MerkleCircuit<F> {
                         0,
                     )?;
 
-                    // Assign path element as round_const
+                    // path element acts as the round constant. magic.
                     region.assign_advice(
                         || "path_element",
                         chip.config.advice[1],
@@ -95,7 +95,7 @@ impl<F: PrimeField> Circuit<F> for MerkleCircuit<F> {
                         || Value::known(path_val),
                     )?;
 
-                    // Assign index as prev_val (to influence the hash)
+                    // use the index to influence the hash. helps with ordering.
                     region.assign_advice(
                         || "index",
                         chip.config.advice[3],
@@ -103,7 +103,7 @@ impl<F: PrimeField> Circuit<F> for MerkleCircuit<F> {
                         || Value::known(index_val),
                     )?;
 
-                    // Calculate next node: (current_node + path_val)^3 + index
+                    // compute next node: (current_node + path_val)^3 + index. high school math.
                     let next_val = current_node.value().map(|cn| {
                         let diff = *cn + path_val;
                         diff.square() * diff + index_val
@@ -114,7 +114,7 @@ impl<F: PrimeField> Circuit<F> for MerkleCircuit<F> {
             )?;
         }
 
-        // 3. Expose the final root as public input
+        // step 3: the root is public. everyone needs to see it.
         layouter.constrain_instance(current_node.cell(), config.poseidon_config.instance, 0)
     }
 }
@@ -132,7 +132,7 @@ mod tests {
         let path = vec![Fr::from(200), Fr::from(300)];
         let indices = vec![Fr::from(0), Fr::from(1)];
 
-        // Reconstruct root manually
+        // manually rebuilding the root to check the circuit.
         let mut root = leaf;
         for i in 0..path.len() {
             let diff = root + path[i];

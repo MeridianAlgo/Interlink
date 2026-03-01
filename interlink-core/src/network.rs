@@ -3,18 +3,18 @@ use ethers_providers::{Http, Middleware, Provider};
 use std::convert::TryFrom;
 use tracing::info;
 
-/// A client for interacting with blockchain networks.
+/// simple client for talking to the chains.
 pub struct NetworkClient {
     pub url: String,
 }
 
 impl NetworkClient {
-    /// Creates a new network client.
+    /// spin up a new network client.
     pub fn new(url: String) -> Self {
         Self { url }
     }
 
-    /// Connects to a remote node and validates the provider.
+    /// try to connect and make sure the node is actually alive.
     pub async fn connect(&self) -> Result<()> {
         info!("Connecting to network at {}...", self.url);
 
@@ -30,7 +30,7 @@ impl NetworkClient {
         Ok(())
     }
 
-    /// Fetches a block by height using the provider.
+    /// grab a block by height. might be slow depending on the node.
     pub async fn get_block(&self, height: u64) -> Result<Vec<u8>> {
         info!("Fetching block at height {}...", height);
 
@@ -43,7 +43,7 @@ impl NetworkClient {
             .map_err(|e| crate::InterlinkError::NetworkError(e.to_string()))?
             .ok_or_else(|| crate::InterlinkError::NetworkError("Block not found".to_string()))?;
 
-        // Serialize block data for circuit witness
+        // serialize the block so we can shove it into the circuit witness.
         let serialized = serde_json::to_vec(&block)
             .map_err(|_| crate::InterlinkError::NetworkError("Serialization failed".to_string()))?;
 

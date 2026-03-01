@@ -2,11 +2,11 @@ use interlink_core::relayer::{Relayer, RelayerConfig};
 
 #[tokio::main]
 async fn main() {
-    // Initialize tracing for logging
+    // setup tracing. need logs to see what's actually happening.
     tracing_subscriber::fmt::init();
 
     let config = RelayerConfig {
-        chain_id: 1, // Ethereum Mainnet placeholder
+        chain_id: 1, // eth mainnet placeholder. swap this out for other chains.
         rpc_url: "ws://localhost:8545".to_string(),
         hub_url: "https://api.devnet.solana.com".to_string(),
         gateway_address: "0x0000000000000000000000000000000000000000".to_string(),

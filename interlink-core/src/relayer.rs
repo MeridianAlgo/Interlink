@@ -23,8 +23,8 @@ mod tests {
 
         println!("[TEST] SNARK Generated. Length: {} bytes", proof.len());
         assert!(!proof.is_empty(), "Proof should not be empty");
-        // Verify it's significantly larger than a dummy (usually > 100 bytes for SNARKs)
-        assert!(proof.len() > 100, "Proof size too small for a real SNARK");
+        // check if it's beefy enough. dummy proofs are too small for real snarks.
+        assert!(proof.len() > 100, "proof size too small for a real snark");
     }
 }
 
@@ -37,8 +37,8 @@ abigen!(
 
 pub struct RelayerConfig {
     pub chain_id: u64,
-    pub rpc_url: String, // WebSocket URL for ethers
-    pub hub_url: String, // HTTP URL for Solana
+    pub rpc_url: String, // ws url for ethers, need this to listen to the chain
+    pub hub_url: String, // solana hub url. http is fine for rpc calls here.
     pub gateway_address: String,
     pub solana_program_id: String,
     pub keypair_path: String,
@@ -55,25 +55,25 @@ impl Relayer {
         }
     }
 
-    /// Runs the heavily concurrent relayer event loop.
+    /// starts the main loop. heavily concurrent, so hold on tight.
     pub async fn run(&self) -> Result<()> {
         println!(
             "Initializing High-Performance Relayer for chain ID {} [WS: {}] [Hub: {}]",
             self.config.chain_id, self.config.rpc_url, self.config.hub_url
         );
 
-        let (tx, mut rx) = mpsc::channel(1024); // High throughput buffered channel
+        let (tx, mut rx) = mpsc::channel(1024); // big-ish buffer for high throughput. don't want to drop events.
         let ws_url = self.config.rpc_url.clone();
         let gateway_address = self.config.gateway_address.clone();
 
-        // 1. Event Watcher (Producer) - Listens via WebSockets using Ethers-rs
+        // step 1: event watcher. just hanging out on websockets listening for logs.
         tokio::spawn(async move {
             if let Err(e) = Self::watch_events(&ws_url, &gateway_address, tx).await {
                 eprintln!("[WS ERROR] Watcher failed: {}", e);
             }
         });
 
-        // 2. Proof Generator & Solana Submitter (Consumers)
+        // step 2: the workers. generators and submitters doing the heavy lifting.
         while let Some((nonce, payload_hash)) = rx.recv().await {
             println!(
                 "\n[EVENT] Raw payload received from Source Chain #{} | Nonce: {}",
@@ -81,7 +81,7 @@ impl Relayer {
             );
             let relayer_ref = Arc::clone(&self.config);
 
-            // Multithreaded SNARK Proving (CPU-bound) -> Offload to Rayon Thread Pool
+            // cpu burner: snark proving is heavy. offloading to the thread pool to keep the loop snappy.
             let proof_task = tokio::task::spawn_blocking(move || {
                 Self::generate_proof_sync(nonce, payload_hash, relayer_ref.chain_id)
             });
@@ -111,8 +111,8 @@ impl Relayer {
     ) -> std::result::Result<(), Box<dyn std::error::Error>> {
         println!("[WS] Connecting to WebSocket listener at {}", ws_url);
 
-        // Use ethers-rs WebSocket to subscribe to EVM events realistically
-        // Note: For actual deployment, replace `ws://localhost:8545` with standard node WSS endpoint.
+        // use ethers to catch evm events. the real deal.
+        // note: use a real wss endpoint in prod, localhost is just for dev.
         let provider = Provider::<Ws>::connect(ws_url).await?;
         let client = Arc::new(provider);
 
@@ -121,7 +121,7 @@ impl Relayer {
 
         println!("[WS] Subscribing to MessagePublished events...");
 
-        // In a real live environment, we use strictly the WebSocket provider.
+        // strictly wss for the live environment. no polls allowed.
         let events = contract.events();
         let mut block_stream = events.subscribe().await?;
 
@@ -156,34 +156,34 @@ impl Relayer {
 
         println!("[PROVER] Generating Real ZK-SNARK for message #{}", nonce);
 
-        // 1. Setup Parameters
+        // stage 1: dial in the params.
         let k = 6;
         let params = Params::<G1Affine>::new(k);
 
-        // 2. Initialize Circuit
+        // stage 2: prep the circuit with the payload.
         let payload_f = Fr::from_repr(hash).unwrap_or(Fr::from(nonce));
         let circuit = InterlinkCircuit {
             message_payload: Some(payload_f),
             sequence_number: Some(Fr::from(nonce)),
         };
 
-        // 3. Key Generation
+        // stage 3: generate the keys. this is the slow part.
         let vk = keygen_vk(&params, &circuit)
             .map_err(|_| crate::InterlinkError::ProofGenerationFailed)?;
         let pk = keygen_pk(&params, vk, &circuit)
             .map_err(|_| crate::InterlinkError::ProofGenerationFailed)?;
 
-        // 4. Calculate Public Inputs
+        // stage 4: crunch the public inputs.
         let rc = Fr::from(0x1337);
         let diff = payload_f + rc;
         let commitment = diff.square() * diff + Fr::from(nonce);
 
-        // Correct nesting for public inputs: &[&[&[Scalar]]]
-        // Here: 1 circuit, 1 instance column, 1 value
+        // nesting is a bit of a nightmare: &[&[&[scalar]]]
+        // 1 circuit, 1 column, 1 value. easy.
         let instances: &[&[Fr]] = &[&[commitment]];
         let instances_ref: &[&[&[Fr]]] = &[instances];
 
-        // 5. Create Proof
+        // stage 5: actually build the proof.
         let mut transcript = Blake2bWrite::<_, G1Affine, Challenge255<_>>::init(vec![]);
         create_proof::<G1Affine, _, _, _, _>(
             &params,
@@ -216,32 +216,37 @@ impl Relayer {
             rpc_url
         );
 
-        // Real-deal architecture:
-        // 1. Initialize Relayer Keypair (signer) using lightweight dalek crate
+        // the real deal architecture:
+        // step 1: spin up the relayer key. dalek is fast.
         let mut seed = [0u8; 32];
         let mut rng = OsRng;
         rng.fill_bytes(&mut seed);
         let signing_key = SigningKey::from_bytes(&seed);
 
-        // 2. We calculate the commitment as public input matching the Halo2 output
-        let mut commitment_input = [0u8; 32];
-        for i in 0..32 {
-            commitment_input[i] = payload_hash[i] ^ (sequence as u8).wrapping_add(0x37);
-        }
+        // step 2: calculate the commitment. must match the halo2 output exactly.
+        // formula: (h + 0x1337)^3 + seq. the magic sauce.
+        use ff::PrimeField;
+        use halo2curves::bn256::Fr;
 
-        // 3. Construct SubmitProof instruction Data (Anchor Layout)
+        let payload_f = Fr::from_repr(payload_hash).unwrap_or(Fr::from(sequence));
+        let rc = Fr::from(0x1337);
+        let diff = payload_f + rc;
+        let commitment_f = diff.square() * diff + Fr::from(sequence);
+        let commitment_input = commitment_f.to_repr();
+
+        // step 3: pack the anchor instruction. layout mapping starts here.
         let mut data = Vec::with_capacity(8 + 8 + 8 + proof.len() + 32 + 32);
-        data.extend_from_slice(&[0x1d, 0x11, 0x18, 0x17, 0x11, 0x1a, 0x1c, 0x12]); // Anchor sighash
-        data.extend_from_slice(&1u64.to_le_bytes()); // source_chain
-        data.extend_from_slice(&sequence.to_le_bytes()); // sequence
-        data.extend_from_slice(&(proof.len() as u32).to_le_bytes()); // proof length
+        data.extend_from_slice(&[0x1d, 0x11, 0x18, 0x17, 0x11, 0x1a, 0x1c, 0x12]); // anchor sighash.
+        data.extend_from_slice(&1u64.to_le_bytes()); // source chain id.
+        data.extend_from_slice(&sequence.to_le_bytes()); // sequence counter.
+        data.extend_from_slice(&(proof.len() as u32).to_le_bytes()); // proof size.
         data.extend_from_slice(&proof);
         data.extend_from_slice(&payload_hash);
         data.extend_from_slice(&commitment_input);
 
-        // 4. Wrap into a real Transaction structure (Simplified architectural wire format)
-        // For a full transaction, we'd add recent_blockhash and sign the message.
-        // We perform a real signature for the final broadcast.
+        // step 4: wrap it in a tx. using a simplified wire format for now.
+        // todo: add recent_blockhash and proper signing for prod.
+        // real signature here or it'll get dumped by the hub.
         let _signature = signing_key.sign(&data);
 
         let client = Client::new();

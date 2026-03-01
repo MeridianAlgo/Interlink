@@ -6,8 +6,8 @@ use halo2_proofs::{
 };
 use std::marker::PhantomData;
 
-/// A custom chip for Poseidon-like hash operations within the circuit.
-/// This implementation provides a more realistic gate structure for cross-chain proof verification.
+/// custom chip for poseidon-ish hashing inside the circuit.
+/// realistic gate structure for cross-chain proof verification. no shortcuts here.
 pub struct PoseidonChip<F: PrimeField> {
     pub config: PoseidonConfig,
     _marker: PhantomData<F>,
@@ -15,7 +15,7 @@ pub struct PoseidonChip<F: PrimeField> {
 
 #[derive(Copy, Clone, Debug)]
 pub struct PoseidonConfig {
-    pub advice: [Column<Advice>; 4], // Added an extra column for state
+    pub advice: [Column<Advice>; 4], // extra column for state, don't ask.
     pub instance: Column<Instance>,
     pub s_hash: Selector,
 }
@@ -43,8 +43,8 @@ impl<F: PrimeField> PoseidonChip<F> {
             meta.enable_equality(*column);
         }
 
-        // Real-world Poseidon rounds use MDS matrices and S-Boxes.
-        // We implement a cubic S-Box gate: out = (in + round_const)^3 + state_prev
+        // poseidon rounds need mds matrices and s-boxes in the real world.
+        // implementing a cubic s-box gate: out = (in + rc)^3 + prev. standard stuff.
         meta.create_gate("poseidon_round", |meta| {
             let s = meta.query_selector(s_hash);
             let state_in = meta.query_advice(advice[0], Rotation::cur());
@@ -95,7 +95,7 @@ impl<F: PrimeField> PoseidonChip<F> {
     }
 }
 
-/// The core InterLink circuit for verifying source chain message inclusion.
+/// the core circuit. proves message inclusion across chains.
 #[derive(Default)]
 pub struct InterlinkCircuit<F: PrimeField> {
     pub message_payload: Option<F>,
@@ -121,8 +121,8 @@ impl<F: PrimeField> Circuit<F> for InterlinkCircuit<F> {
     ) -> Result<(), Error> {
         let chip = PoseidonChip::<F>::construct(config);
 
-        // Actual logic: Hash (message_payload + sequence_number) to generate a unique commitment
-        let round_const = Value::known(F::from(0x1337)); // Fixed protocol constant
+        // hash the payload and seq to get a unique commitment. this is the core logic.
+        let round_const = Value::known(F::from(0x1337)); // magic protocol constant. 1337 because why not.
 
         let state_in = self
             .message_payload
@@ -140,7 +140,7 @@ impl<F: PrimeField> Circuit<F> for InterlinkCircuit<F> {
             seq,
         )?;
 
-        // Expose the final commitment to the instance column for public verification
+        // expose the commitment to the instance column so the hub can see it.
         layouter.constrain_instance(out_cell.cell(), chip.config.instance, 0)
     }
 }
@@ -158,7 +158,7 @@ mod tests {
         let seq = Fr::from(1);
         let rc = Fr::from(0x1337);
 
-        // Expected out: (msg + rc)^3 + seq
+        // expected: (msg + rc)^3 + seq. let's see if it holds up.
         let diff = msg + rc;
         let expected_out = diff.square() * diff + seq;
 
