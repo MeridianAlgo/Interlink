@@ -140,7 +140,13 @@ fn verify_groth16_proof(proof: &[u8], _payload_hash: &[u8; 32]) -> bool {
 
 #[derive(Accounts)]
 pub struct Initialize<'info> {
-    #[account(init, payer = admin, space = 8 + 32 + 2 + 8)]
+    #[account(
+        init, 
+        payer = admin, 
+        space = 8 + 32 + 2 + 8,
+        seeds = [b"state"],
+        bump
+    )]
     pub state_registry: Account<'info, StateRegistry>,
     #[account(mut)]
     pub admin: Signer<'info>,
@@ -149,7 +155,11 @@ pub struct Initialize<'info> {
 
 #[derive(Accounts)]
 pub struct SubmitProof<'info> {
-    #[account(mut)]
+    #[account(
+        mut,
+        seeds = [b"state"],
+        bump
+    )]
     pub state_registry: Account<'info, StateRegistry>,
     #[account(mut)]
     pub relayer: Signer<'info>,

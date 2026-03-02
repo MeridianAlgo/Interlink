@@ -11,7 +11,7 @@ async fn main() -> Result<(), interlink_core::InterlinkError> {
         rpc_url: std::env::var("EVM_RPC_URL").unwrap_or_else(|_| "ws://localhost:8545".to_string()),
         hub_url: std::env::var("SOLANA_RPC_URL").unwrap_or_else(|_| "https://api.devnet.solana.com".to_string()),
         gateway_address: std::env::var("GATEWAY_ADDRESS").unwrap_or_else(|_| "0x0000000000000000000000000000000000000000".to_string()),
-        solana_program_id: std::env::var("HUB_PROGRAM_ID").unwrap_or_else(|_| "Hub1111111111111111111111111111111111111111".to_string()),
+        solana_program_id: std::env::var("HUB_PROGRAM_ID").unwrap_or_else(|_| "AKzpc9tvxfhLjj5AantKizK2YZgSjoyhLmYqRZy6b8Lz".to_string()),
         keypair_path: std::env::var("KEYPAIR_PATH").unwrap_or_else(|_| "~/.config/solana/id.json".to_string()),
     };
 

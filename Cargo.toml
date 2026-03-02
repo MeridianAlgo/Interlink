@@ -14,3 +14,6 @@ development = true
 # this crate is a transitive dep via ethers-providers → jsonwebtoken.
 [workspace.dependencies]
 ring = ">=0.17.12"
+
+[profile.release]
+overflow-checks = true
