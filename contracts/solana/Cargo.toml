@@ -8,6 +8,15 @@ edition = "2021"
 [lib]
 crate-type = ["cdylib", "lib"]
 
+[features]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+cpi = ["no-entrypoint"]
+default = []
+
 [dependencies]
 anchor-lang = "0.29.0"
 anchor-spl = "0.29.0"
+# pin to anchor's solana-program version. alt_bn128 available since 1.15.
+solana-program = "=1.17.4"

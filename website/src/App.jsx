@@ -24,7 +24,7 @@ const Navbar = () => {
               <li><Link to="/docs" className={loc.pathname.startsWith('/docs') ? 'active' : ''}>Documentation</Link></li>
               <li>
                 <a
-                  href="https://github.com/MeridianAlgo/Cobalt"
+                  href="https://github.com/MeridianAlgo/Interlink"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="nav-github"
@@ -58,7 +58,7 @@ const Navbar = () => {
           >
             <Link to="/" onClick={() => setOpen(false)}>Home</Link>
             <Link to="/docs" onClick={() => setOpen(false)}>Documentation</Link>
-            <a href="https://github.com/MeridianAlgo/Cobalt" target="_blank" rel="noopener noreferrer">GitHub</a>
+            <a href="https://github.com/MeridianAlgo/Interlink" target="_blank" rel="noopener noreferrer">GitHub</a>
           </motion.div>
         )}
       </AnimatePresence>
@@ -77,7 +77,7 @@ const App = () => (
     </main>
     <footer className="footer">
       <div className="container">
-        <p>© 2026 MeridianAlgo Research Lab · InterLink Protocol · v0.6.1</p>
+        <p>© 2026 MeridianAlgo Research Lab · InterLink Protocol · v0.6.4</p>
       </div>
     </footer>
   </Router>

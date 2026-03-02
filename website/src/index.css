@@ -172,75 +172,93 @@ pre code .cm {
 
 /* ─── Navigation ────────────────────────────────── */
 header {
-  position: fixed;
+  height: 64px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  position: sticky;
   top: 0;
-  left: 0;
-  right: 0;
-  z-index: 100;
-  background: rgba(0, 0, 0, 0.85);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border-bottom: 1px solid var(--border);
-  height: 60px;
-  display: flex;
-  align-items: center;
+  z-index: 1000;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  transition: all 0.3s ease;
+}
+
+header:hover {
+  background: rgba(0, 0, 0, 0.8);
+  border-bottom-color: rgba(66, 153, 225, 0.2);
 }
 
 nav {
+  height: 64px;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  width: 100%;
 }
 
 .logo {
+  font-family: var(--font-mono);
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #fff;
+  text-decoration: none;
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  color: #ffffff;
-  font-size: 0.95rem;
-  font-weight: 600;
-  letter-spacing: -0.01em;
-  text-decoration: none;
+  gap: 0.6rem;
+  letter-spacing: -0.02em;
 }
 
 .logo svg {
-  color: var(--blue);
+  color: var(--primary);
+  filter: drop-shadow(0 0 8px rgba(66, 153, 225, 0.4));
 }
 
 .nav-links {
+  list-style: none;
   display: flex;
   align-items: center;
   gap: 2rem;
-  list-style: none;
 }
 
 .nav-links a {
-  font-size: 0.875rem;
-  font-weight: 400;
-  color: var(--text-2);
-  transition: color 0.15s;
+  text-decoration: none;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.9rem;
+  font-weight: 500;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
 }
 
-.nav-links a:hover,
+.nav-links a:hover {
+  color: #fff;
+}
+
 .nav-links a.active {
-  color: var(--text);
+  color: #fff;
+}
+
+.nav-links a.active::after {
+  content: "";
+  position: absolute;
+  bottom: -22px;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--primary);
+  box-shadow: 0 0 10px rgba(66, 153, 225, 0.6);
 }
 
 .nav-github {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
-  padding: 0.35rem 0.75rem;
-  border: 1px solid var(--border-bright);
-  border-radius: var(--radius);
-  font-size: 0.8rem;
-  color: var(--text-2) !important;
-  transition: border-color 0.15s, color 0.15s !important;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.03);
+  font-weight: 600 !important;
 }
 
 .nav-github:hover {
-  border-color: #444 !important;
   color: var(--text) !important;
 }
 

@@ -30,6 +30,7 @@ ethers-contract = { version = "2.0.14" }
 reqwest = { version = "0.11", features = ["json"] }
 base64 = "0.21"
 ed25519-dalek = "2.0"
+bs58 = "0.5"
 
 [dev-dependencies]
 # For testing circuits
