@@ -2,7 +2,7 @@ pub mod circuit;
 pub mod network;
 pub mod relayer;
 
-/// core errors. if something breaks, it's probably here.
+/// Core errors for protocol execution and network failure
 #[derive(Debug)]
 pub enum InterlinkError {
     ProofGenerationFailed,
@@ -12,7 +12,7 @@ pub enum InterlinkError {
 
 pub type Result<T> = std::result::Result<T, InterlinkError>;
 
-/// trait for cross-chain messages. basic building block.
+/// Trait for defining structured cross-chain messages
 pub trait Message {
     fn payload(&self) -> &[u8];
     fn source_chain(&self) -> u64;

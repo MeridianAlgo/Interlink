@@ -8,7 +8,8 @@ import {
     Server
 } from 'lucide-react'
 
-/*Standerd AI website no im not tryna make a website rn i have better things to do*/
+
+
 /* ─── Sidebar definition ──────────────────────── */
 const NAV = [
     {
@@ -69,7 +70,7 @@ const Sidebar = () => {
             </div>
             <div className="glass-panel" style={{ margin: '0 1rem 1.5rem', padding: '0.75rem', fontSize: '0.7rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                 <div style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--green)', boxShadow: '0 0 8px var(--green)' }} />
-                <span style={{ color: 'var(--text-2)', fontWeight: 500 }}>v0.6.4-beta (Mainnet Ready)</span>
+                <span style={{ color: 'var(--text-2)', fontWeight: 500 }}>v0.7.1-beta (Mainnet Ready)</span>
             </div>
             {NAV.map(g => (
                 <div key={g.group} className="sidebar-section">
@@ -227,8 +228,8 @@ const IntroPage = () => (
             <h2>Protocol Roadmap</h2>
             <div className="flow-steps glass-panel" style={{ marginTop: '1.5rem' }}>
                 {[
-                    { t: 'v0.6.x (Current)', d: 'Production-ready ZK pairing checks on Solana and EVM. Multi-chain relayer support.' },
-                    { t: 'v0.7.0 (Q3 2026)', d: 'Recursive proof aggregation. Folding multiple chain events into a single O(1) submission.' },
+                    { t: 'v0.7.x (Current)', d: 'Production-ready ZK pairing checks on Solana and EVM. Multi-chain relayer support.' },
+                    { t: 'v0.8.0 (Q3 2026)', d: 'Recursive proof aggregation. Folding multiple chain events into a single O(1) submission.' },
                     { t: 'v0.8.0 (Q4 2026)', d: 'Decentralized relayer pool with staking and slashing. Shared security layer.' },
                     { t: 'v1.0.0 (2027)', d: 'Full interoperability ecosystem with Cosmos, Move-based chains (Aptos/Sui), and Bitcoin L2s.' },
                 ].map((item, idx) => (

@@ -68,7 +68,7 @@ contract InterlinkGateway {
     // admin stuff.
 
     /**
-     * @dev emergency pause button for the dao.
+     * @dev Pauses the gateway. Only callable by the Dao Guardian.
      */
     function pause() external onlyGuardian {
         paused = true;
@@ -100,9 +100,9 @@ contract InterlinkGateway {
     // user facing methods.
 
     /**
-     * @dev user endpoint: lock your stuff and signal your intent.
+     * @dev Endpoint for end-users to initiate cross-chain messages.
      *
-     * cei pattern: incrementing nonce before external calls to avoid reentrancy.
+     * Utilizes the CEI (Checks-Effects-Interactions) pattern.
      *
      * @param destChain target chain id (e.g. solana hub id)
      * @param token     token address (address(0) for native eth)
@@ -124,7 +124,7 @@ contract InterlinkGateway {
         uint64 nonce = currentNonce++;
         bytes32 payloadHash = keccak256(abi.encode(msg.sender, destChain, token, amount, payload));
 
-        // shout it out (emit) before the external transfer (cei).
+        // Emit before external calls to satisfy CEI
         emit MessagePublished(nonce, destChain, msg.sender, payloadHash, payload);
 
         // external calls.
@@ -171,8 +171,8 @@ contract InterlinkGateway {
     // internal helper.
 
     /**
-     * @dev crypto meat: bn254 pairing check via precompile 0x08.
-     * verifies: e(a, b) * e(c, -g2_gen) == 1.
+     * @dev BN254 pairing check via precompile 0x08.
+     * Verifies: e(A, B) * e(C, -G2_gen) == 1.
      *
      * architecture:
      *  - snarkproof contains points A, B, C.

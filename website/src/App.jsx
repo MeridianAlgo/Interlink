@@ -6,7 +6,8 @@ import Home from './pages/Home'
 import Documentation from './pages/Documentation'
 import Bridge from './pages/Bridge'
 import Explorer from './pages/Explorer'
-/*Standerd AI website no im not tryna make a website rn i have better things to do*/
+import logo from './InterLink.png'
+
 const Navbar = () => {
   const [open, setOpen] = useState(false)
   const loc = useLocation() || { pathname: '' }
@@ -14,24 +15,11 @@ const Navbar = () => {
 
   return (
     <>
-      <div className="status-top-bar">
-        <div className="container" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '1rem', height: '100%' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-            <span className="pulse-dot" />
-            <span style={{ fontSize: '0.65rem', fontWeight: 600, letterSpacing: '0.05em', color: 'rgba(255,255,255,0.5)' }}>NETWORK STATUS:</span>
-            <span style={{ fontSize: '0.65rem', fontWeight: 700, color: 'var(--green)' }}>OPERATIONAL</span>
-          </div>
-          <div style={{ width: 1, height: 10, background: 'rgba(255,255,255,0.1)' }} />
-          <div style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.4)', fontWeight: 500 }}>
-            LATEST BLOCK: <span style={{ color: 'var(--blue)' }}>#1948271</span>
-          </div>
-        </div>
-      </div>
       <header className="glass-header">
         <div className="container">
           <nav>
             <Link to="/" className="logo">
-              <img src="/InterLink.png" alt="InterLink Logo" style={{ height: '24px', marginRight: '8px' }} />
+              <img src={logo} alt="InterLink Logo" style={{ height: '24px', marginRight: '8px' }} />
               <span className="text-gradient" style={{ fontWeight: 800 }}>InterLink</span>
             </Link>
 
@@ -99,9 +87,9 @@ const App = () => (
         <Route path="/docs/*" element={<Documentation />} />
       </Routes>
     </main>
-    <footer className="footer">
+    <footer className="footer" style={{ padding: '2rem 0', textAlign: 'center', color: 'var(--text-3)' }}>
       <div className="container">
-        <p>© 2026 MeridianAlgo Research Lab · InterLink Protocol · v0.6.4</p>
+        <p>© 2026 MeridianAlgo Research Lab · InterLink Protocol · v0.7.1</p>
       </div>
     </footer>
   </Router>

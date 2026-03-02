@@ -17,8 +17,8 @@ use std::marker::PhantomData;
 // uses consistent domain separation to prevent proof mismatches.
 // =========================================================================
 
-/// custom chip for poseidon-ish hashing inside the circuit.
-/// realistic gate structure for cross-chain proof verification. no shortcuts here.
+/// Custom chip for Poseidon-style hashing within the circuit.
+/// Implements cubic s-box constraints for cross-chain proof verification.
 pub struct PoseidonChip<F: PrimeField> {
     pub config: PoseidonConfig,
     _marker: PhantomData<F>,
@@ -26,7 +26,7 @@ pub struct PoseidonChip<F: PrimeField> {
 
 #[derive(Copy, Clone, Debug)]
 pub struct PoseidonConfig {
-    pub advice: [Column<Advice>; 4], // extra column for state, don't ask.
+    pub advice: [Column<Advice>; 4], // Columns: state_in, round_const, state_out, prev_val
     pub instance: Column<Instance>,
     pub s_hash: Selector,
 }
@@ -54,8 +54,7 @@ impl<F: PrimeField> PoseidonChip<F> {
             meta.enable_equality(*column);
         }
 
-        // poseidon rounds need mds matrices and s-boxes in the real world.
-        // implementing a cubic s-box gate: out = (in + rc)^3 + prev. standard stuff.
+        // Define the cubic s-box gate for the hash round: out = (in + rc)^3 + prev
         meta.create_gate("poseidon_round", |meta| {
             let s = meta.query_selector(s_hash);
             let state_in = meta.query_advice(advice[0], Rotation::cur());
@@ -106,7 +105,7 @@ impl<F: PrimeField> PoseidonChip<F> {
     }
 }
 
-/// the core circuit. proves message inclusion across chains.
+/// The core circuit. Proves message inclusion and execution constraints.
 #[derive(Default)]
 pub struct InterlinkCircuit<F: PrimeField> {
     pub message_payload: Option<F>,
@@ -136,7 +135,7 @@ impl<F: PrimeField> Circuit<F> for InterlinkCircuit<F> {
         let mut arr = [0u8; 8];
         arr.copy_from_slice(&hash[0..8]);
         let rc_val = u64::from_be_bytes(arr);
-        let round_const = Value::known(F::from(rc_val)); // magic protocol constant derived from domain
+        let round_const = Value::known(F::from(rc_val));
 
         let state_in = self
             .message_payload
@@ -154,7 +153,7 @@ impl<F: PrimeField> Circuit<F> for InterlinkCircuit<F> {
             seq,
         )?;
 
-        // expose the commitment to the instance column so the hub can see it.
+        // Expose commitment to the instance column for public verification.
         layouter.constrain_instance(out_cell.cell(), chip.config.instance, 0)
     }
 }

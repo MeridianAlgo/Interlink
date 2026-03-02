@@ -2,7 +2,11 @@
 
 ## Overview
 
-InterLink is a decentralized, high-performance interoperability protocol designed to bridge fragmented blockchain ecosystems through trustless, zero-knowledge cryptographic proofs. By utilizing zk-SNARKs (specifically Halo2 with Groth16) and a high-throughput Solana Coordination Hub, InterLink enables instant, permissionless cross-chain message passing and asset transfers with O(1) on-chain verification.
+InterLink is a zero-knowledge interoperability protocol enabling mathematically guaranteed cross-chain state transitions. Version 0.7.1 introduces full BN254 coupling.
+<p align="center">
+  <img src="InterLink.png" alt="InterLink Architecture" width="80%">
+</p>
+By utilizing zk-SNARKs (specifically Halo2 with Groth16) and a high-throughput Solana Coordination Hub, InterLink enables instant, permissionless cross-chain message passing and asset transfers with O(1) on-chain verification.
 
 The protocol follows a Hub-and-Spoke architecture where Solana acts as the central settlement and verification layer, while various EVM, Cosmos, and other blockchains serve as spoke gateways.
 

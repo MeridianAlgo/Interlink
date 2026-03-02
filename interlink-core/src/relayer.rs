@@ -22,8 +22,7 @@ mod tests {
 
         println!("[TEST] SNARK Generated. Length: {} bytes", proof.len());
         assert!(!proof.is_empty(), "Proof should not be empty");
-        // check if it's beefy enough. dummy proofs are too small for real snarks.
-        assert!(proof.len() > 100, "proof size too small for a real snark");
+        assert!(proof.len() > 100, "Proof size indicates incorrect generation");
     }
 }
 
@@ -36,8 +35,8 @@ abigen!(
 
 pub struct RelayerConfig {
     pub chain_id: u64,
-    pub rpc_url: String, // ws url for ethers, need this to listen to the chain
-    pub hub_url: String, // solana hub url. http is fine for rpc calls here.
+    pub rpc_url: String, // WebSocket URL for EVM chains
+    pub hub_url: String, // Solana Hub RPC URL
     pub gateway_address: String,
     pub solana_program_id: String,
     pub keypair_path: String,
@@ -54,25 +53,25 @@ impl Relayer {
         }
     }
 
-    /// starts the main loop. heavily concurrent, so hold on tight.
+    /// Starts the main event loop and proof generation pipeline.
     pub async fn run(&self) -> Result<()> {
         println!(
             "Initializing High-Performance Relayer for chain ID {} [WS: {}] [Hub: {}]",
             self.config.chain_id, self.config.rpc_url, self.config.hub_url
         );
 
-        let (tx, mut rx) = mpsc::channel(1024); // big-ish buffer for high throughput. don't want to drop events.
+        let (tx, mut rx) = mpsc::channel(1024);
         let ws_url = self.config.rpc_url.clone();
         let gateway_address = self.config.gateway_address.clone();
 
-        // step 1: event watcher. just hanging out on websockets listening for logs.
+        // Step 1: Initialize event watcher on the target chain.
         tokio::spawn(async move {
             if let Err(e) = Self::watch_events(&ws_url, &gateway_address, tx).await {
                 eprintln!("[WS ERROR] Watcher failed: {}", e);
             }
         });
 
-        // step 2: the workers. generators and submitters doing the heavy lifting.
+        // Step 2: Main processing loop for generating proofs and submitting.
         while let Some((nonce, payload_hash)) = rx.recv().await {
             println!(
                 "\n[EVENT] Raw payload received from Source Chain #{} | Nonce: {}",
@@ -80,7 +79,7 @@ impl Relayer {
             );
             let relayer_ref = Arc::clone(&self.config);
 
-            // cpu burner: snark proving is heavy. offloading to the thread pool to keep the loop snappy.
+            // Offload ZK proof generation to a blocking task to prevent blocking the async runtime.
             let proof_task = tokio::task::spawn_blocking(move || {
                 Self::generate_proof_sync(nonce, payload_hash, relayer_ref.chain_id)
             });
@@ -185,24 +184,24 @@ impl Relayer {
 
         println!("[PROVER] Generating Real ZK-SNARK for message #{}", nonce);
 
-        // stage 1: dial in the params.
+        // Stage 1: Setup proving parameters
         let k = 6;
         let params = Params::<G1Affine>::new(k);
 
-        // stage 2: prep the circuit with the payload.
+        // Stage 2: Initialize circuit with payloads
         let payload_f = Fr::from_repr(hash).unwrap_or(Fr::from(nonce));
         let circuit = InterlinkCircuit {
             message_payload: Some(payload_f),
             sequence_number: Some(Fr::from(nonce)),
         };
 
-        // stage 3: generate the keys. this is the slow part.
+        // Stage 3: Generate proving and verifying keys
         let vk = keygen_vk(&params, &circuit)
             .map_err(|_| crate::InterlinkError::ProofGenerationFailed)?;
         let pk = keygen_pk(&params, vk, &circuit)
             .map_err(|_| crate::InterlinkError::ProofGenerationFailed)?;
 
-        // stage 4: crunch the public inputs.
+        // Stage 4: Produce public instance parameters
         let salt_hash = ethers_core::utils::keccak256(b"interlink_v1_domain");
         let mut arr = [0u8; 8];
         arr.copy_from_slice(&salt_hash[0..8]);
@@ -216,7 +215,7 @@ impl Relayer {
         let instances: &[&[Fr]] = &[&[commitment]];
         let instances_ref: &[&[&[Fr]]] = &[instances];
 
-        // stage 5: actually build the proof.
+        // Stage 5: Create final proof
         let mut transcript = Blake2bWrite::<_, G1Affine, Challenge255<_>>::init(vec![]);
         create_proof::<G1Affine, _, _, _, _>(
             &params,
