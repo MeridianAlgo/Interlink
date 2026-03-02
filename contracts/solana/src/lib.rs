@@ -1,5 +1,5 @@
 use anchor_lang::prelude::*;
-use anchor_spl::token::{self, Burn, Mint, Token, TokenAccount, Transfer};
+use anchor_spl::token::{self, Burn, Mint, Token, TokenAccount};
 
 declare_id!("Hub1111111111111111111111111111111111111111");
 
@@ -24,7 +24,7 @@ pub mod solana_gateway {
         commitment_input: [u8; 32], // public snark input. this is the commitment.
     ) -> Result<()> {
         let registry = &mut ctx.accounts.state_registry;
-        
+
         // step 1: anti-replay. don't process the same seq twice.
         require!(
             sequence > registry.processed_sequences,
@@ -32,7 +32,8 @@ pub mod solana_gateway {
         );
 
         // step 2: crypto check. real snark logic here.
-        let is_valid = verify_snark_commitment(&proof_data, commitment_input, payload_hash, sequence);
+        let is_valid =
+            verify_snark_commitment(&proof_data, commitment_input, payload_hash, sequence);
         require!(is_valid, HubError::InvalidProof);
 
         // step 3: persistence. updates the global sequence counter.
@@ -84,11 +85,11 @@ fn verify_snark_commitment(
     // bn254 field modulus. the actual field math happens here.
     // 21888242871839275222246405745257275088548364400416034343698204186575808495617
     // in hex: 0x30644e72e131a029b85045b68181585d2833e84879b9709143e1f593f0000001
-    
+
     // cubic commitment check: (h + 0x1337)^3 + seq.
     // matching the core circuit logic.
     // using u128 for the field math demo. production would use sysvar precompiles.
-    
+
     let h = u64::from_be_bytes(payload_hash[24..32].try_into().unwrap());
     let rc = 0x1337u64;
     let seq = sequence;
@@ -99,7 +100,7 @@ fn verify_snark_commitment(
 
     // matching first 8 bytes. proof that the relayer actually did the work.
     let target = u64::from_le_bytes(commitment[0..8].try_into().unwrap());
-    
+
     (expected as u64) == target
 }
 

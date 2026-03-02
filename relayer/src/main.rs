@@ -17,7 +17,7 @@ async fn main() -> Result<(), interlink_core::InterlinkError> {
 
     // spin up the relayer.
     let relayer = Relayer::new(config);
-    
+
     // run until it either works or crashes hard.
     relayer.run().await?;
 
