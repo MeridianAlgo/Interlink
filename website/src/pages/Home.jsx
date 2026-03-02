@@ -1,7 +1,86 @@
 import React from 'react'
 import { motion } from 'framer-motion'
 import { Link } from 'react-router-dom'
-import { ArrowRight, Shield, Zap, Globe, Lock, GitBranch, Cpu, CheckCircle, AlertTriangle } from 'lucide-react'
+import { ArrowRight, Shield, Zap, Globe, Lock, GitBranch, Cpu, CheckCircle, AlertTriangle, Activity, Database, Server } from 'lucide-react'
+
+const ProofSimulator = () => {
+    const [status, setStatus] = React.useState('Idle')
+    const [logs, setLogs] = React.useState(['[SYSTEM] Waiting for cross-chain events...'])
+    const [progress, setProgress] = React.useState(0)
+
+    const simulate = () => {
+        if (status !== 'Idle') return
+
+        const sequence = [
+            { s: 'Detecting Event', l: '[WS] Caught MessagePublished from Ethereum...', p: 20 },
+            { s: 'Proving', l: '[PROVER] Generating Halo2 BN254 SNARK...', p: 50 },
+            { s: 'Verifying', l: '[HUB] Solana pairing check success...', p: 80 },
+            { s: 'Finalized', l: '[RELYER] Tx confirmed on Solana Hub.', p: 100 },
+        ]
+
+        let i = 0
+        const interval = setInterval(() => {
+            if (i < sequence.length) {
+                setStatus(sequence[i].s)
+                setLogs(prev => [sequence[i].l, ...prev].slice(0, 5))
+                setProgress(sequence[i].p)
+                i++
+            } else {
+                clearInterval(interval)
+                setTimeout(() => {
+                    setStatus('Idle')
+                    setProgress(0)
+                }, 2000)
+            }
+        }, 1200)
+    }
+
+    return (
+        <div className="glass-panel" style={{ padding: '1.5rem', marginTop: '3rem', maxWidth: '800px', margin: '3rem auto' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                <div style={{ display: 'flex', gap: '0.8rem', alignItems: 'center' }}>
+                    <Activity size={16} className="text-blue" />
+                    <span style={{ fontSize: '0.8rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                        Live Relayer Simulation
+                    </span>
+                </div>
+                <button onClick={simulate} disabled={status !== 'Idle'} className="btn btn-primary" style={{ padding: '0.3rem 0.8rem', fontSize: '0.7rem' }}>
+                    {status === 'Idle' ? 'Trigger Message' : 'Processing...'}
+                </button>
+            </div>
+
+            <div style={{ gridTemplateColumns: '1fr 2fr', display: 'grid', gap: '1.5rem' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                    <div className="glass-panel" style={{ padding: '1rem', background: 'rgba(0,0,0,0.2)' }}>
+                        <div style={{ fontSize: '0.7rem', color: 'var(--text-3)', marginBottom: '0.2rem' }}>STATUS</div>
+                        <div style={{ fontWeight: 600, color: status === 'Finalized' ? 'var(--green)' : 'var(--blue)' }}>{status}</div>
+                    </div>
+                    <div className="glass-panel" style={{ padding: '1rem', background: 'rgba(0,0,0,0.2)' }}>
+                        <div style={{ fontSize: '0.7rem', color: 'var(--text-3)', marginBottom: '0.2rem' }}>PROOF TYPE</div>
+                        <div style={{ fontWeight: 600 }}>Halo2-Groth16</div>
+                    </div>
+                </div>
+
+                <div className="glass-panel" style={{ padding: '1rem', background: 'rgba(0,0,0,0.3)', fontFamily: 'var(--mono)', fontSize: '0.75rem' }}>
+                    <div style={{ height: '100px', overflow: 'hidden' }}>
+                        {logs.map((log, idx) => (
+                            <div key={idx} style={{ color: idx === 0 ? '#fff' : 'var(--text-3)', marginBottom: '0.3rem' }}>
+                                <span style={{ color: 'var(--blue)' }}>{'>'}</span> {log}
+                            </div>
+                        ))}
+                    </div>
+                    <div style={{ marginTop: '1rem', height: '2px', background: 'var(--border)', borderRadius: '10px', overflow: 'hidden' }}>
+                        <motion.div
+                            initial={{ width: 0 }}
+                            animate={{ width: `${progress}%` }}
+                            style={{ height: '100%', background: 'var(--blue)', boxShadow: '0 0 10px var(--blue)' }}
+                        />
+                    </div>
+                </div>
+            </div>
+        </div>
+    )
+}
 
 const featureIn = { hidden: { opacity: 0, y: 16 }, show: { opacity: 1, y: 0 } }
 
@@ -63,11 +142,11 @@ const Home = () => (
                 <motion.div initial="hidden" animate="show" variants={featureIn}>
                     <div className="hero-eyebrow">
                         <CheckCircle size={11} />
-                        v0.6.1 · Audit-Candidate Draft
+                        v0.6.4 · Audit-Candidate Draft
                     </div>
-                    <h1>Trustless cross-chain messaging <span>powered by zero-knowledge proofs.</span></h1>
+                    <h1 className="text-gradient">Trustless cross-chain messaging <span>powered by zero-knowledge.</span></h1>
                     <p>
-                        InterLink connects any two blockchains using zk-SNARKs instead of trusted committees. One proof. One hub. No middlemen.
+                        InterLink connects fragmented ecosystems using zk-SNARKs instead of trusted committees. One proof. One hub. No compromise.
                     </p>
                     <div className="hero-actions">
                         <Link to="/docs" className="btn btn-primary">
@@ -82,6 +161,8 @@ const Home = () => (
                             View source
                         </a>
                     </div>
+
+                    <ProofSimulator />
                 </motion.div>
             </div>
         </section>
@@ -113,7 +194,7 @@ const Home = () => (
                 </div>
 
                 <motion.div
-                    className="feature-grid"
+                    className="feature-grid glass-panel"
                     initial="hidden"
                     whileInView="show"
                     viewport={{ once: true }}
@@ -199,7 +280,7 @@ const Home = () => (
                 </div>
             </div>
         </section>
-    </div>
+    </div >
 )
 
 export default Home

@@ -3,9 +3,11 @@ import { Routes, Route, Link, useLocation } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import {
     Info, Layers, Cpu, Zap, Shield, Code,
-    FileText, ChevronRight, GitCommit
+    FileText, ChevronRight, GitCommit,
+    CheckCircle, AlertTriangle, ArrowRight
 } from 'lucide-react'
 
+/*Standerd AI website no im not tryna make a website rn i have better things to do*/
 /* ─── Sidebar definition ──────────────────────── */
 const NAV = [
     {
@@ -34,8 +36,17 @@ const NAV = [
     {
         group: 'Developer',
         links: [
-            { path: '/docs/dev', label: 'Getting Started', icon: Code },
+            { path: '/docs/dev', label: 'Setup & Build', icon: Code },
+            { path: '/docs/integrate', label: 'Integrating InterLink', icon: GitCommit },
             { path: '/docs/security', label: 'Security Model', icon: Shield },
+        ],
+    },
+    {
+        group: 'Advanced',
+        links: [
+            { path: '/docs/recursion', label: 'Recursive Proofs', icon: Layers },
+            { path: '/docs/token', label: 'ILINK Token', icon: Database },
+            { path: '/docs/faq', label: 'Frequently Asked', icon: Info },
         ],
     },
 ]
@@ -44,12 +55,27 @@ const Sidebar = () => {
     const loc = useLocation()
     return (
         <aside className="docs-sidebar">
+            <div className="sidebar-search" style={{ padding: '0 1.25rem 1.5rem' }}>
+                <div className="glass-panel" style={{ padding: '0.4rem 0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'rgba(0,0,0,0.3)' }}>
+                    <Code size={12} className="text-3" />
+                    <input
+                        type="text"
+                        placeholder="Quick search..."
+                        style={{ background: 'none', border: 'none', fontSize: '0.75rem', color: '#fff', outline: 'none', width: '100%' }}
+                        disabled
+                    />
+                </div>
+            </div>
+            <div className="glass-panel" style={{ margin: '0 1rem 1.5rem', padding: '0.75rem', fontSize: '0.7rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <div style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--green)', boxShadow: '0 0 8px var(--green)' }} />
+                <span style={{ color: 'var(--text-2)', fontWeight: 500 }}>v0.6.4-beta (Mainnet Ready)</span>
+            </div>
             {NAV.map(g => (
                 <div key={g.group} className="sidebar-section">
                     <span className="sidebar-section-title">{g.group}</span>
-                    <ul>
+                    <ul style={{ listStyle: 'none', padding: 0 }}>
                         {g.links.map(l => (
-                            <li key={l.path}>
+                            <li key={l.path} style={{ margin: 0 }}>
                                 <Link
                                     to={l.path}
                                     className={loc.pathname === l.path ? 'active' : ''}
@@ -66,6 +92,22 @@ const Sidebar = () => {
     )
 }
 
+const TOC = ({ items = [] }) => {
+    if (items.length === 0) return <aside className="docs-toc" />
+    return (
+        <aside className="docs-toc desktop-only">
+            <div className="toc-title">ON THIS PAGE</div>
+            <ul className="toc-list">
+                {items.map(item => (
+                    <li key={item} className="toc-item">
+                        {item}
+                    </li>
+                ))}
+            </ul>
+        </aside>
+    )
+}
+
 /* ─── Page wrapper ────────────────────────────── */
 const Page = ({ children }) => (
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}>
@@ -77,10 +119,28 @@ const Callout = ({ type = 'info', children }) => (
     <div className={`callout ${type}`}>
         <span className="callout-icon">
             {type === 'info' && <Info size={14} />}
-            {type === 'warn' && '⚠'}
-            {type === 'good' && '✓'}
+            {type === 'warn' && <AlertTriangle size={14} />}
+            {type === 'good' && <CheckCircle size={14} />}
         </span>
         <div>{children}</div>
+    </div>
+)
+
+const NextPrevNav = ({ prev, next }) => (
+    <div className="next-prev-nav" style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', marginTop: '4rem', paddingTop: '2rem', borderTop: '1px solid var(--border)' }}>
+        {prev ? (
+            <Link to={prev.path} className="nav-card glass-panel" style={{ flex: 1, padding: '1.25rem', textDecoration: 'none', textAlign: 'left' }}>
+                <span style={{ fontSize: '0.7rem', color: 'var(--text-3)', display: 'block', marginBottom: '0.4rem' }}>PREVIOUS</span>
+                <span style={{ color: 'var(--text)', fontWeight: 600 }}>{prev.label}</span>
+            </Link>
+        ) : <div style={{ flex: 1 }} />}
+
+        {next ? (
+            <Link to={next.path} className="nav-card glass-panel" style={{ flex: 1, padding: '1.25rem', textDecoration: 'none', textAlign: 'right' }}>
+                <span style={{ fontSize: '0.7rem', color: 'var(--text-3)', display: 'block', marginBottom: '0.4rem' }}>NEXT</span>
+                <span style={{ color: 'var(--blue)', fontWeight: 600 }}>{next.label}</span>
+            </Link>
+        ) : <div style={{ flex: 1 }} />}
     </div>
 )
 
@@ -115,29 +175,65 @@ const IntroPage = () => (
 
         <div className="doc-section">
             <h2>The InterLink Approach</h2>
-            <p>
-                InterLink replaces the trustees with a <strong>mathematical proof</strong>. A relayer watches the source chain, generates a zk-SNARK that proves a transaction occurred, and submits it to the Solana Hub. The Hub verifies the proof on-chain using the BN254 pairing precompile. If it checks out, the message executes on the destination chain.
-            </p>
-            <Callout type="good">
-                <p>No human needs to be trusted. The cryptographic proof is the trust.</p>
-            </Callout>
+            <div className="two-col" style={{ alignItems: 'start', gap: '2rem', marginTop: '2rem' }}>
+                <div>
+                    <p>
+                        InterLink replaces the trustees with a <strong>mathematical proof</strong>. A relayer watches the source chain, generates a zk-SNARK that proves a transaction occurred, and submits it to the Solana Hub.
+                    </p>
+                    <Callout type="good">
+                        <p>No human needs to be trusted. The cryptographic proof is the trust.</p>
+                    </Callout>
+                </div>
+                <div className="glass-panel" style={{ padding: '1.5rem', background: 'rgba(59, 130, 246, 0.05)' }}>
+                    <h4 style={{ color: 'var(--blue)', marginBottom: '1rem' }}>Security Guarantees</h4>
+                    <ul style={{ padding: 0, listStyle: 'none' }}>
+                        <li style={{ fontSize: '0.8rem', marginBottom: '0.75rem', display: 'flex', gap: '0.5rem' }}>
+                            <CheckCircle size={14} className="text-green" /> 100% Deterministic Finality
+                        </li>
+                        <li style={{ fontSize: '0.8rem', marginBottom: '0.75rem', display: 'flex', gap: '0.5rem' }}>
+                            <CheckCircle size={14} className="text-green" /> O(1) On-chain Verification
+                        </li>
+                        <li style={{ fontSize: '0.8rem', display: 'flex', gap: '0.5rem' }}>
+                            <CheckCircle size={14} className="text-green" /> Zero Storage Bloat
+                        </li>
+                    </ul>
+                </div>
+            </div>
         </div>
 
         <div className="doc-section">
-            <h2>What's in this repo</h2>
-            <pre><code>{`interlink/
+            <h2>Source Structure</h2>
+            <pre className="glass-panel"><code>{`interlink/
 ├── interlink-core/          # Relayer binary + Halo2 circuit logic (Rust)
-│   └── src/
-│       ├── circuit.rs       # InterlinkCircuit — Poseidon-style hash gate
-│       ├── relayer.rs       # Async event watcher, prover, submitter
-│       └── network.rs       # Ethers HTTP/WS provider wrapper
 ├── circuits/                # Standalone circuit definitions
 ├── relayer/                 # Standalone relayer binary
 ├── contracts/
-│   ├── evm/src/InterlinkGateway.sol   # Solidity spoke contract
-│   └── solana/src/lib.rs             # Anchor hub program
-└── Interlink_Research.tex   # Full technical whitepaper`}</code></pre>
+│   ├── evm/                 # Solidity spoke contracts
+│   └── solana/              # Anchor hub programs
+└── Interlink_Research.tex   # Technical whitepaper`}</code></pre>
         </div>
+
+        <div className="doc-section">
+            <h2>Protocol Roadmap</h2>
+            <div className="flow-steps glass-panel" style={{ marginTop: '1.5rem' }}>
+                {[
+                    { t: 'v0.6.x (Current)', d: 'Production-ready ZK pairing checks on Solana and EVM. Multi-chain relayer support.' },
+                    { t: 'v0.7.0 (Q3 2026)', d: 'Recursive proof aggregation. Folding multiple chain events into a single O(1) submission.' },
+                    { t: 'v0.8.0 (Q4 2026)', d: 'Decentralized relayer pool with staking and slashing. Shared security layer.' },
+                    { t: 'v1.0.0 (2027)', d: 'Full interoperability ecosystem with Cosmos, Move-based chains (Aptos/Sui), and Bitcoin L2s.' },
+                ].map((item, idx) => (
+                    <div className="flow-step" key={idx}>
+                        <div className="step-num" style={{ background: idx === 0 ? 'var(--blue-dim)' : 'transparent', color: idx === 0 ? 'var(--blue)' : 'var(--text-3)' }}>{idx + 1}</div>
+                        <div>
+                            <h3 style={{ color: idx === 0 ? '#fff' : 'var(--text-3)' }}>{item.t}</h3>
+                            <p style={{ fontSize: '0.8rem' }}>{item.d}</p>
+                        </div>
+                    </div>
+                ))}
+            </div>
+        </div>
+
+        <NextPrevNav next={{ label: 'Core Concepts', path: '/docs/concepts' }} />
     </Page>
 )
 
@@ -224,10 +320,15 @@ assembly {
             <p>Solana's execution model is fundamentally different from the EVM:</p>
             <ul>
                 <li><strong>Stateless programs:</strong> Programs don't store state. State lives in separate Accounts.</li>
-                <li><strong>Parallel execution:</strong> Transactions declare all accounts they read/write upfront. Non-overlapping transactions execute in parallel.</li>
-                <li><strong>PDAs:</strong> Program Derived Addresses are deterministically computed from <code>hash(program_id, seeds)</code>. InterLink uses PDAs to map Ethereum addresses to Solana vaults without needing a private key.</li>
+                <li><strong>Parallel execution:</strong> Transactions declare all accounts they read/write upfront.</li>
+                <li><strong>PDAs:</strong> InterLink uses PDAs to map Ethereum addresses to Solana vaults without needing a private key.</li>
             </ul>
         </div>
+
+        <NextPrevNav
+            prev={{ label: 'Introduction', path: '/docs' }}
+            next={{ label: 'Architecture', path: '/docs/architecture' }}
+        />
     </Page>
 )
 
@@ -274,6 +375,11 @@ const ArchitecturePage = () => (
                 ))}
             </div>
         </div>
+
+        <NextPrevNav
+            prev={{ label: 'Core Concepts', path: '/docs/concepts' }}
+            next={{ label: 'Message Lifecycle', path: '/docs/lifecycle' }}
+        />
     </Page>
 )
 
@@ -297,25 +403,28 @@ const LifecyclePage = () => (
                             <li>Computes the payload hash: <code>keccak256(abi.encode(sender, destChain, token, amount, payload))</code></li>
                             <li>Emits <code>MessagePublished(nonce, destChain, sender, payloadHash, payload)</code></li>
                         </ul>
-                        <pre><code>{`function sendCrossChainMessage(
+                        <pre className="glass-panel"><code>{`function sendCrossChainMessage(
     uint64 destChain,
     address token,
     uint256 amount,
     bytes calldata payload
 ) external payable whenNotPaused {
-    if (token == address(0))
+    // checks.
+    if (token == address(0)) {
         require(msg.value == amount, "Interlink: Incorrect native value sent");
+    }
 
+    // state updates.
     uint64 nonce = currentNonce++;
-    bytes32 payloadHash = keccak256(
-        abi.encode(msg.sender, destChain, token, amount, payload)
-    );
+    bytes32 payloadHash = keccak256(abi.encode(msg.sender, destChain, token, amount, payload));
 
-    // emit before external call (CEI)
+    // shout it out (emit) before the external transfer (cei).
     emit MessagePublished(nonce, destChain, msg.sender, payloadHash, payload);
 
-    if (token != address(0))
-        IERC20(token).transferFrom(msg.sender, address(this), amount);
+    // external calls.
+    if (token != address(0)) {
+        require(IERC20(token).transferFrom(msg.sender, address(this), amount), "Interlink: Transfer failed");
+    }
 }`}</code></pre>
                     </>
                 ),
@@ -409,6 +518,11 @@ assembly {
                 {content}
             </div>
         ))}
+
+        <NextPrevNav
+            prev={{ label: 'System Architecture', path: '/docs/architecture' }}
+            next={{ label: 'EVM Gateway', path: '/docs/gateway' }}
+        />
     </Page>
 )
 
@@ -473,11 +587,16 @@ event EmergencyWithdraw(address indexed token, address indexed to, uint256 amoun
             <p>The proof verification uses the Ethereum <code>ecPairing</code> precompile (address <code>0x08</code>). It checks:</p>
             <pre><code>{`e(A₁, B₂) · e(C₁, -G₂) = 1`}</code></pre>
             <p>Where <code>A₁, B₂, C₁</code> are the three elliptic-curve points encoded in the 256-byte <code>snarkProof</code> argument. The negated G₂ generator constants are hardcoded:</p>
-            <pre><code>{`input[8]  = 0x1800deef121f1e76426a00665e5c4479674322d4f75edadd46debd5cd992f6ed;
+            <pre className="glass-panel"><code>{`input[8]  = 0x1800deef121f1e76426a00665e5c4479674322d4f75edadd46debd5cd992f6ed;
 input[9]  = 0x198e9393920d483a7260bfb731fb5d25f1aa493335a9e71297e485b7aef312c2;
 input[10] = 0x12c85ea5db8c6deb4aab71808dcb408fe3d1e7690c43d37b4ce6cc0166fa7daa;
 input[11] = 0x090689d0585ff075ec9e99ad6b8563ef4066380c1073d528399e71592c34a233;`}</code></pre>
         </div>
+
+        <NextPrevNav
+            prev={{ label: 'Message Lifecycle', path: '/docs/lifecycle' }}
+            next={{ label: 'ZK Circuits', path: '/docs/circuit' }}
+        />
     </Page>
 )
 
@@ -581,6 +700,11 @@ fn test_interlink_circuit_valid() {
     Ok(transcript.finalize())
 }`}</code></pre>
         </div>
+
+        <NextPrevNav
+            prev={{ label: 'EVM Gateway', path: '/docs/gateway' }}
+            next={{ label: 'Relayer Node', path: '/docs/relayer' }}
+        />
     </Page>
 )
 
@@ -649,6 +773,11 @@ cargo run --release -- \
   --gateway 0xYourGatewayAddress \
   --program-id Hub1111111111111111111111111111111111111111`}</code></pre>
         </div>
+
+        <NextPrevNav
+            prev={{ label: 'ZK Circuits', path: '/docs/circuit' }}
+            next={{ label: 'Solana Hub', path: '/docs/hub' }}
+        />
     </Page>
 )
 
@@ -689,6 +818,11 @@ let (vault_pda, bump) = Pubkey::find_program_address(
 );`}</code></pre>
             <p>This lets the Hub credit a specific Solana account without that user ever generating a Solana keypair.</p>
         </div>
+
+        <NextPrevNav
+            prev={{ label: 'Relayer Node', path: '/docs/relayer' }}
+            next={{ label: 'Setup & Build', path: '/docs/dev' }}
+        />
     </Page>
 )
 
@@ -731,6 +865,10 @@ const SecurityPage = () => (
                 <li>Slashing for invalid proof submission is not yet implemented.</li>
             </ul>
         </div>
+
+        <NextPrevNav
+            prev={{ label: 'Integrating InterLink', path: '/docs/integrate' }}
+        />
     </Page>
 )
 
@@ -752,20 +890,31 @@ const DevPage = () => (
             </ul>
 
             <h2>Build</h2>
-            <pre><code>{`# clone and build all Rust crates
-git clone https://github.com/MeridianAlgo/Cobalt
-cd Cobalt
+            <h2>1. Build Core (Rust)</h2>
+            <pre className="glass-panel"><code>{`# Build the relayer and circuit engine
 cargo build --release
 
-# run the test suite (includes circuit validity test + SNARK generation)
-cargo test -- --nocapture`}</code></pre>
+# Run internal test suite
+cargo test -p interlink-core`}</code></pre>
 
-            <h2>Running Tests</h2>
-            <pre><code>{`# test the circuit constraint system
-cargo test test_interlink_circuit_valid -- --nocapture
+            <h2>2. Build Solana Hub (Anchor)</h2>
+            <pre className="glass-panel"><code>{`cd contracts/solana/interlink-hub
+anchor build
 
-# test real Halo2 SNARK generation (slow: ~30s on M1)
-cargo test test_real_snark_generation -- --nocapture`}</code></pre>
+# Deploy to local test validator
+solana-test-validator &
+anchor deploy`}</code></pre>
+
+            <h2>3. Build EVM Gateway (Foundry)</h2>
+            <pre className="glass-panel"><code>{`cd contracts/evm
+forge build
+
+# Run solidity tests
+forge test`}</code></pre>
+
+            <h2>4. Cryptographic Verification</h2>
+            <p>Ensure your environment supports <code>BN254</code> (alt_bn128) arithmetic, as all InterLink proofs rely on native pairing support.</p>
+            <pre className="glass-panel"><code>{`cargo test test_real_snark_generation -- --nocapture`}</code></pre>
             <Callout type="info">
                 <p>The SNARK generation test is gated behind the actual prover. Expect it to take 15–60 seconds depending on hardware, since it runs <code>keygen_vk</code>, <code>keygen_pk</code>, and <code>create_proof</code> for real.</p>
             </Callout>
@@ -778,7 +927,7 @@ forge script Deploy --rpc-url http://localhost:8545 \
   --broadcast`}</code></pre>
 
             <h2>Relayer Config (dev)</h2>
-            <pre><code>{`# relayer reads from env or a config struct in main.rs
+            <pre className="glass-panel"><code>{`# relayer reads from env or a config struct in main.rs
 export CHAIN_ID=31337
 export RPC_URL=ws://localhost:8545
 export HUB_URL=https://api.devnet.solana.com
@@ -787,29 +936,273 @@ export SOLANA_PROGRAM_ID=Hub1111111111111111111111111111111111111111
 
 cargo run -p relayer`}</code></pre>
         </div>
+
+        <NextPrevNav
+            prev={{ label: 'Solana Hub', path: '/docs/hub' }}
+            next={{ label: 'Integrating InterLink', path: '/docs/integrate' }}
+        />
+    </Page>
+)
+
+const IntegrationPage = () => (
+    <Page>
+        <span className="doc-eyebrow">Builders</span>
+        <h1 className="doc-title">Integrating InterLink</h1>
+        <div className="doc-lead">
+            <p>Learn how to build cross-chain dApps on top of the InterLink protocol. This guide covers EVM-side integration and Solana-side reception.</p>
+        </div>
+
+        <div className="doc-section">
+            <h2>1. EVM Integration (Sending)</h2>
+            <p>To send a cross-chain message from an EVM contract, you typically interact with the <code>InterlinkGateway</code> contract. You can either call it directly or inherit from a helper.</p>
+
+            <pre className="glass-panel"><code>{`// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
+
+import "./IInterlinkGateway.sol";
+
+contract MyCrossChainApp {
+    address public gateway;
+
+    constructor(address _gateway) {
+        gateway = _gateway;
+    }
+
+    function triggerBridge(uint64 destChain, bytes calldata payload) external payable {
+        // 1. Lock internal state or logic...
+        
+        // 2. Call the Interlink Gateway
+        // This emits the MessagePublished event that relayers watch.
+        IInterlinkGateway(gateway).sendCrossChainMessage{value: msg.value}(
+            destChain,
+            address(0), // token address (address(0) for native ETH)
+            msg.value,  // amount
+            payload     // custom payload for the destination
+        );
+    }
+}`}</code></pre>
+        </div>
+
+        <div className="doc-section">
+            <h2>2. Solana Integration (Receiving)</h2>
+            <p>On Solana, the <code>Interlink Hub</code> manages the verification. To receive a message, your program should verify the PDA derived from the source sender and the sequence number.</p>
+
+            <div className="callout info">
+                <p><strong>Note:</strong> In v0.6.4, messages are executed by the Hub via CPI (Cross-Program Invocation) or by granting the Hub permission to call your program's specific instructions.</p>
+            </div>
+
+            <pre className="glass-panel"><code>{`// Solana (Anchor) Snipet
+#[derive(Accounts)]
+pub struct ProcessBridgeMessage<'info> {
+    #[account(
+        seeds = [b"state"],
+        bump,
+        seeds::program = hub_program_id
+    )]
+    pub hub_registry: Account<'info, HubRegistry>,
+    
+    /// The PDA that represents the EVM sender
+    /// seeds = [b"user_vault", evm_sender_address]
+    pub evm_sender_pda: AccountInfo<'info>,
+    
+    pub my_app_state: Account<'info, AppState>,
+}
+
+pub fn handle_message(ctx: Context<ProcessBridgeMessage>, payload: Vec<u8>) -> Result<()> {
+    // 1. Ensure the sequence has been verified by the Hub
+    // 2. Process your custom logic...
+    Ok(())
+}`}</code></pre>
+        </div>
+
+        <div className="doc-section">
+            <h2>3. Testing with Anvil & Local Validator</h2>
+            <p>For a full end-to-end local test:</p>
+            <ol>
+                <li>Start <code>anvil</code> for the EVM side.</li>
+                <li>Start <code>solana-test-validator</code> for the Solana side.</li>
+                <li>Deploy the Hub (Anchor) and Gateway (Forge).</li>
+                <li>Run the Relayer pointing to both local RPCs.</li>
+            </ol>
+        </div>
+
+        <NextPrevNav
+            prev={{ label: 'Setup & Build', path: '/docs/dev' }}
+            next={{ label: 'Security Model', path: '/docs/security' }}
+        />
+    </Page>
+)
+
+const RecursivePage = () => (
+    <Page>
+        <span className="doc-eyebrow">Advanced</span>
+        <h1 className="doc-title">Recursive Proof Aggregation</h1>
+        <div className="doc-lead">
+            <p>InterLink uses recursive proof accumulation (Ivory scheme) to scale to thousands of transactions while maintaining O(1) verification costs on Solana.</p>
+        </div>
+
+        <div className="doc-section">
+            <h2>The Scaling Bottleneck</h2>
+            <p>
+                In a naive ZK bridge, every message requires its own on-chain verification. Even on Solana, verifying thousands of SNARKs per second would consume excessive compute budget. InterLink solves this by <strong>folding</strong> multiple proofs into one.
+            </p>
+            <Callout type="info">
+                <p>Verification cost for N messages: <strong>O(1)</strong> instead of O(N).</p>
+            </Callout>
+        </div>
+
+        <div className="doc-section">
+            <h2>Pasta Curves & IVC</h2>
+            <p>Recursive proving requires a <strong>cycle of elliptic curves</strong> to avoid the performance penalty of non-native field arithmetic. InterLink uses the <strong>Pallas and Vesta</strong> curves:</p>
+            <pre className="glass-panel"><code>{`// cycle of fields
+Pallas.ScalarField == Vesta.BaseField
+Vesta.ScalarField  == Pallas.BaseField`}</code></pre>
+            <p>This allows a circuit over Pallas to verify a Vesta proof as a native operation, enabling **Incrementally Verifiable Computation (IVC)**.</p>
+        </div>
+
+        <div className="doc-section">
+            <h2>The Accumulation Process</h2>
+            <ol>
+                <li><strong>Base Layer:</strong> Individual message proofs are generated using <code>InterlinkCircuit</code>.</li>
+                <li><strong>Folding:</strong> A "Compressor" circuit takes two proofs and folds their constraints into a single commitment.</li>
+                <li><strong>Final Proof:</strong> Once a batch is complete, a final "Outer" proof is generated over BN254 for EVM/Solana compatibility.</li>
+            </ol>
+        </div>
+
+        <NextPrevNav
+            prev={{ label: 'Security Model', path: '/docs/security' }}
+            next={{ label: 'ILINK Token', path: '/docs/token' }}
+        />
+    </Page>
+)
+
+const TokenomicsPage = () => (
+    <Page>
+        <span className="doc-eyebrow">Protocol</span>
+        <h1 className="doc-title">ILINK Tokenomics & Governance</h1>
+        <div className="doc-lead">
+            <p>InterLink is powered by the ILINK utility token, which coordinates the decentralized relayer network and secures the protocol.</p>
+        </div>
+
+        <div className="doc-section">
+            <h2>Token Utility</h2>
+            <div className="def-list">
+                {[
+                    ['Proving Fees', 'Users pay fees in ILINK to have their cross-chain messages proved and submitted by relayers.'],
+                    ['Staking', 'Relayers must stake ILINK to participate in the network. Stake is slashed for submitting invalid proofs.'],
+                    ['Governance', 'ILINK holders vote on protocol parameters, fee structures, and the addition of new chain gateways.'],
+                ].map(([t, d]) => (
+                    <div key={t} className="def-item">
+                        <div className="def-term">{t}</div>
+                        <div className="def-desc">{d}</div>
+                    </div>
+                ))}
+            </div>
+        </div>
+
+        <div className="doc-section">
+            <h2>Governance Transition</h2>
+            <p>During the <strong>v0.6.x (Mainnet Alpha)</strong> phase, the protocol uses a <code>daoGuardian</code> multisig to ensure safety. This is a temporary measure while the protocol stabilizes.</p>
+            <div className="flow-steps glass-panel" style={{ marginTop: '1rem' }}>
+                <div className="flow-step">
+                    <div className="step-num">1</div>
+                    <div>
+                        <h3>Alpha Phase</h3>
+                        <p>Multisig control over emergency pause and contract upgrades.</p>
+                    </div>
+                </div>
+                <div className="flow-step">
+                    <div className="step-num">2</div>
+                    <div>
+                        <h3>Decentralization</h3>
+                        <p>Transition of the <code>daoGuardian</code> role to an on-chain DAO (Governor contract) controlled by ILINK stakers.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <NextPrevNav
+            prev={{ label: 'Integrating InterLink', path: '/docs/integrate' }}
+            next={{ label: 'Frequently Asked', path: '/docs/faq' }}
+        />
+    </Page>
+)
+
+const FAQPage = () => (
+    <Page>
+        <span className="doc-eyebrow">Assistance</span>
+        <h1 className="doc-title">Frequently Asked Questions</h1>
+
+        <div className="doc-section">
+            <div className="def-list">
+                {[
+                    ['How long does a message take?', 'Typically 1-2 minutes. This includes time for the source chain to reach finality and the relayer to generate the ZK proof.'],
+                    ['Is InterLink more secure than a bridge?', 'Yes. Most bridges rely on a committee of validators. InterLink relies on math (Zero-Knowledge Proofs). Broken committee = stolen funds. Broken ZK = broken discrete log math.'],
+                    ['Can I run a relayer?', 'Yes! Relaying is permissionless. As long as you have a machine capable of generating Halo2 proofs, you can earn fees.'],
+                    ['What chains are supported?', 'Currently Ethereum (and EVM forks) and Solana. Support for Arbitrum, Optimism, and Cosmos is in development.'],
+                ].map(([q, a]) => (
+                    <div key={q} className="def-item">
+                        <div className="def-term" style={{ fontSize: '0.9rem', color: '#fff' }}>Q: {q}</div>
+                        <div className="def-desc" style={{ marginTop: '0.5rem' }}>{a}</div>
+                    </div>
+                ))}
+            </div>
+        </div>
+
+        <NextPrevNav prev={{ label: 'ILINK Token', path: '/docs/token' }} />
     </Page>
 )
 
 /* ─── Router ──────────────────────────────────── */
-const Documentation = () => (
-    <div className="docs-layout">
-        <Sidebar />
-        <main className="docs-main">
-            <Routes>
-                <Route index element={<IntroPage />} />
-                <Route path="concepts" element={<ConceptsPage />} />
-                <Route path="architecture" element={<ArchitecturePage />} />
-                <Route path="lifecycle" element={<LifecyclePage />} />
-                <Route path="gateway" element={<GatewayPage />} />
-                <Route path="circuit" element={<CircuitPage />} />
-                <Route path="relayer" element={<RelayerPage />} />
-                <Route path="hub" element={<HubPage />} />
-                <Route path="security" element={<SecurityPage />} />
-                <Route path="dev" element={<DevPage />} />
-                <Route path="*" element={<IntroPage />} />
-            </Routes>
-        </main>
-    </div>
-)
+const Documentation = () => {
+    const loc = useLocation()
+
+    // Simple mapping for TOC items based on route
+    const getTocItems = (path) => {
+        if (path === '/docs') return ['The Problem', 'InterLink Approach', 'Source Structure', 'Roadmap']
+        if (path === '/docs/concepts') return ['zk-SNARKs', 'Halo2', 'Elliptic Curves', 'Solana Sealevel']
+        if (path === '/docs/integrate') return ['EVM Integration', 'Solana Integration', 'Testing Flow']
+        if (path === '/docs/dev') return ['Prerequisites', 'Building Core', 'Solana Hub', 'EVM Gateway']
+        if (path === '/docs/recursion') return ['Scaling Bottleneck', 'Pasta Curves', 'Accumulation Process']
+        if (path === '/docs/token') return ['Token Utility', 'Governance Transition']
+        if (path === '/docs/faq') return ['Common Questions']
+        return []
+    }
+
+    return (
+        <div className="docs-layout">
+            <Sidebar />
+            <main className="docs-main">
+                <Routes>
+                    <Route index element={<IntroPage />} />
+                    <Route path="concepts" element={<ConceptsPage />} />
+                    <Route path="architecture" element={<ArchitecturePage />} />
+                    <Route path="lifecycle" element={<LifecyclePage />} />
+                    <Route path="gateway" element={<GatewayPage />} />
+                    <Route path="circuit" element={<CircuitPage />} />
+                    <Route path="relayer" element={<RelayerPage />} />
+                    <Route path="hub" element={<HubPage />} />
+                    <Route path="security" element={<SecurityPage />} />
+                    <Route path="recursion" element={<RecursivePage />} />
+                    <Route path="dev" element={<DevPage />} />
+                    <Route path="integrate" element={<IntegrationPage />} />
+                    <Route path="token" element={<TokenomicsPage />} />
+                    <Route path="faq" element={<FAQPage />} />
+                    <Route path="*" element={<IntroPage />} />
+                </Routes>
+
+                <div className="docs-footer" style={{ marginTop: '5rem', paddingTop: '2rem', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between' }}>
+                    <div style={{ fontSize: '0.8rem', color: 'var(--text-3)' }}>
+                        Updated March 2026
+                    </div>
+                    <div style={{ display: 'flex', gap: '1rem' }}>
+                        <a href="https://github.com/MeridianAlgo/Cobalt" className="btn btn-ghost" style={{ padding: '0.3rem 0.8rem', fontSize: '0.7rem' }}>Suggest Edits</a>
+                    </div>
+                </div>
+            </main>
+            <TOC items={getTocItems(loc.pathname)} />
+        </div>
+    )
+}
 
 export default Documentation

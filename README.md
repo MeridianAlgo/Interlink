@@ -1,76 +1,123 @@
 # InterLink Protocol
 
-> **Trustless Multi-Chain Connectivity powered by Zero-Knowledge Math.**
+## Overview
 
-InterLink is a high-performance, decentralized interoperability protocol designed to bridge the gap between fragmented blockchain ecosystems. By leveraging **zk-SNARKs (Groth16)** and a high-throughput **Solana Coordination Hub**, InterLink enables instant, trustless, and permissionless cross-chain message passing and asset transfers.
+InterLink is a decentralized, high-performance interoperability protocol designed to bridge fragmented blockchain ecosystems through trustless, zero-knowledge cryptographic proofs. By utilizing zk-SNARKs (specifically Halo2 with Groth16) and a high-throughput Solana Coordination Hub, InterLink enables instant, permissionless cross-chain message passing and asset transfers with O(1) on-chain verification.
 
----
-
-## 🚀 Recent Breakthroughs (v0.6.4)
-
-We have recently achieved major milestones in our transition from a research prototype to an audit-ready production environment:
-
-*   **Real Cryptographic Verification**: Replaced all simulated verification logic with production-grade BN254 pairing checks using Solana's `alt_bn128` syscalls and EVM precompiles (`0x08`).
-*   **Deterministic PDA Architecture**: Refactored the Solana Gateway Hub to utilize a secure, derivation-based state registry (`seeds = [b"state"]`).
-*   **Engineered Relayer Pipeline**:
-    *   **SDK-Less Submission**: Developed a manual Solana transaction engine to eliminate dependency conflicts while maintaining 100% protocol fidelity.
-    *   **Resilient Networking**: Implemented an exponential backoff reconnect strategy for WebSocket event monitoring.
-*   **Premium Developer Portal**: Launched a visually stunning, documentation-first website built with React and Vite, featuring glassmorphism aesthetics and technical deep-dives.
+The protocol follows a Hub-and-Spoke architecture where Solana acts as the central settlement and verification layer, while various EVM, Cosmos, and other blockchains serve as spoke gateways.
 
 ---
 
-## 🏛️ Architecture
+## Project Architecture
 
-InterLink follows a "Hub-and-Spoke" model where Solana serves as the central verification and coordination center.
+The InterLink repository is organized into several specialized components that handle the end-to-end lifecycle of a cross-chain message:
 
-*   **[`interlink-core`](./interlink-core/)**: The cryptographic engine containing the Halo2 circuits for Merkle inclusion proofs and state transition verification.
-*   **[`contracts/solana`](./contracts/solana/)**: The Hub Gateway (Anchor). Performs O(1) verification of cross-chain proofs using native curve syscalls.
-*   **[`contracts/evm`](./contracts/evm/)**: Spoke Gateways (Solidity). Handles asset custody and publishes events for the Relayer network.
-*   **[`relayer`](./relayer/)**: The decentralized worker network. Monitors source chains, generates ZK-SNARKs, and submits them to the Hub.
+### 1. Interlink Core (`interlink-core/`)
+The foundational engine of the protocol. It contains the cryptographic logic, circuit definitions, and the relayer's internal machinery.
+- **Circuit Engine**: Implements Halo2 circuits for state transition and Merkle inclusion verification.
+- **Relayer Logic**: Monitors source chain events (via `ethers-rs`), generates ZK-SNARKs, and constructs manual Solana transactions to ensure reliability without external SDK bloat.
+- **Networking**: Features a resilient WebSocket layer with exponential backoff for continuous event monitoring.
+
+### 2. Specialized Circuits (`circuits/`)
+A dedicated module for advanced ZK primitives, including a production-ready Merkle tree implementation designed for efficiency within the Halo2 proving system.
+
+### 3. Multi-Chain Contracts (`contracts/`)
+- **Solana Hub Gateway**: An Anchor-based program that serves as the central verification authority. It utilizes Solana's `alt_bn128` syscalls for efficient pairing checks.
+- **EVM Spoke Gateways**: Solidity contracts that handle asset custody and emit events that trigger the cross-chain relaying process.
+- **Cosmos Spoke Gateways**: Initial implementation of CosmWasm-based gateways for the InterLink network.
+
+### 4. Relayer Node (`relayer/`)
+A standalone executable that wraps the core library into a deployable service. It handles environment-based configuration and acts as the bridge between disparate networks.
+
+### 5. Developer Portal (`website/`)
+A documentation-first web application built with React and Vite. It provides a technical interface for developers to interact with the protocol and explore its architecture.
 
 ---
 
-## 🛠️ Developer Setup
+## Recent Breakthroughs (v0.6.4)
+
+Significant progress has been made in transitioning the protocol from a research prototype to a production-grade environment:
+
+- **Cryptographic Maturity**: Replaced all simulated verification with real BN254 pairing checks using native Solana syscalls and EVM precompiles.
+- **State Management**: Refactored the Solana Gateway Hub to use a deterministic PDA (Program Derived Address) architecture for secure, collision-resistant state registries.
+- **Engineered Relayer Pipeline**: Developed a custom Solana transaction engine to eliminate heavy dependency conflicts while maintaining 100% protocol fidelity.
+- **Resilient Infrastructure**: Implemented an advanced networking strategy for the relayer, ensuring high availability even during RPC instability.
+
+---
+
+## Testing Framework
+
+InterLink employs a multi-layered testing strategy to ensure the integrity of its cryptographic proofs and contract logic.
+
+### 1. Cryptographic and Core Logic Tests
+These tests validate the correctness of the ZK-SNARK generation and the relayer's internal state transitions.
+- **Tooling**: Rust native test runner.
+- **Key Test**: `test_real_snark_generation` in `interlink-core` validates the end-to-end BN254 proving pipeline.
+- **Execution**:
+  ```bash
+  cargo test -p interlink-core
+  ```
+
+### 2. Solana Hub Contract Tests
+Validates the Anchor program logic, including proof verification, PDA derivation, and state updates.
+- **Tooling**: Anchor Framework (TypeScript/Mocha).
+- **Execution**:
+  ```bash
+  cd contracts/solana/interlink-hub
+  anchor test
+  ```
+
+### 3. Merkle Circuit Tests
+Focuses on the correctness of the Merkle inclusion proofs used within the Halo2 circuits.
+- **Execution**:
+  ```bash
+  cargo test -p circuits
+  ```
+
+### 4. Integration and Manual Testing
+The relayer can be tested in a staging environment by providing RPC endpoints for both the source (EVM) and destination (Solana) chains.
+- **Execution**:
+  ```bash
+  EVM_RPC_URL="<EVM_WS_URL>" \
+  SOLANA_RPC_URL="<SOLANA_HTTP_URL>" \
+  HUB_PROGRAM_ID="<PROGRAM_ID>" \
+  cargo run -p relayer
+  ```
+
+---
+
+## Developer Setup
 
 ### Prerequisites
-*   Rust (Edition 2021)
-*   Solana CLI & Anchor (0.32.1)
-*   Node.js (for the website)
+- Rust (Edition 2021)
+- Solana CLI & Anchor (0.32.1)
+- Node.js & npm/yarn (for website development)
 
-### Building the Project
+### Building the Workspace
+To build all core components:
 ```bash
-# Build the core engine
 cargo build --release
+```
 
-# Build the Solana Hub
+To build the Solana Hub specifically:
+```bash
 cd contracts/solana/interlink-hub
 anchor build
 ```
 
-### Running the Relayer
-The relayer is configured via environment variables for maximum flexibility in production:
-```bash
-EVM_RPC_URL="wss://..." \
-SOLANA_RPC_URL="https://..." \
-HUB_PROGRAM_ID="..." \
-cargo run -p relayer
-```
+---
+
+## Technical Specifications
+
+- **Proving System**: Halo2 (Groth16 backend)
+- **Elliptic Curve**: BN254 (alt_bn128)
+- **Verification Complexity**: O(1) on-chain across all supported networks.
+- **State Commitment**: Sparse Merkle Trees for efficient inclusion proofs.
 
 ---
 
-## 📊 Technical Stats
-*   **Proving System**: Halo2 (Groth16)
-*   **Curve**: BN254 (alt_bn128)
-*   **Verification Complexity**: O(1) on-chain
-*   **Hub Performance**: 1,000+ Cross-chain settlements per second (theoretical)
+## Documentation and Resources
 
----
-
-## 🌐 Community & Docs
-*   **Website**: [interlink.protocol](https://meridianalgo.github.io/Interlink/)
-*   **Paper**: [Technical Whitepaper (PDF)](./Interlink_Research.pdf)
-*   **GitHub**: [MeridianAlgo/Interlink](https://github.com/MeridianAlgo/Interlink)
-
----
-
-**“The future of Web3 is not fragmented. It is InterLinked.”**
+- **Technical Whitepaper**: [InterLink Research (PDF)](./Interlink_Research.pdf)
+- **Developer Portal**: [interlink.protocol](https://meridianalgo.github.io/Interlink/)
+- **GitHub Repository**: [MeridianAlgo/Interlink](https://github.com/MeridianAlgo/Interlink)

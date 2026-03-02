@@ -4,30 +4,47 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { Zap, Github, Menu, X } from 'lucide-react'
 import Home from './pages/Home'
 import Documentation from './pages/Documentation'
-
+import Bridge from './pages/Bridge'
+import Explorer from './pages/Explorer'
+/*Standerd AI website no im not tryna make a website rn i have better things to do*/
 const Navbar = () => {
   const [open, setOpen] = useState(false)
   const loc = useLocation()
 
   return (
     <>
-      <header>
+      <div className="status-top-bar">
+        <div className="container" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '1rem', height: '100%' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+            <span className="pulse-dot" />
+            <span style={{ fontSize: '0.65rem', fontWeight: 600, letterSpacing: '0.05em', color: 'rgba(255,255,255,0.5)' }}>NETWORK STATUS:</span>
+            <span style={{ fontSize: '0.65rem', fontWeight: 700, color: 'var(--green)' }}>OPERATIONAL</span>
+          </div>
+          <div style={{ width: 1, height: 10, background: 'rgba(255,255,255,0.1)' }} />
+          <div style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.4)', fontWeight: 500 }}>
+            LATEST BLOCK: <span style={{ color: 'var(--blue)' }}>#1948271</span>
+          </div>
+        </div>
+      </div>
+      <header className="glass-header">
         <div className="container">
           <nav>
             <Link to="/" className="logo">
               <Zap size={16} />
-              InterLink
+              <span className="text-gradient" style={{ fontWeight: 800 }}>InterLink</span>
             </Link>
 
             <ul className="nav-links desktop-only">
               <li><Link to="/" className={loc.pathname === '/' ? 'active' : ''}>Home</Link></li>
+              <li><Link to="/bridge" className={loc.pathname === '/bridge' ? 'active' : ''}>Bridge</Link></li>
+              <li><Link to="/explorer" className={loc.pathname === '/explorer' ? 'active' : ''}>Explorer</Link></li>
               <li><Link to="/docs" className={loc.pathname.startsWith('/docs') ? 'active' : ''}>Documentation</Link></li>
               <li>
                 <a
-                  href="https://github.com/MeridianAlgo/Interlink"
+                  href="https://github.com/MeridianAlgo/Cobalt"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="nav-github"
+                  className="nav-github glass-panel"
                 >
                   <Github size={13} />
                   GitHub
@@ -57,8 +74,10 @@ const Navbar = () => {
             className="mobile-nav-drawer"
           >
             <Link to="/" onClick={() => setOpen(false)}>Home</Link>
+            <Link to="/bridge" onClick={() => setOpen(false)}>Bridge</Link>
+            <Link to="/explorer" onClick={() => setOpen(false)}>Explorer</Link>
             <Link to="/docs" onClick={() => setOpen(false)}>Documentation</Link>
-            <a href="https://github.com/MeridianAlgo/Interlink" target="_blank" rel="noopener noreferrer">GitHub</a>
+            <a href="https://github.com/MeridianAlgo/Cobalt" target="_blank" rel="noopener noreferrer">GitHub</a>
           </motion.div>
         )}
       </AnimatePresence>
@@ -68,10 +87,14 @@ const Navbar = () => {
 
 const App = () => (
   <Router>
+    <div className="bg-grid" />
+    <div className="bg-radial" />
     <Navbar />
     <main>
       <Routes>
         <Route path="/" element={<Home />} />
+        <Route path="/bridge" element={<Bridge />} />
+        <Route path="/explorer" element={<Explorer />} />
         <Route path="/docs/*" element={<Documentation />} />
       </Routes>
     </main>
