@@ -5,7 +5,7 @@ import {
     Info, Layers, Cpu, Zap, Shield, Code,
     FileText, ChevronRight, GitCommit,
     CheckCircle, AlertTriangle, ArrowRight,
-    Database
+    Server
 } from 'lucide-react'
 
 /*Standerd AI website no im not tryna make a website rn i have better things to do*/
@@ -46,7 +46,7 @@ const NAV = [
         group: 'Advanced',
         links: [
             { path: '/docs/recursion', label: 'Recursive Proofs', icon: Layers },
-            { path: '/docs/token', label: 'ILINK Token', icon: Database },
+            { path: '/docs/token', label: 'ILINK Token', icon: Shield },
             { path: '/docs/faq', label: 'Frequently Asked', icon: Info },
         ],
     },

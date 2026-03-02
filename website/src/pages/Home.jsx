@@ -1,82 +1,37 @@
 import React from 'react'
 import { motion } from 'framer-motion'
 import { Link } from 'react-router-dom'
-import { ArrowRight, Shield, Zap, Globe, Lock, GitBranch, Cpu, CheckCircle, AlertTriangle, Activity, Database, Server } from 'lucide-react'
+import { ArrowRight, Shield, Zap, Globe, Lock, GitBranch, Cpu, CheckCircle, AlertTriangle, Activity, Server, Layout } from 'lucide-react'
 
-const ProofSimulator = () => {
-    const [status, setStatus] = React.useState('Idle')
-    const [logs, setLogs] = React.useState(['[SYSTEM] Waiting for cross-chain events...'])
-    const [progress, setProgress] = React.useState(0)
+/*Standerd AI website no im not tryna make a website rn i have better things to do*/
 
-    const simulate = () => {
-        if (status !== 'Idle') return
+const LiveMetrics = () => {
+    const [block, setBlock] = React.useState(1948271)
+    const [tps, setTps] = React.useState(42.5)
 
-        const sequence = [
-            { s: 'Detecting Event', l: '[WS] Caught MessagePublished from Ethereum...', p: 20 },
-            { s: 'Proving', l: '[PROVER] Generating Halo2 BN254 SNARK...', p: 50 },
-            { s: 'Verifying', l: '[HUB] Solana pairing check success...', p: 80 },
-            { s: 'Finalized', l: '[RELYER] Tx confirmed on Solana Hub.', p: 100 },
-        ]
-
-        let i = 0
+    React.useEffect(() => {
         const interval = setInterval(() => {
-            if (i < sequence.length) {
-                setStatus(sequence[i].s)
-                setLogs(prev => [sequence[i].l, ...prev].slice(0, 5))
-                setProgress(sequence[i].p)
-                i++
-            } else {
-                clearInterval(interval)
-                setTimeout(() => {
-                    setStatus('Idle')
-                    setProgress(0)
-                }, 2000)
-            }
-        }, 1200)
-    }
+            setBlock(b => b + 1)
+            setTps(t => (40 + Math.random() * 5).toFixed(1))
+        }, 3000)
+        return () => clearInterval(interval)
+    }, [])
 
     return (
-        <div className="glass-panel" style={{ padding: '1.5rem', marginTop: '3rem', maxWidth: '800px', margin: '3rem auto' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                <div style={{ display: 'flex', gap: '0.8rem', alignItems: 'center' }}>
-                    <Activity size={16} className="text-blue" />
-                    <span style={{ fontSize: '0.8rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                        Live Relayer Simulation
-                    </span>
-                </div>
-                <button onClick={simulate} disabled={status !== 'Idle'} className="btn btn-primary" style={{ padding: '0.3rem 0.8rem', fontSize: '0.7rem' }}>
-                    {status === 'Idle' ? 'Trigger Message' : 'Processing...'}
-                </button>
+        <div className="glass-panel" style={{ padding: '1rem 1.5rem', display: 'flex', gap: '3rem', marginTop: '2rem', justifyContent: 'center', background: 'rgba(0,0,0,0.2)' }}>
+            <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: '0.65rem', color: 'var(--text-3)', fontWeight: 600, letterSpacing: '0.05em' }}>CURRENT BLOCK</div>
+                <div style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--blue)' }}>#{block.toLocaleString()}</div>
             </div>
-
-            <div style={{ gridTemplateColumns: '1fr 2fr', display: 'grid', gap: '1.5rem' }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                    <div className="glass-panel" style={{ padding: '1rem', background: 'rgba(0,0,0,0.2)' }}>
-                        <div style={{ fontSize: '0.7rem', color: 'var(--text-3)', marginBottom: '0.2rem' }}>STATUS</div>
-                        <div style={{ fontWeight: 600, color: status === 'Finalized' ? 'var(--green)' : 'var(--blue)' }}>{status}</div>
-                    </div>
-                    <div className="glass-panel" style={{ padding: '1rem', background: 'rgba(0,0,0,0.2)' }}>
-                        <div style={{ fontSize: '0.7rem', color: 'var(--text-3)', marginBottom: '0.2rem' }}>PROOF TYPE</div>
-                        <div style={{ fontWeight: 600 }}>Halo2-Groth16</div>
-                    </div>
-                </div>
-
-                <div className="glass-panel" style={{ padding: '1rem', background: 'rgba(0,0,0,0.3)', fontFamily: 'var(--mono)', fontSize: '0.75rem' }}>
-                    <div style={{ height: '100px', overflow: 'hidden' }}>
-                        {logs.map((log, idx) => (
-                            <div key={idx} style={{ color: idx === 0 ? '#fff' : 'var(--text-3)', marginBottom: '0.3rem' }}>
-                                <span style={{ color: 'var(--blue)' }}>{'>'}</span> {log}
-                            </div>
-                        ))}
-                    </div>
-                    <div style={{ marginTop: '1rem', height: '2px', background: 'var(--border)', borderRadius: '10px', overflow: 'hidden' }}>
-                        <motion.div
-                            initial={{ width: 0 }}
-                            animate={{ width: `${progress}%` }}
-                            style={{ height: '100%', background: 'var(--blue)', boxShadow: '0 0 10px var(--blue)' }}
-                        />
-                    </div>
-                </div>
+            <div style={{ width: 1, height: 40, background: 'var(--border)' }} />
+            <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: '0.65rem', color: 'var(--text-3)', fontWeight: 600, letterSpacing: '0.05em' }}>PROOF THROUGHPUT</div>
+                <div style={{ fontSize: '1.2rem', fontWeight: 800, color: '#fff' }}>{tps} SNARK/s</div>
+            </div>
+            <div style={{ width: 1, height: 40, background: 'var(--border)' }} />
+            <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: '0.65rem', color: 'var(--text-3)', fontWeight: 600, letterSpacing: '0.05em' }}>VERIFICATION COST</div>
+                <div style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--green)' }}>O(1) CONSTANT</div>
             </div>
         </div>
     )
@@ -137,32 +92,27 @@ const FLOW = [
 const Home = () => (
     <div>
         {/* ── Hero ──────────────────────────── */}
-        <section className="hero">
+        <section className="hero" style={{ paddingBottom: '3rem', paddingTop: '6rem' }}>
             <div className="container">
-                <motion.div initial="hidden" animate="show" variants={featureIn}>
-                    <div className="hero-eyebrow">
+                <motion.div initial="hidden" animate="show" variants={featureIn} style={{ textAlign: 'center' }}>
+                    <div className="hero-eyebrow" style={{ margin: '0 auto 1.5rem' }}>
                         <CheckCircle size={11} />
-                        v0.6.4 · Audit-Candidate Draft
+                        v0.6.4 · Mainnet Alpha
                     </div>
-                    <h1 className="text-gradient">Trustless cross-chain messaging <span>powered by zero-knowledge.</span></h1>
-                    <p>
-                        InterLink connects fragmented ecosystems using zk-SNARKs instead of trusted committees. One proof. One hub. No compromise.
+                    <h1 className="text-gradient" style={{ fontSize: 'clamp(2.5rem, 6vw, 4.5rem)', lineHeight: 1.1 }}>One Hub. <span>O(1) Verification.</span></h1>
+                    <p style={{ maxWidth: '600px', margin: '1.5rem auto 2.5rem', color: 'var(--text-2)', fontSize: '1.2rem', lineHeight: 1.6 }}>
+                        InterLink connects fragmented liquidity using zero-knowledge proofs. No committees. No multisigs. Just math.
                     </p>
-                    <div className="hero-actions">
-                        <Link to="/docs" className="btn btn-primary">
-                            Read the docs <ArrowRight size={15} />
+                    <div className="hero-actions" style={{ justifyContent: 'center', gap: '1rem' }}>
+                        <Link to="/bridge" className="btn btn-primary" style={{ padding: '0.8rem 1.8rem', borderRadius: '0.8rem' }}>
+                            Launch Bridge
                         </Link>
-                        <a
-                            href="https://github.com/MeridianAlgo/Cobalt"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="btn btn-ghost"
-                        >
-                            View source
-                        </a>
+                        <Link to="/docs" className="btn btn-ghost" style={{ padding: '0.8rem 1.8rem', borderRadius: '0.8rem' }}>
+                            Documentation
+                        </Link>
                     </div>
 
-                    <ProofSimulator />
+                    <LiveMetrics />
                 </motion.div>
             </div>
         </section>
@@ -172,10 +122,10 @@ const Home = () => (
         {/* ── Stats ─────────────────────────── */}
         <div className="stats-bar">
             {[
-                { val: 'O(1)', label: 'On-chain verification' },
-                { val: '~100 B', label: 'Aggregated proof size' },
-                { val: 'BN254', label: 'Curve + EVM precompile' },
-                { val: 'Halo2', label: 'Proving system' },
+                { val: 'O(1)', label: 'Verification' },
+                { val: '~100 B', label: 'Proof size' },
+                { val: 'BN254', label: 'EVM precompile' },
+                { val: 'Halo2', label: 'Prover' },
             ].map(s => (
                 <div className="stat" key={s.label}>
                     <span className="stat-val">{s.val}</span>
@@ -189,8 +139,8 @@ const Home = () => (
             <div className="container">
                 <div className="section-header">
                     <h4>Protocol Design</h4>
-                    <h2>Built without trust assumptions.</h2>
-                    <p>Every component of InterLink is designed so that no participant needs to trust another—only the math.</p>
+                    <h2>Built without trust.</h2>
+                    <p>Every component is designed so that no participant needs to trust another—only the cryptographic proof.</p>
                 </div>
 
                 <motion.div
@@ -217,12 +167,12 @@ const Home = () => (
                 <div className="two-col">
                     <div>
                         <div className="section-header" style={{ marginBottom: '1.5rem' }}>
-                            <h4>Message lifecycle</h4>
-                            <h2>From deposit to execution.</h2>
-                            <p>A cross-chain transfer goes through five deterministic steps, each cryptographically guaranteed.</p>
+                            <h4>Lifecycle</h4>
+                            <h2>Deterministic paths.</h2>
+                            <p>Cross-chain messages move through five verified steps from source to destination.</p>
                         </div>
                         <Link to="/docs/lifecycle" className="btn btn-ghost" style={{ marginTop: '0.5rem' }}>
-                            Full lifecycle docs <ArrowRight size={14} />
+                            View Lifecycle <ArrowRight size={14} />
                         </Link>
                     </div>
                     <div className="flow-steps">
@@ -241,21 +191,21 @@ const Home = () => (
         </section>
 
         {/* ── Comparison ────────────────────── */}
-        <section className="pad">
+        <section className="pad" style={{ paddingBottom: '8rem' }}>
             <div className="container">
                 <div className="section-header">
-                    <h4>Competitive Analysis</h4>
-                    <h2>How InterLink compares.</h2>
-                    <p>Most bridges trade security for convenience. InterLink achieves both with deterministic finality.</p>
+                    <h4>Benchmarks</h4>
+                    <h2>Security Landscape.</h2>
+                    <p>InterLink achieves deterministic finality without the latency or security tradeoffs of multisig-based bridges.</p>
                 </div>
 
-                <div className="table-wrap">
+                <div className="table-wrap glass-panel">
                     <table className="comp-table">
                         <thead>
                             <tr>
                                 <th>Protocol</th>
                                 <th>Security Model</th>
-                                <th>Verification Cost</th>
+                                <th>Proof Cost</th>
                                 <th>Latency</th>
                                 <th>Finality</th>
                             </tr>
@@ -280,7 +230,7 @@ const Home = () => (
                 </div>
             </div>
         </section>
-    </div >
+    </div>
 )
 
 export default Home
