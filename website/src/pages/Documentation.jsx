@@ -160,6 +160,15 @@ const IntroPage = () => (
             </p>
         </div>
 
+        <div style={{ margin: '2rem 0', padding: '1.5rem', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.4)', borderRadius: '1rem', boxShadow: '0 0 20px rgba(239, 68, 68, 0.15)' }}>
+            <h3 style={{ color: '#ef4444', display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem', fontSize: '1.1rem' }}>
+                <AlertTriangle size={18} /> 🚨 IMPORTANT – PROVER CONSISTENCY REQUIREMENT 🚨
+            </h3>
+            <p style={{ color: 'var(--text-1)', lineHeight: 1.6, fontSize: '0.95rem', margin: 0 }}>
+                The relayer's Halo2 prover <strong>MUST</strong> use the exact same <code>interlink_v1_domain</code> salt when generating proofs. This is strictly required to match the updated Solidity input binding logic in <code>InterlinkGateway.sol:L175-180</code>. Ensure the entire pipeline (prover &rarr; relayer &rarr; on-chain verification) uses consistent domain separation to prevent proof mismatches.
+            </p>
+        </div>
+
         <div className="doc-section">
             <h2>The Problem</h2>
             <p>
@@ -879,6 +888,15 @@ const DevPage = () => (
         <h1 className="doc-title">Getting Started</h1>
         <div className="doc-lead">
             <p>This guide covers how to build the project from source, run the test suite, and spin up a local development environment.</p>
+        </div>
+
+        <div style={{ margin: '2rem 0', padding: '1.5rem', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.4)', borderRadius: '1rem', boxShadow: '0 0 20px rgba(239, 68, 68, 0.15)' }}>
+            <h3 style={{ color: '#ef4444', display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem', fontSize: '1.1rem' }}>
+                <AlertTriangle size={18} /> 🚨 IMPORTANT – PROVER CONSISTENCY REQUIREMENT 🚨
+            </h3>
+            <p style={{ color: 'var(--text-1)', lineHeight: 1.6, fontSize: '0.95rem', margin: 0 }}>
+                The relayer's Halo2 prover <strong>MUST</strong> use the exact same <code>interlink_v1_domain</code> salt when generating proofs. This is strictly required to match the updated Solidity input binding logic in <code>InterlinkGateway.sol:L175-180</code>. Ensure the entire pipeline (prover &rarr; relayer &rarr; on-chain verification) uses consistent domain separation to prevent proof mismatches.
+            </p>
         </div>
 
         <div className="doc-section">

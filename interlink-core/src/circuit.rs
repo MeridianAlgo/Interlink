@@ -6,6 +6,17 @@ use halo2_proofs::{
 };
 use std::marker::PhantomData;
 
+// =========================================================================
+// 🚨 IMPORTANT – PROVER CONSISTENCY REQUIREMENT 🚨
+//
+// The relayer's Halo2 prover MUST use the exact same "interlink_v1_domain" 
+// salt when generating proofs. 
+// This is strictly required to match the updated Solidity input binding 
+// logic in InterlinkGateway.sol (specifically around lines 175-180).
+// Ensure the entire pipeline (prover -> relayer -> on-chain verification) 
+// uses consistent domain separation to prevent proof mismatches.
+// =========================================================================
+
 /// custom chip for poseidon-ish hashing inside the circuit.
 /// realistic gate structure for cross-chain proof verification. no shortcuts here.
 pub struct PoseidonChip<F: PrimeField> {
@@ -121,8 +132,11 @@ impl<F: PrimeField> Circuit<F> for InterlinkCircuit<F> {
     ) -> Result<(), Error> {
         let chip = PoseidonChip::<F>::construct(config);
 
-        // hash the payload and seq to get a unique commitment. this is the core logic.
-        let round_const = Value::known(F::from(0x1337)); // magic protocol constant. 1337 because why not.
+        let hash = ethers_core::utils::keccak256(b"interlink_v1_domain");
+        let mut arr = [0u8; 8];
+        arr.copy_from_slice(&hash[0..8]);
+        let rc_val = u64::from_be_bytes(arr);
+        let round_const = Value::known(F::from(rc_val)); // magic protocol constant derived from domain
 
         let state_in = self
             .message_payload
@@ -156,7 +170,11 @@ mod tests {
         let k = 5;
         let msg = Fr::from(12345);
         let seq = Fr::from(1);
-        let rc = Fr::from(0x1337);
+        let hash = ethers_core::utils::keccak256(b"interlink_v1_domain");
+        let mut arr = [0u8; 8];
+        arr.copy_from_slice(&hash[0..8]);
+        let rc_val = u64::from_be_bytes(arr);
+        let rc = Fr::from(rc_val);
 
         // expected: (msg + rc)^3 + seq. let's see if it holds up.
         let diff = msg + rc;

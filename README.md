@@ -6,6 +6,10 @@ InterLink is a decentralized, high-performance interoperability protocol designe
 
 The protocol follows a Hub-and-Spoke architecture where Solana acts as the central settlement and verification layer, while various EVM, Cosmos, and other blockchains serve as spoke gateways.
 
+> **🚨 IMPORTANT – PROVER CONSISTENCY REQUIREMENT 🚨**
+> 
+> The relayer's Halo2 prover MUST use the exact same `interlink_v1_domain` salt when generating proofs. This is strictly required to match the updated Solidity input binding logic in `InterlinkGateway.sol:L175-180`. Ensure the entire pipeline (prover -> relayer -> on-chain verification) uses consistent domain separation to prevent proof mismatches.
+
 ---
 
 ## Project Architecture

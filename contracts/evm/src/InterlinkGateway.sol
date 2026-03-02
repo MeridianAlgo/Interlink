@@ -11,6 +11,17 @@ pragma solidity 0.8.28;
  *  - zero-address guards
  *  - emergencywithdraw for untrapping funds
  *  - pinned to 0.8.28 for stability
+ *
+ * =========================================================================
+ * 🚨 IMPORTANT – PROVER CONSISTENCY REQUIREMENT 🚨
+ *
+ * The relayer's Halo2 prover MUST use the exact same "interlink_v1_domain" 
+ * salt when generating proofs. 
+ * This is strictly required to match the updated Solidity input binding 
+ * logic in this contract (specifically around lines 175-180).
+ * Ensure the entire pipeline (prover -> relayer -> on-chain verification) 
+ * uses consistent domain separation to prevent proof mismatches.
+ * =========================================================================
  */
 
 interface IERC20 {
@@ -181,18 +192,38 @@ contract InterlinkGateway {
 
         /**
          * public input binding (real verification strategy):
-         * in halo2/groth16, public inputs are multiplied by fixed bases and summed into point C'.
-         * here we simulate this binding by ensuring the proof is specific to this payload.
-         * we XOR the cx/cy with a deterministic hash of publicInput to prove the binding.
+         * Compute C' = C + (inputScalar * G1) using BN254 precompiles.
          */
-        uint256 inputScalar = uint256(keccak256(abi.encodePacked(publicInput, "interlink_v1_domain")));
+        uint256 BN254_SCALAR_FIELD = 21888242871839275222246405745257275088548364400416034343698204186575808495617;
+        uint256 inputScalar = uint256(keccak256(abi.encodePacked(publicInput, "interlink_v1_domain"))) % BN254_SCALAR_FIELD;
         
-        // ensuring inputs aren't zero and cx/cy are valid.
         require(inputScalar != 0 && cx != 0 && cy != 0, "Interlink: Invalid inputs");
 
-        // prep the pairing buffer (384 bytes).
-        // pair 1: (a, b)
-        // pair 2: (c, -g2_generator)
+        // ECMUL: inputScalar * G1
+        uint256[3] memory mulInput;
+        mulInput[0] = 1; // G1_x
+        mulInput[1] = 2; // G1_y
+        mulInput[2] = inputScalar;
+        uint256[2] memory p1;
+        bool mulSuccess;
+        assembly {
+            mulSuccess := staticcall(gas(), 0x07, mulInput, 0x60, p1, 0x40)
+        }
+        require(mulSuccess, "Interlink: ECMUL failed");
+
+        // ECADD: C + (inputScalar * G1)
+        uint256[4] memory addInput;
+        addInput[0] = cx;
+        addInput[1] = cy;
+        addInput[2] = p1[0];
+        addInput[3] = p1[1];
+        uint256[2] memory newC;
+        bool addSuccess;
+        assembly {
+            addSuccess := staticcall(gas(), 0x06, addInput, 0x80, newC, 0x40)
+        }
+        require(addSuccess, "Interlink: ECADD failed");
+
         uint256[12] memory input;
         input[0] = ax;
         input[1] = ay;
@@ -200,11 +231,8 @@ contract InterlinkGateway {
         input[3] = bx2;
         input[4] = by1;
         input[5] = by2;
-        
-        // binding cx/cy to the input scalar. 
-        // in a real snark, this would be an EC add: C' = C + Σ(input_i * G_i).
-        input[6] = cx ^ (inputScalar % 2**128); // deterministic mask for validation consistency
-        input[7] = cy;
+        input[6] = newC[0];
+        input[7] = newC[1];
         
         // bn254 g2 generator (negated y).
         input[8]  = 0x1800deef121f1e76426a00665e5c4479674322d4f75edadd46debd5cd992f6ed;

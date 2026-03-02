@@ -92,23 +92,25 @@ const FLOW = [
 const Home = () => (
     <div>
         {/* ── Hero ──────────────────────────── */}
-        <section className="hero" style={{ paddingBottom: '3rem', paddingTop: '6rem' }}>
-            <div className="container">
+        <section className="hero" style={{ paddingBottom: '3rem', paddingTop: '6rem', position: 'relative', overflow: 'hidden' }}>
+            <div className="container" style={{ position: 'relative', zIndex: 10 }}>
                 <motion.div initial="hidden" animate="show" variants={featureIn} style={{ textAlign: 'center' }}>
-                    <div className="hero-eyebrow" style={{ margin: '0 auto 1.5rem' }}>
-                        <CheckCircle size={11} />
-                        v0.6.4 · Mainnet Alpha
+                    <div className="hero-eyebrow" style={{ margin: '0 auto 1.5rem', background: 'rgba(59, 130, 246, 0.1)', border: '1px solid rgba(59, 130, 246, 0.3)', color: 'var(--blue)' }}>
+
+                        v0.7.0
                     </div>
-                    <h1 className="text-gradient" style={{ fontSize: 'clamp(2.5rem, 6vw, 4.5rem)', lineHeight: 1.1 }}>One Hub. <span>O(1) Verification.</span></h1>
-                    <p style={{ maxWidth: '600px', margin: '1.5rem auto 2.5rem', color: 'var(--text-2)', fontSize: '1.2rem', lineHeight: 1.6 }}>
-                        InterLink connects fragmented liquidity using zero-knowledge proofs. No committees. No multisigs. Just math.
+                    <h1 className="text-gradient" style={{ fontSize: 'clamp(3rem, 7vw, 5.5rem)', lineHeight: 1.05, fontWeight: 900, letterSpacing: '-0.02em' }}>
+                        The O(1) Bridge.
+                    </h1>
+                    <p style={{ maxWidth: '650px', margin: '1.5rem auto 2.5rem', color: 'var(--text-1)', fontSize: '1.25rem', lineHeight: 1.7, fontWeight: 500 }}>
+                        Unifying fragmented liquidity securely. No committees. No multisigs. Just pure zero-knowledge cryptography and math.
                     </p>
-                    <div className="hero-actions" style={{ justifyContent: 'center', gap: '1rem' }}>
-                        <Link to="/bridge" className="btn btn-primary" style={{ padding: '0.8rem 1.8rem', borderRadius: '0.8rem' }}>
+                    <div className="hero-actions" style={{ justifyContent: 'center', gap: '1.2rem', display: 'flex', flexWrap: 'wrap' }}>
+                        <Link to="/bridge" className="btn btn-primary" style={{ padding: '0.9rem 2.2rem', fontSize: '1.05rem', borderRadius: '2rem', fontWeight: 600, boxShadow: '0 0 20px rgba(59, 130, 246, 0.4)' }}>
                             Launch Bridge
                         </Link>
-                        <Link to="/docs" className="btn btn-ghost" style={{ padding: '0.8rem 1.8rem', borderRadius: '0.8rem' }}>
-                            Documentation
+                        <Link to="/docs" className="btn btn-ghost" style={{ padding: '0.9rem 2.2rem', fontSize: '1.05rem', borderRadius: '2rem', border: '1px solid var(--border)' }}>
+                            Explore Docs
                         </Link>
                     </div>
 

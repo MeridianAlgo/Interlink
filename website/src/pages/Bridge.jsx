@@ -22,7 +22,23 @@ const Bridge = () => {
     }
 
     return (
-        <div className="page-container" style={{ paddingTop: '8rem', paddingBottom: '6rem' }}>
+        <div className="page-container" style={{ paddingTop: '8rem', paddingBottom: '6rem', position: 'relative' }}>
+            {/* COMING SOON OVERLAY */}
+            <div style={{
+                position: 'absolute', inset: 0, zIndex: 100,
+                background: 'rgba(5, 5, 5, 0.85)', backdropFilter: 'blur(8px)',
+                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center',
+                padding: '2rem'
+            }}>
+                <div style={{ background: 'var(--bg-2)', padding: '2.5rem', borderRadius: '1.5rem', border: '1px solid var(--border)', maxWidth: '500px' }}>
+                    <Shield size={32} color="var(--blue)" style={{ margin: '0 auto 1.5rem' }} />
+                    <h2 style={{ fontSize: '2rem', marginBottom: '1rem', color: '#fff' }}>InterLink Bridge &ndash; Coming Soon</h2>
+                    <p style={{ color: 'var(--text-2)', lineHeight: 1.6, fontSize: '0.95rem' }}>
+                        Full cross-chain functionality is currently in development. Our O(1) Halo2 proofs and Solana execution hub are being finalized. Stay tuned!
+                    </p>
+                </div>
+            </div>
+
             <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}

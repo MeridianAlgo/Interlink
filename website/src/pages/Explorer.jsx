@@ -12,7 +12,23 @@ const Explorer = () => {
     ]
 
     return (
-        <div className="page-container" style={{ paddingTop: '8rem', paddingBottom: '6rem' }}>
+        <div className="page-container" style={{ paddingTop: '8rem', paddingBottom: '6rem', position: 'relative' }}>
+            {/* COMING SOON OVERLAY */}
+            <div style={{
+                position: 'absolute', inset: 0, zIndex: 100,
+                background: 'rgba(5, 5, 5, 0.85)', backdropFilter: 'blur(8px)',
+                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center',
+                padding: '2rem'
+            }}>
+                <div style={{ background: 'var(--bg-2)', padding: '2.5rem', borderRadius: '1.5rem', border: '1px solid var(--border)', maxWidth: '500px' }}>
+                    <Search size={32} color="var(--blue)" style={{ margin: '0 auto 1.5rem' }} />
+                    <h2 style={{ fontSize: '2rem', marginBottom: '1rem', color: '#fff' }}>InterLink Explorer &ndash; Coming Soon</h2>
+                    <p style={{ color: 'var(--text-2)', lineHeight: 1.6, fontSize: '0.95rem' }}>
+                        Our real-time cross-chain message explorer is currently in development. We are processing alpha stage proofs. Stay tuned!
+                    </p>
+                </div>
+            </div>
+
             <div className="container">
                 <div className="section-header" style={{ marginBottom: '3rem' }}>
                     <span className="doc-eyebrow">Explorer</span>

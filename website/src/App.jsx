@@ -9,7 +9,8 @@ import Explorer from './pages/Explorer'
 /*Standerd AI website no im not tryna make a website rn i have better things to do*/
 const Navbar = () => {
   const [open, setOpen] = useState(false)
-  const loc = useLocation()
+  const loc = useLocation() || { pathname: '' }
+  const path = loc.pathname || ''
 
   return (
     <>
@@ -30,15 +31,15 @@ const Navbar = () => {
         <div className="container">
           <nav>
             <Link to="/" className="logo">
-              <Zap size={16} />
+              <img src="/InterLink.png" alt="InterLink Logo" style={{ height: '24px', marginRight: '8px' }} />
               <span className="text-gradient" style={{ fontWeight: 800 }}>InterLink</span>
             </Link>
 
             <ul className="nav-links desktop-only">
-              <li><Link to="/" className={loc.pathname === '/' ? 'active' : ''}>Home</Link></li>
-              <li><Link to="/bridge" className={loc.pathname === '/bridge' ? 'active' : ''}>Bridge</Link></li>
-              <li><Link to="/explorer" className={loc.pathname === '/explorer' ? 'active' : ''}>Explorer</Link></li>
-              <li><Link to="/docs" className={loc.pathname.startsWith('/docs') ? 'active' : ''}>Documentation</Link></li>
+              <li><Link to="/" className={path === '/' ? 'active' : ''}>Home</Link></li>
+              <li><Link to="/bridge" className={path === '/bridge' ? 'active' : ''}>Bridge</Link></li>
+              <li><Link to="/explorer" className={path === '/explorer' ? 'active' : ''}>Explorer</Link></li>
+              <li><Link to="/docs" className={path.startsWith('/docs') ? 'active' : ''}>Documentation</Link></li>
               <li>
                 <a
                   href="https://github.com/MeridianAlgo/Cobalt"

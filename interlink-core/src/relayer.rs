@@ -203,7 +203,11 @@ impl Relayer {
             .map_err(|_| crate::InterlinkError::ProofGenerationFailed)?;
 
         // stage 4: crunch the public inputs.
-        let rc = Fr::from(0x1337);
+        let salt_hash = ethers_core::utils::keccak256(b"interlink_v1_domain");
+        let mut arr = [0u8; 8];
+        arr.copy_from_slice(&salt_hash[0..8]);
+        let rc = Fr::from(u64::from_be_bytes(arr));
+        
         let diff = payload_f + rc;
         let commitment = diff.square() * diff + Fr::from(nonce);
 
@@ -315,7 +319,12 @@ impl Relayer {
         use ff::PrimeField;
         use halo2curves::bn256::Fr;
         let payload_f = Fr::from_repr(payload_hash).unwrap_or(Fr::from(sequence));
-        let commitment_f = (payload_f + Fr::from(0x1337)).square() * (payload_f + Fr::from(0x1337))
+        let salt_hash = ethers_core::utils::keccak256(b"interlink_v1_domain");
+        let mut arr = [0u8; 8];
+        arr.copy_from_slice(&salt_hash[0..8]);
+        let rc = Fr::from(u64::from_be_bytes(arr));
+
+        let commitment_f = (payload_f + rc).square() * (payload_f + rc)
             + Fr::from(sequence);
         ix_data.extend_from_slice(&commitment_f.to_repr());
 
