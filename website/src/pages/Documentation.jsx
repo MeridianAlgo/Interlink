@@ -4,7 +4,8 @@ import { motion } from 'framer-motion'
 import {
     Info, Layers, Cpu, Zap, Shield, Code,
     FileText, ChevronRight, GitCommit,
-    CheckCircle, AlertTriangle, ArrowRight
+    CheckCircle, AlertTriangle, ArrowRight,
+    Database
 } from 'lucide-react'
 
 /*Standerd AI website no im not tryna make a website rn i have better things to do*/
