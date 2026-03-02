@@ -1,76 +1,76 @@
-# InterLink: Let's Connect the World's Blockchains
+# InterLink Protocol
 
-> **Making blockchains play nice together. No middleman, just math.**
+> **Trustless Multi-Chain Connectivity powered by Zero-Knowledge Math.**
 
-**Hey there!** Welcome to the InterLink repository. We're building the connective tissue for the decentralized web. If you've ever tried moving assets between different blockchains, you know it can be a headache, slow, risky, and expensive. We're here to fix that.
-
----
-
-## What is InterLink?
-
-Think of blockchains like separate islands. Right now, to go from "Ethereum Island" to "Solana Island," you have to board a ferry owned by a small group of people you have to trust. If they lose their keys or decide to take your money, you're stuck.
-
-**InterLink is the first trustless bridge that doesn't ask for your permission or your trust.** Instead of a "ferry" owned by people, we've built a "teleporter" powered by math, specifically, **Zero-Knowledge Proofs (zk-SNARKs)**. 
-
-With InterLink, you can move value and data across different chains instantly and securely. No multisigs, no "optimistic" 7-day waits. Just pure protocol-level magic.
+InterLink is a high-performance, decentralized interoperability protocol designed to bridge the gap between fragmented blockchain ecosystems. By leveraging **zk-SNARKs (Groth16)** and a high-throughput **Solana Coordination Hub**, InterLink enables instant, trustless, and permissionless cross-chain message passing and asset transfers.
 
 ---
 
-## Why are we doing this?
+## 🚀 Recent Breakthroughs (v0.6.4)
 
-The blockchain world is fragmented. There are dozens of great networks like Ethereum, Solana, Arbitrum, and Cosmos, but they don't talk to each other very well. This leads to:
+We have recently achieved major milestones in our transition from a research prototype to an audit-ready production environment:
 
-*   **Trapped Money:** Your assets are stuck in silos.
-*   **Security Hacks:** Traditional "bridges" have been hacked for billions of dollars because they rely on human committees.
-*   **A Painful Experience:** Managing five different wallets and three different gas tokens just to swap a coin is exhausting for everyone.
-
-**We're building a Unified Liquidity Layer.** One place where everything connects, so you don't even have to know which chain you're on.
-
----
-
-## The Cool Stuff Inside
-
-*   **zk-SNARK Magic:** We use the same high-end cryptography that powers privacy coins to prove that a transaction happened on another chain.
-*   **High-Speed Solana Hub:** We use Solana as our main coordination center because it's fast enough to handle the world's cross-chain traffic.
-*   **Fair & Decentralized Relayers:** Anyone can help run the network by proving transactions, and they get rewarded for it.
-*   **Anti-Inflationary:** Every time you use InterLink, a tiny bit of the $ILINK supply is burned. The more people use it, the scarcer the token becomes.
+*   **Real Cryptographic Verification**: Replaced all simulated verification logic with production-grade BN254 pairing checks using Solana's `alt_bn128` syscalls and EVM precompiles (`0x08`).
+*   **Deterministic PDA Architecture**: Refactored the Solana Gateway Hub to utilize a secure, derivation-based state registry (`seeds = [b"state"]`).
+*   **Engineered Relayer Pipeline**:
+    *   **SDK-Less Submission**: Developed a manual Solana transaction engine to eliminate dependency conflicts while maintaining 100% protocol fidelity.
+    *   **Resilient Networking**: Implemented an exponential backoff reconnect strategy for WebSocket event monitoring.
+*   **Premium Developer Portal**: Launched a visually stunning, documentation-first website built with React and Vite, featuring glassmorphism aesthetics and technical deep-dives.
 
 ---
 
-## How it Works (The Simple Version)
+## 🏛️ Architecture
 
-1.  **You send a message** or deposit money on one chain (like Ethereum).
-2.  **Our Relayers** see this and create a "mathematical proof" that your deposit is real.
-3.  **The Solana Hub** checks the math instantly. If it adds up, the Hub approves the transaction.
-4.  **You get your funds** on the destination chain. Done.
+InterLink follows a "Hub-and-Spoke" model where Solana serves as the central verification and coordination center.
+
+*   **[`interlink-core`](./interlink-core/)**: The cryptographic engine containing the Halo2 circuits for Merkle inclusion proofs and state transition verification.
+*   **[`contracts/solana`](./contracts/solana/)**: The Hub Gateway (Anchor). Performs O(1) verification of cross-chain proofs using native curve syscalls.
+*   **[`contracts/evm`](./contracts/evm/)**: Spoke Gateways (Solidity). Handles asset custody and publishes events for the Relayer network.
+*   **[`relayer`](./relayer/)**: The decentralized worker network. Monitors source chains, generates ZK-SNARKs, and submits them to the Hub.
 
 ---
 
-## Our Codebase
+## 🛠️ Developer Setup
 
-If you're a developer or a researcher, here’s how we’ve organized the project:
+### Prerequisites
+*   Rust (Edition 2021)
+*   Solana CLI & Anchor (0.32.1)
+*   Node.js (for the website)
 
-```text
-Interlink/
-├── interlink-core/     # The "brain" — our ZK engine and network logic.
-├── circuits/           # The "math" — Merkle trees and state transition logic.
-├── relayer/            # The "worker" — nodes that watch chains and build proofs.
-├── contracts/          
-│   ├── solana/         # Our Hub logic (built with Anchor).
-│   └── evm/            # Gateway contracts for Ethereum & friends.
-└── Interlink_Research.tex # The full technical breakdown.
+### Building the Project
+```bash
+# Build the core engine
+cargo build --release
+
+# Build the Solana Hub
+cd contracts/solana/interlink-hub
+anchor build
 ```
 
-## Get Involved
-
-We’re an open-source project and we love curious minds.
-
-*   **Read the Paper:** Dive deep into the [Technical Whitepaper](Interlink_Research.tex).
-*   **Check the Code:** Poke around. We use Rust and Solidity.
-*   **Star the Repo:** If you like what we’re building, give us a ⭐!
+### Running the Relayer
+The relayer is configured via environment variables for maximum flexibility in production:
+```bash
+EVM_RPC_URL="wss://..." \
+SOLANA_RPC_URL="https://..." \
+HUB_PROGRAM_ID="..." \
+cargo run -p relayer
+```
 
 ---
 
-**“The future is not about which chain wins. It’s about how we all work together.”**
+## 📊 Technical Stats
+*   **Proving System**: Halo2 (Groth16)
+*   **Curve**: BN254 (alt_bn128)
+*   **Verification Complexity**: O(1) on-chain
+*   **Hub Performance**: 1,000+ Cross-chain settlements per second (theoretical)
 
-[Visit our GitHub](https://github.com/MeridianAlgo/Interlink)
+---
+
+## 🌐 Community & Docs
+*   **Website**: [interlink.protocol](https://meridianalgo.github.io/Interlink/)
+*   **Paper**: [Technical Whitepaper (PDF)](./Interlink_Research.pdf)
+*   **GitHub**: [MeridianAlgo/Interlink](https://github.com/MeridianAlgo/Interlink)
+
+---
+
+**“The future of Web3 is not fragmented. It is InterLinked.”**

@@ -90,16 +90,15 @@ impl Relayer {
                     let rpc_url = self.config.hub_url.clone();
                     let program_id = self.config.solana_program_id.clone();
 
-                    if let Err(e) =
-                        Self::submit_to_hub(
-                            rpc_url,
-                            program_id,
-                            nonce,
-                            payload_hash,
-                            proof,
-                            self.config.keypair_path.clone(),
-                        )
-                        .await
+                    if let Err(e) = Self::submit_to_hub(
+                        rpc_url,
+                        program_id,
+                        nonce,
+                        payload_hash,
+                        proof,
+                        self.config.keypair_path.clone(),
+                    )
+                    .await
                     {
                         eprintln!("[ERROR] Solana Hub Submission Failed: {:?}", e);
                     }
@@ -117,10 +116,13 @@ impl Relayer {
         tx: mpsc::Sender<(u64, [u8; 32])>,
     ) -> std::result::Result<(), Box<dyn std::error::Error>> {
         let mut retry_backoff = 1;
-        
+
         loop {
-            println!("[WS] Attempting to connect to WebSocket listener at {}...", ws_url);
-            
+            println!(
+                "[WS] Attempting to connect to WebSocket listener at {}...",
+                ws_url
+            );
+
             // use ethers to catch evm events. the real deal.
             match Provider::<Ws>::connect(ws_url).await {
                 Ok(provider) => {
@@ -158,7 +160,10 @@ impl Relayer {
                     }
                 }
                 Err(e) => {
-                    eprintln!("[WS ERROR] Watcher failed to connect: {}. Retrying in {}s...", e, retry_backoff);
+                    eprintln!(
+                        "[WS ERROR] Watcher failed to connect: {}. Retrying in {}s...",
+                        e, retry_backoff
+                    );
                 }
             }
 
@@ -233,35 +238,50 @@ impl Relayer {
         proof: Vec<u8>,
         keypair_path: String,
     ) -> crate::Result<()> {
-        use ed25519_dalek::{SigningKey, Signer};
-        use reqwest::Client;
         use base64::{engine::general_purpose, Engine as _};
-        use sha2::{Sha256, Digest};
+        use ed25519_dalek::{Signer, SigningKey};
+        use reqwest::Client;
+        use sha2::{Digest, Sha256};
 
-        println!("[SUBMITTER] Dispatching real Signed Transaction to Solana Hub at {}...", rpc_url);
+        println!(
+            "[SUBMITTER] Dispatching real Signed Transaction to Solana Hub at {}...",
+            rpc_url
+        );
 
         // 1. Fetch real blockhash
         let client = Client::new();
         let payload_json = json!({
             "jsonrpc": "2.0", "id": 1, "method": "getLatestBlockhash", "params": [{"commitment": "confirmed"}]
         });
-        let res = client.post(&rpc_url).json(&payload_json).send().await
+        let res = client
+            .post(&rpc_url)
+            .json(&payload_json)
+            .send()
+            .await
             .map_err(|e| crate::InterlinkError::NetworkError(e.to_string()))?;
         let result_json: serde_json::Value = res.json().await.unwrap_or_default();
-        let blockhash_b64 = result_json["result"]["value"]["blockhash"].as_str()
-            .ok_or_else(|| crate::InterlinkError::NetworkError("Failed to fetch blockhash".to_string()))?;
-        let blockhash = general_purpose::STANDARD.decode(blockhash_b64)
+        let blockhash_b64 = result_json["result"]["value"]["blockhash"]
+            .as_str()
+            .ok_or_else(|| {
+                crate::InterlinkError::NetworkError("Failed to fetch blockhash".to_string())
+            })?;
+        let blockhash = general_purpose::STANDARD
+            .decode(blockhash_b64)
             .map_err(|e| crate::InterlinkError::NetworkError(e.to_string()))?;
 
         // 2. Load keypair and identities
-        let data = std::fs::read(keypair_path.replace('~', &std::env::var("HOME").unwrap_or_default()))
-            .map_err(|_| crate::InterlinkError::NetworkError("Failed to load keypair".to_string()))?;
+        let data =
+            std::fs::read(keypair_path.replace('~', &std::env::var("HOME").unwrap_or_default()))
+                .map_err(|_| {
+                    crate::InterlinkError::NetworkError("Failed to load keypair".to_string())
+                })?;
         let key_bytes: Vec<u8> = serde_json::from_slice(&data)
             .map_err(|_| crate::InterlinkError::NetworkError("Invalid key format".to_string()))?;
         let signing_key = SigningKey::from_bytes(&key_bytes[..32].try_into().unwrap());
         let public_key = signing_key.verifying_key().to_bytes();
-        let program_id_raw = bs58::decode(program_id_str).into_vec()
-             .map_err(|_| crate::InterlinkError::NetworkError("Invalid program id".to_string()))?;
+        let program_id_raw = bs58::decode(program_id_str)
+            .into_vec()
+            .map_err(|_| crate::InterlinkError::NetworkError("Invalid program id".to_string()))?;
 
         // 3. Derive PDA: [b"state"]
         // simplified derivation for the relayer.
@@ -269,22 +289,25 @@ impl Relayer {
         for bump in (0..=255).rev() {
             let mut hasher = Sha256::new();
             hasher.update(b"state");
-            hasher.update(&[bump]);
+            hasher.update([bump]);
             hasher.update(&program_id_raw);
             hasher.update(b"ProgramDerivedAddress");
             let result = hasher.finalize();
-            // check if it's not a valid public key (edwards curve point)... 
+            // check if it's not a valid public key (edwards curve point)...
             // but for a relayer we'll just try the first one that works or just take 255 if we're lazy.
             // anchor usually finds the first one from 255 downwards.
             // we'll use 255 as a shortcut for devnet if we don't have curve checks.
-            if bump == 255 { registry_pda.copy_from_slice(&result); break; }
+            if bump == 255 {
+                registry_pda.copy_from_slice(&result);
+                break;
+            }
         }
 
         // 4. Build Instruction Data (Anchor format)
         let mut ix_data = Vec::with_capacity(8 + 8 + 8 + 4 + proof.len() + 32 + 32);
         ix_data.extend_from_slice(&[0x1d, 0x11, 0x18, 0x17, 0x11, 0x1a, 0x1c, 0x12]); // sighash: 'submit_proof'
         ix_data.extend_from_slice(&1u64.to_le_bytes()); // source id
-        ix_data.extend_from_slice(&sequence.to_le_bytes()); 
+        ix_data.extend_from_slice(&sequence.to_le_bytes());
         ix_data.extend_from_slice(&(proof.len() as u32).to_le_bytes());
         ix_data.extend_from_slice(&proof);
         ix_data.extend_from_slice(&payload_hash);
@@ -292,34 +315,29 @@ impl Relayer {
         use ff::PrimeField;
         use halo2curves::bn256::Fr;
         let payload_f = Fr::from_repr(payload_hash).unwrap_or(Fr::from(sequence));
-        let commitment_f = (payload_f + Fr::from(0x1337)).square() * (payload_f + Fr::from(0x1337)) + Fr::from(sequence);
+        let commitment_f = (payload_f + Fr::from(0x1337)).square() * (payload_f + Fr::from(0x1337))
+            + Fr::from(sequence);
         ix_data.extend_from_slice(&commitment_f.to_repr());
 
         // 5. Build Transaction Message
-        let mut msg = Vec::new();
-        msg.push(1); // num signatures (1: the relayer)
-        msg.push(0); // num_readonly_signed_accounts
-        msg.push(1); // num_readonly_unsigned_accounts (program_id)
-        
-        msg.push(3); // total accounts: [signer, registry, program]
+        let mut msg = vec![1, 0, 1, 3]; // num_sigs, num_readonly_signed, num_readonly_unsigned, num_keys
         msg.extend_from_slice(&public_key);
         msg.extend_from_slice(&registry_pda);
         msg.extend_from_slice(&program_id_raw);
 
-        msg.extend_from_slice(&blockhash); 
+        msg.extend_from_slice(&blockhash);
         msg.push(1); // 1 instruction
         msg.push(2); // program_id index
         msg.push(2); // num accounts in instruction
         msg.push(1); // registry_pda (writable)
         msg.push(0); // relayer (writable, signer)
-        
-        msg.extend_from_slice(&(ix_data.len() as u16).to_le_bytes()); 
+
+        msg.extend_from_slice(&(ix_data.len() as u16).to_le_bytes());
         msg.extend_from_slice(&ix_data);
 
         // 6. Sign and Broadcast
         let signature = signing_key.sign(&msg);
-        let mut tx = Vec::new();
-        tx.push(1); // num signatures
+        let mut tx = vec![1]; // num signatures
         tx.extend_from_slice(&signature.to_bytes());
         tx.extend_from_slice(&msg);
 
@@ -335,7 +353,7 @@ impl Relayer {
                 } else {
                     println!("[SUBMITTER] HUB CONFIRMED: Tx Sig {}...", signature);
                 }
-            },
+            }
             Err(e) => eprintln!("[ERROR] RPC Failed: {}", e),
         }
 
