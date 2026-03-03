@@ -22,7 +22,10 @@ mod tests {
 
         println!("[TEST] SNARK Generated. Length: {} bytes", proof.len());
         assert!(!proof.is_empty(), "Proof should not be empty");
-        assert!(proof.len() > 100, "Proof size indicates incorrect generation");
+        assert!(
+            proof.len() > 100,
+            "Proof size indicates incorrect generation"
+        );
     }
 }
 
@@ -206,7 +209,7 @@ impl Relayer {
         let mut arr = [0u8; 8];
         arr.copy_from_slice(&salt_hash[0..8]);
         let rc = Fr::from(u64::from_be_bytes(arr));
-        
+
         let diff = payload_f + rc;
         let commitment = diff.square() * diff + Fr::from(nonce);
 
@@ -287,7 +290,9 @@ impl Relayer {
             .map_err(|_| crate::InterlinkError::NetworkError("Invalid program id".to_string()))?;
 
         // 3. Derive PDA: [b"state"]
-        // simplified derivation for the relayer.
+        // Robust PDA derivation for the relayer.
+        // Solana PDAs MUST be off the Ed25519 curve. Relying on a blind `255` is fragile.
+        // We iterate downwards until we find a hash that correctly parses as an invalid curve point.
         let mut registry_pda = [0u8; 32];
         for bump in (0..=255).rev() {
             let mut hasher = Sha256::new();
@@ -296,12 +301,11 @@ impl Relayer {
             hasher.update(&program_id_raw);
             hasher.update(b"ProgramDerivedAddress");
             let result = hasher.finalize();
-            // check if it's not a valid public key (edwards curve point)...
-            // but for a relayer we'll just try the first one that works or just take 255 if we're lazy.
-            // anchor usually finds the first one from 255 downwards.
-            // we'll use 255 as a shortcut for devnet if we don't have curve checks.
-            if bump == 255 {
-                registry_pda.copy_from_slice(&result);
+
+            registry_pda.copy_from_slice(&result);
+            // If `VerifyingKey::from_bytes` errors, it's NOT a valid Edwards curve point,
+            // which means it is a valid PDA off-curve!
+            if ed25519_dalek::VerifyingKey::from_bytes(&registry_pda).is_err() {
                 break;
             }
         }
@@ -323,8 +327,7 @@ impl Relayer {
         arr.copy_from_slice(&salt_hash[0..8]);
         let rc = Fr::from(u64::from_be_bytes(arr));
 
-        let commitment_f = (payload_f + rc).square() * (payload_f + rc)
-            + Fr::from(sequence);
+        let commitment_f = (payload_f + rc).square() * (payload_f + rc) + Fr::from(sequence);
         ix_data.extend_from_slice(&commitment_f.to_repr());
 
         // 5. Build Transaction Message
