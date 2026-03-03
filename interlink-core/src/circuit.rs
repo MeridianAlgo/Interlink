@@ -18,7 +18,7 @@ use std::marker::PhantomData;
 // =========================================================================
 
 /// Custom chip for Poseidon-style hashing within the circuit.
-/// Implements cubic s-box constraints for cross-chain proof verification.
+/// Implements quintic s-box (x^5) constraints for cross-chain proof verification.
 pub struct PoseidonChip<F: PrimeField> {
     pub config: PoseidonConfig,
     _marker: PhantomData<F>,
@@ -54,7 +54,9 @@ impl<F: PrimeField> PoseidonChip<F> {
             meta.enable_equality(*column);
         }
 
-        // Define the cubic s-box gate for the hash round: out = (in + rc)^3 + prev
+        // Define the quintic s-box gate for the hash round: out = (in + rc)^5 + prev
+        // Using x^5 because gcd(5, p-1) = 1 for BN254, making it a valid permutation
+        // (x^3 was NOT injective since gcd(3, p-1) = 3 for BN254)
         meta.create_gate("poseidon_round", |meta| {
             let s = meta.query_selector(s_hash);
             let state_in = meta.query_advice(advice[0], Rotation::cur());
@@ -63,9 +65,10 @@ impl<F: PrimeField> PoseidonChip<F> {
             let prev_val = meta.query_advice(advice[3], Rotation::cur());
 
             let diff = state_in.clone() + round_const;
-            let cube = diff.clone() * diff.clone() * diff;
+            let sq = diff.clone() * diff.clone();
+            let quint = sq.clone() * sq * diff;
 
-            vec![s * (state_out - (cube + prev_val))]
+            vec![s * (state_out - (quint + prev_val))]
         });
 
         PoseidonConfig {
@@ -96,7 +99,8 @@ impl<F: PrimeField> PoseidonChip<F> {
                     .zip(prev_val)
                     .map(|((si, rc), pv)| {
                         let diff = si + rc;
-                        diff.square() * diff + pv
+                        let sq = diff.square();
+                        sq * sq * diff + pv
                     });
 
                 region.assign_advice(|| "state_out", self.config.advice[2], 0, || res)
@@ -175,9 +179,10 @@ mod tests {
         let rc_val = u64::from_be_bytes(arr);
         let rc = Fr::from(rc_val);
 
-        // expected: (msg + rc)^3 + seq. let's see if it holds up.
+        // expected: (msg + rc)^5 + seq
         let diff = msg + rc;
-        let expected_out = diff.square() * diff + seq;
+        let sq = diff.square();
+        let expected_out = sq * sq * diff + seq;
 
         let circuit = InterlinkCircuit {
             message_payload: Some(msg),
@@ -294,7 +299,8 @@ mod batched_tests {
             sequence_numbers[i] = Some(seq);
 
             let diff = msg + rc;
-            let expected_out = diff.square() * diff + seq;
+            let sq = diff.square();
+            let expected_out = sq * sq * diff + seq;
             expected_outs.push(expected_out);
         }
 

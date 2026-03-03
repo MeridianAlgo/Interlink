@@ -31,16 +31,20 @@ impl Chain {
         *self as u16
     }
 
-    /// Returns the expected finality time in seconds for this chain
+    /// Returns the expected finality time in seconds for this chain.
+    ///
+    /// For optimistic rollups (Arbitrum, Optimism, Base), this represents the
+    /// fraud proof challenge window. Funds should not be considered final until
+    /// this window has elapsed.
     pub fn finality_seconds(&self) -> u64 {
         match self {
-            Chain::Ethereum => 768,  // 2 epochs (~12.8 min)
-            Chain::Solana => 1,      // ~400ms slot, near-instant
-            Chain::Arbitrum => 420,  // ~7 min challenge window (optimistic)
-            Chain::Optimism => 420,
-            Chain::Cosmos => 7,      // ~6s block time + 1 confirmation
-            Chain::Sui => 3,
-            Chain::Base => 420,
+            Chain::Ethereum => 768,      // 2 epochs (~12.8 min)
+            Chain::Solana => 1,          // ~400ms slot, near-instant finality
+            Chain::Arbitrum => 604_800,  // 7 day fraud proof window
+            Chain::Optimism => 604_800,  // 7 day fraud proof window
+            Chain::Cosmos => 7,          // ~6s block time + 1 confirmation
+            Chain::Sui => 3,             // ~2-3s finality
+            Chain::Base => 604_800,      // 7 day fraud proof window (OP Stack)
         }
     }
 }
@@ -166,18 +170,6 @@ pub struct SwapResult {
     pub amount_out: u128,
     pub fee: u128,
     pub sequence: u64,
-}
-
-impl ActionType {
-    fn as_u8(&self) -> u8 {
-        match self {
-            ActionType::Transfer => 0,
-            ActionType::Swap => 1,
-            ActionType::ContractCall => 2,
-            ActionType::NFTTransfer => 3,
-            ActionType::Governance => 4,
-        }
-    }
 }
 
 #[cfg(test)]

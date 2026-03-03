@@ -39,12 +39,14 @@ interface IInterlinkRouter {
     ) external view returns (uint256 feeAmount);
 
     /**
-     * @dev Returns the current sequence number (next nonce to be assigned).
+     * @dev Returns the current nonce (next nonce to be assigned).
+     * Maps to InterlinkGateway.currentNonce.
      */
-    function currentSequence() external view returns (uint64);
+    function currentNonce() external view returns (uint64);
 
     /**
      * @dev Returns whether a specific nonce has been executed.
+     * Maps to InterlinkGateway.executedNonces.
      */
-    function isExecuted(uint64 nonce) external view returns (bool);
+    function executedNonces(uint64 nonce) external view returns (bool);
 }

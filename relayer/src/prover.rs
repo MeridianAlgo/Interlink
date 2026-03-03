@@ -10,11 +10,11 @@ use halo2_proofs::{
     poly::commitment::Params,
     transcript::{Blake2bWrite, Challenge255},
 };
-use halo2curves::bn256::{Bn256, Fr, G1Affine};
+use halo2curves::bn256::{Fr, G1Affine};
 use interlink_core::circuit::InterlinkCircuit;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{info, warn};
+use tracing::info;
 
 /// Cached proving artifacts to avoid regenerating keys per proof
 struct ProverCache {
@@ -95,9 +95,10 @@ impl ProverEngine {
         let seq_field = Fr::from(sequence);
         let rc_field = Fr::from(rc_val);
 
-        // Compute public commitment: (msg + rc)^3 + seq
+        // Compute public commitment: (msg + rc)^5 + seq
         let diff = msg_field + rc_field;
-        let commitment = diff.square() * diff + seq_field;
+        let sq = diff.square();
+        let commitment = sq * sq * diff + seq_field;
 
         let circuit = InterlinkCircuit {
             message_payload: Some(msg_field),

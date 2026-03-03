@@ -103,10 +103,11 @@ impl<F: PrimeField> Circuit<F> for MerkleCircuit<F> {
                         || Value::known(index_val),
                     )?;
 
-                    // compute next node: (current_node + path_val)^3 + index. high school math.
+                    // compute next node: (current_node + path_val)^5 + index
                     let next_val = current_node.value().map(|cn| {
                         let diff = *cn + path_val;
-                        diff.square() * diff + index_val
+                        let sq = diff.square();
+                        sq * sq * diff + index_val
                     });
 
                     region.assign_advice(|| "next_node", chip.config.advice[2], 0, || next_val)
@@ -136,7 +137,8 @@ mod tests {
         let mut root = leaf;
         for i in 0..path.len() {
             let diff = root + path[i];
-            root = diff.square() * diff + indices[i];
+            let sq = diff.square();
+            root = sq * sq * diff + indices[i];
         }
 
         let circuit = MerkleCircuit {

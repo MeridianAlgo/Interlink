@@ -31,11 +31,12 @@ pub struct ProofAccumulator<F: PrimeField> {
 /// Configuration for the folding/accumulation circuit
 #[derive(Clone, Debug)]
 pub struct FoldingConfig {
-    /// [0] = commitment_1, [1] = commitment_2, [2] = folded_commitment
+    /// [0] = commitment_1, [1] = commitment_2, [2] = folded_commitment / folded_eval
     /// [3] = evaluation_1, [4] = evaluation_2
     pub advice: [Column<Advice>; 5],
     pub instance: Column<Instance>,
     pub s_fold: Selector,
+    pub s_fold_eval: Selector,
 }
 
 /// Circuit that verifies two proofs have been correctly folded.
@@ -45,7 +46,7 @@ pub struct FoldingConfig {
 ///   C_new = C1 + alpha * C2
 ///   e_new = e1 + alpha * e2
 ///
-/// We use the simplified hash: alpha = (C1 + C2)^3 for the Fiat-Shamir challenge.
+/// We use the simplified hash: alpha = (C1 + C2)^5 for the Fiat-Shamir challenge.
 pub struct FoldingCircuit<F: PrimeField> {
     pub proof_a: Option<ProofAccumulator<F>>,
     pub proof_b: Option<ProofAccumulator<F>>,
@@ -96,9 +97,9 @@ impl<F: PrimeField> Circuit<F> for FoldingCircuit<F> {
             meta.enable_equality(*col);
         }
 
-        // Folding gate:
+        // Folding gate for commitments:
         // Given C1 (advice[0]), C2 (advice[1]), the folded result (advice[2]),
-        // and alpha = (C1 + C2)^3:
+        // and alpha = (C1 + C2)^5:
         // Constraint: folded == C1 + alpha * C2
         meta.create_gate("fold_commitments", |meta| {
             let s = meta.query_selector(s_fold);
@@ -106,9 +107,10 @@ impl<F: PrimeField> Circuit<F> for FoldingCircuit<F> {
             let c2 = meta.query_advice(advice[1], Rotation::cur());
             let folded = meta.query_advice(advice[2], Rotation::cur());
 
-            // alpha = (C1 + C2)^3 (Fiat-Shamir challenge from cubic hash)
+            // alpha = (C1 + C2)^5 (quintic Fiat-Shamir challenge)
             let sum = c1.clone() + c2.clone();
-            let alpha = sum.clone() * sum.clone() * sum;
+            let sq = sum.clone() * sum.clone();
+            let alpha = sq.clone() * sq * sum;
 
             // folded = C1 + alpha * C2
             let expected = c1 + alpha * c2;
@@ -116,10 +118,35 @@ impl<F: PrimeField> Circuit<F> for FoldingCircuit<F> {
             vec![s * (folded - expected)]
         });
 
+        // Folding gate for evaluations (must be constrained, not just assigned):
+        // e_new = e1 + alpha * e2, using the same alpha derived from commitments.
+        // We reuse s_fold on the next row to constrain evaluations.
+        let s_fold_eval = meta.selector();
+
+        meta.create_gate("fold_evaluations", |meta| {
+            let s = meta.query_selector(s_fold_eval);
+            // Read commitments from row 0 to derive alpha
+            let c1 = meta.query_advice(advice[0], Rotation::prev());
+            let c2 = meta.query_advice(advice[1], Rotation::prev());
+            // Read evaluations from current row
+            let e1 = meta.query_advice(advice[3], Rotation::cur());
+            let e2 = meta.query_advice(advice[4], Rotation::cur());
+            let folded_eval = meta.query_advice(advice[2], Rotation::cur());
+
+            let sum = c1 + c2;
+            let sq = sum.clone() * sum.clone();
+            let alpha = sq.clone() * sq * sum;
+
+            let expected = e1 + alpha * e2;
+
+            vec![s * (folded_eval - expected)]
+        });
+
         FoldingConfig {
             advice,
             instance,
             s_fold,
+            s_fold_eval,
         }
     }
 
@@ -128,11 +155,14 @@ impl<F: PrimeField> Circuit<F> for FoldingCircuit<F> {
         config: Self::Config,
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
-        // Fold commitments
-        let folded_commitment = layouter.assign_region(
-            || "fold_commitments",
+        // Single region for both commitment and evaluation folding.
+        // Row 0: commitment folding (s_fold enabled)
+        // Row 1: evaluation folding (s_fold_eval enabled, reads commitments from row 0)
+        let (folded_commitment, folded_eval) = layouter.assign_region(
+            || "fold_proofs",
             |mut region| {
                 config.s_fold.enable(&mut region, 0)?;
+                config.s_fold_eval.enable(&mut region, 1)?;
 
                 let c1 = self
                     .proof_a
@@ -144,25 +174,6 @@ impl<F: PrimeField> Circuit<F> for FoldingCircuit<F> {
                     .as_ref()
                     .map(|p| Value::known(p.commitment))
                     .unwrap_or(Value::unknown());
-
-                region.assign_advice(|| "c1", config.advice[0], 0, || c1)?;
-                region.assign_advice(|| "c2", config.advice[1], 0, || c2)?;
-
-                // Compute folded = C1 + alpha * C2 where alpha = (C1+C2)^3
-                let folded = c1.zip(c2).map(|(a, b)| {
-                    let sum = a + b;
-                    let alpha = sum.square() * sum;
-                    a + alpha * b
-                });
-
-                region.assign_advice(|| "folded", config.advice[2], 0, || folded)
-            },
-        )?;
-
-        // Fold evaluations (same alpha, no separate gate needed - just expose)
-        let folded_eval = layouter.assign_region(
-            || "fold_evaluations",
-            |mut region| {
                 let e1 = self
                     .proof_a
                     .as_ref()
@@ -174,25 +185,30 @@ impl<F: PrimeField> Circuit<F> for FoldingCircuit<F> {
                     .map(|p| Value::known(p.evaluation))
                     .unwrap_or(Value::unknown());
 
-                let c1 = self
-                    .proof_a
-                    .as_ref()
-                    .map(|p| Value::known(p.commitment))
-                    .unwrap_or(Value::unknown());
-                let c2 = self
-                    .proof_b
-                    .as_ref()
-                    .map(|p| Value::known(p.commitment))
-                    .unwrap_or(Value::unknown());
+                // Row 0: commitments
+                region.assign_advice(|| "c1", config.advice[0], 0, || c1)?;
+                region.assign_advice(|| "c2", config.advice[1], 0, || c2)?;
 
-                // Same alpha as commitments
-                let folded = e1.zip(e2).zip(c1.zip(c2)).map(|((ev1, ev2), (cv1, cv2))| {
-                    let sum = cv1 + cv2;
-                    let alpha = sum.square() * sum;
-                    ev1 + alpha * ev2
+                // Compute alpha = (C1 + C2)^5
+                let alpha = c1.zip(c2).map(|(a, b)| {
+                    let sum = a + b;
+                    let sq = sum.square();
+                    sq * sq * sum
                 });
 
-                region.assign_advice(|| "folded_eval", config.advice[3], 0, || folded)
+                let folded_c = c1.zip(c2).zip(alpha).map(|((a, b), al)| a + al * b);
+                let fc = region.assign_advice(|| "folded_c", config.advice[2], 0, || folded_c)?;
+
+                // Row 1: evaluations (commitments from row 0 are read via Rotation::prev)
+                region.assign_advice(|| "c1_ref", config.advice[0], 1, || c1)?;
+                region.assign_advice(|| "c2_ref", config.advice[1], 1, || c2)?;
+                region.assign_advice(|| "e1", config.advice[3], 1, || e1)?;
+                region.assign_advice(|| "e2", config.advice[4], 1, || e2)?;
+
+                let folded_e = e1.zip(e2).zip(alpha).map(|((ev1, ev2), al)| ev1 + al * ev2);
+                let fe = region.assign_advice(|| "folded_e", config.advice[2], 1, || folded_e)?;
+
+                Ok((fc, fe))
             },
         )?;
 
@@ -265,7 +281,7 @@ impl<F: PrimeField> FoldingPipeline<F> {
     }
 
     /// Fold two proof accumulators into one.
-    /// alpha = (C1 + C2)^3  (Fiat-Shamir challenge)
+    /// alpha = (C1 + C2)^5  (Fiat-Shamir challenge)
     /// C_new = C1 + alpha * C2
     /// e_new = e1 + alpha * e2
     pub fn fold_pair(
@@ -273,7 +289,8 @@ impl<F: PrimeField> FoldingPipeline<F> {
         b: &ProofAccumulator<F>,
     ) -> ProofAccumulator<F> {
         let sum = a.commitment + b.commitment;
-        let alpha = sum.square() * sum;
+        let sq = sum.square();
+        let alpha = sq * sq * sum;
 
         ProofAccumulator {
             commitment: a.commitment + alpha * b.commitment,
@@ -315,7 +332,8 @@ mod tests {
 
         // Compute expected folded values
         let sum = a.commitment + b.commitment;
-        let alpha = sum.square() * sum;
+        let sq = sum.square();
+        let alpha = sq * sq * sum;
         let expected_commitment = a.commitment + alpha * b.commitment;
         let expected_eval = a.evaluation + alpha * b.evaluation;
 
@@ -334,7 +352,8 @@ mod tests {
         let folded = FoldingPipeline::fold_pair(&a, &b);
 
         let sum = a.commitment + b.commitment;
-        let alpha = sum.square() * sum;
+        let sq = sum.square();
+        let alpha = sq * sq * sum;
         assert_eq!(folded.commitment, a.commitment + alpha * b.commitment);
         assert_eq!(folded.evaluation, a.evaluation + alpha * b.evaluation);
     }

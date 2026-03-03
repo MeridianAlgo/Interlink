@@ -9,7 +9,7 @@
 //! - Chain reorg detection via block hash tracking
 //! - Event deduplication via nonce tracking
 
-use crate::events::{DepositEvent, GatewayEvent, SwapInitiatedEvent};
+use crate::events::{DepositEvent, GatewayEvent};
 use tokio::sync::mpsc;
 use tracing::{error, info, warn};
 
@@ -165,28 +165,96 @@ impl EventListener {
         );
 
         if *topic0 == message_published_topic {
-            // Parse MessagePublished event
+            // Parse MessagePublished(uint64 indexed nonce, uint64 destinationChain,
+            //                        address sender, bytes32 payloadHash, bytes payload)
+            // Topics: [topic0, nonce_indexed]
+            // Data: [destinationChain(u64), sender(address), payloadHash(bytes32), payload(bytes)]
+            //       ABI-encoded: dest_chain is padded to 32 bytes, sender padded to 32 bytes, etc.
             let nonce_topic = log.topics.get(1)?;
             let nonce = u64::from_be_bytes(nonce_topic.as_bytes()[24..32].try_into().ok()?);
 
-            let mut payload_hash = [0u8; 32];
-            if log.data.len() >= 32 {
-                payload_hash.copy_from_slice(&log.data[0..32]);
+            let data = &log.data;
+            // ABI decode the non-indexed parameters:
+            // offset 0..32:   destinationChain (uint64, right-padded in 32 bytes)
+            // offset 32..64:  sender (address, left-padded in 32 bytes)
+            // offset 64..96:  payloadHash (bytes32)
+            // offset 96+:     payload (dynamic bytes with offset + length prefix)
+
+            let destination_chain = if data.len() >= 32 {
+                u64::from_be_bytes(data[24..32].try_into().ok()?)
+            } else {
+                0u64
+            };
+
+            let mut sender = [0u8; 20];
+            if data.len() >= 64 {
+                sender.copy_from_slice(&data[44..64]);
             }
+
+            let mut payload_hash = [0u8; 32];
+            if data.len() >= 96 {
+                payload_hash.copy_from_slice(&data[64..96]);
+            }
+
+            // Parse amount from the payload if available (first 32 bytes of payload data)
+            let amount = if data.len() >= 160 {
+                // payload offset at data[96..128], then length at payload_start..+32, then data
+                let payload_offset = u64::from_be_bytes(data[120..128].try_into().ok()?) as usize;
+                if data.len() > 96 + payload_offset + 32 {
+                    let len_start = 96 + payload_offset;
+                    u64::from_be_bytes(data[len_start + 24..len_start + 32].try_into().ok()?)
+                } else {
+                    0u64
+                }
+            } else {
+                0u64
+            };
 
             return Some(GatewayEvent::Deposit(DepositEvent {
                 block_number,
                 tx_hash: log.transaction_hash.map(|h| h.0).unwrap_or([0u8; 32]),
                 sequence: nonce,
-                sender: [0u8; 20], // TODO: parse from data
-                recipient: vec![],
-                amount: 0, // TODO: parse from data
-                destination_chain: self.config.chain_id as u16,
+                sender,
+                recipient: sender.to_vec(), // Default to sender as recipient
+                amount: amount as u128,
+                destination_chain: destination_chain as u16,
                 payload_hash,
             }));
         }
 
-        // Additional event parsing would go here for SwapInitiated, NFTLocked, etc.
+        // Parse SwapInitiated event
+        let swap_topic = ethers_core::types::H256::from(
+            ethers_core::utils::keccak256(
+                b"SwapInitiated(uint64,address,address,uint256,address,address,uint256,uint64,bytes,bytes32)"
+            )
+        );
+
+        if *topic0 == swap_topic {
+            let nonce_topic = log.topics.get(1)?;
+            let nonce = u64::from_be_bytes(nonce_topic.as_bytes()[24..32].try_into().ok()?);
+
+            let mut payload_hash = [0u8; 32];
+            // payloadHash is the last bytes32 in the event data
+            if log.data.len() >= 32 {
+                let ph_start = log.data.len() - 32;
+                payload_hash.copy_from_slice(&log.data[ph_start..]);
+            }
+
+            return Some(GatewayEvent::Swap(crate::events::SwapInitiatedEvent {
+                block_number,
+                tx_hash: log.transaction_hash.map(|h| h.0).unwrap_or([0u8; 32]),
+                sequence: nonce,
+                sender: [0u8; 20],
+                recipient: [0u8; 20],
+                amount_in: 0,
+                token_in: [0u8; 20],
+                token_out: [0u8; 20],
+                min_amount_out: 0,
+                destination_chain: 0,
+                swap_data: vec![],
+                payload_hash,
+            }));
+        }
 
         None
     }

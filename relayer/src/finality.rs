@@ -92,14 +92,34 @@ pub async fn wait_for_finality(
             ));
         }
 
-        // Query current block height via JSON-RPC
+        // Query current block height via the appropriate RPC method
         let client = reqwest::Client::new();
+
+        let (method, parse_fn): (&str, fn(&serde_json::Value) -> Option<u64>) = match finality {
+            ChainFinality::Solana => (
+                "getSlot",
+                |body: &serde_json::Value| body["result"].as_u64(),
+            ),
+            _ => (
+                "eth_blockNumber",
+                |body: &serde_json::Value| {
+                    body["result"]
+                        .as_str()
+                        .and_then(|s| u64::from_str_radix(s.trim_start_matches("0x"), 16).ok())
+                },
+            ),
+        };
+
         let resp = client
             .post(rpc_url)
             .json(&serde_json::json!({
                 "jsonrpc": "2.0",
-                "method": "eth_blockNumber",
-                "params": [],
+                "method": method,
+                "params": if method == "getSlot" {
+                    serde_json::json!([{"commitment": "finalized"}])
+                } else {
+                    serde_json::json!([])
+                },
                 "id": 1
             }))
             .send()
@@ -108,10 +128,7 @@ pub async fn wait_for_finality(
 
         let body: serde_json::Value = resp.json().await.map_err(|e| format!("parse error: {}", e))?;
 
-        if let Some(hex_str) = body["result"].as_str() {
-            let current_block = u64::from_str_radix(hex_str.trim_start_matches("0x"), 16)
-                .unwrap_or(0);
-
+        if let Some(current_block) = parse_fn(&body) {
             let confirmations = current_block.saturating_sub(block_number);
 
             if confirmations >= required {

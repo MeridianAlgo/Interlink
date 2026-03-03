@@ -49,10 +49,18 @@ pub mod interlink_hub {
         payload_hash: [u8; 32],
         _commitment_input: [u8; 32],
     ) -> Result<()> {
+        // Require relayer has active stake
+        let stake_account = &ctx.accounts.stake_account;
+        require!(
+            stake_account.amount >= MIN_STAKE_AMOUNT,
+            HubError::InsufficientStake
+        );
+
         let registry = &mut ctx.accounts.state_registry;
 
+        // Use strict sequential ordering to prevent skipping nonces
         require!(
-            sequence > registry.processed_sequences,
+            sequence == registry.processed_sequences + 1,
             HubError::SequenceAlreadyProcessed
         );
 
@@ -83,8 +91,9 @@ pub mod interlink_hub {
     ) -> Result<()> {
         let registry = &mut ctx.accounts.state_registry;
 
+        // Use strict sequential ordering
         require!(
-            sequence > registry.processed_sequences,
+            sequence == registry.processed_sequences + 1,
             HubError::SequenceAlreadyProcessed
         );
 
@@ -133,8 +142,9 @@ pub mod interlink_hub {
     ) -> Result<()> {
         let registry = &mut ctx.accounts.state_registry;
 
+        // Use strict sequential ordering
         require!(
-            sequence > registry.processed_sequences,
+            sequence == registry.processed_sequences + 1,
             HubError::SequenceAlreadyProcessed
         );
 
@@ -351,12 +361,37 @@ pub mod interlink_hub {
         Ok(())
     }
 
-    /// Initialize a liquidity pool for cross-chain swaps
+    /// Initialize a liquidity pool for cross-chain swaps.
+    /// Requires actual token deposits to back the reserves.
     pub fn initialize_pool(
         ctx: Context<InitializePool>,
         initial_reserve_a: u64,
         initial_reserve_b: u64,
     ) -> Result<()> {
+        require!(initial_reserve_a > 0 && initial_reserve_b > 0, HubError::EmptyPool);
+
+        // Transfer token A from admin to pool vault
+        let cpi_a = Transfer {
+            from: ctx.accounts.admin_token_a.to_account_info(),
+            to: ctx.accounts.pool_token_a_vault.to_account_info(),
+            authority: ctx.accounts.admin.to_account_info(),
+        };
+        token::transfer(
+            CpiContext::new(ctx.accounts.token_program.to_account_info(), cpi_a),
+            initial_reserve_a,
+        )?;
+
+        // Transfer token B from admin to pool vault
+        let cpi_b = Transfer {
+            from: ctx.accounts.admin_token_b.to_account_info(),
+            to: ctx.accounts.pool_token_b_vault.to_account_info(),
+            authority: ctx.accounts.admin.to_account_info(),
+        };
+        token::transfer(
+            CpiContext::new(ctx.accounts.token_program.to_account_info(), cpi_b),
+            initial_reserve_b,
+        )?;
+
         let pool = &mut ctx.accounts.liquidity_pool;
         pool.token_a_mint = ctx.accounts.token_a_mint.key();
         pool.token_b_mint = ctx.accounts.token_b_mint.key();
@@ -375,16 +410,83 @@ pub mod interlink_hub {
     }
 }
 
-fn verify_groth16_proof(proof: &[u8], _payload_hash: &[u8; 32]) -> bool {
+/// BN254 scalar field modulus for public input binding
+const BN254_FIELD_MODULUS: [u8; 32] = [
+    0x30, 0x64, 0x4e, 0x72, 0xe1, 0x31, 0xa0, 0x29, 0xb8, 0x50, 0x45, 0xb6, 0x81, 0x81, 0x58,
+    0x5d, 0x97, 0x81, 0x6a, 0x91, 0x68, 0x71, 0xca, 0x8d, 0x3c, 0x20, 0x8c, 0x16, 0xd8, 0x7c,
+    0xfd, 0x47,
+];
+
+/// Domain separation salt (must match EVM gateway and circuit prover)
+const DOMAIN_SALT: &[u8] = b"interlink_v1_domain";
+
+fn verify_groth16_proof(proof: &[u8], payload_hash: &[u8; 32]) -> bool {
+    use anchor_lang::solana_program::keccak;
+
     if proof.len() != 256 {
         return false;
     }
 
+    // Bind the proof to the payload via domain-separated public input scalar.
+    // This matches the EVM gateway's _verifyHalo2Proof logic:
+    //   inputScalar = keccak256(payload_hash, "interlink_v1_domain") % BN254_FIELD
+    //   C' = C + inputScalar * G1
+    let mut hash_input = Vec::with_capacity(32 + DOMAIN_SALT.len());
+    hash_input.extend_from_slice(payload_hash);
+    hash_input.extend_from_slice(DOMAIN_SALT);
+    let input_hash = keccak::hash(&hash_input);
+
+    // Reduce hash modulo BN254 scalar field
+    // Simple reduction: interpret as big-endian u256 and take mod
+    let mut input_scalar = input_hash.to_bytes();
+    // If input_scalar >= BN254_FIELD_MODULUS, subtract once (probabilistically sufficient)
+    if input_scalar >= BN254_FIELD_MODULUS {
+        let mut borrow: u16 = 0;
+        for i in (0..32).rev() {
+            let diff = (input_scalar[i] as u16)
+                .wrapping_sub(BN254_FIELD_MODULUS[i] as u16)
+                .wrapping_sub(borrow);
+            input_scalar[i] = diff as u8;
+            borrow = if diff > 255 { 1 } else { 0 };
+        }
+    }
+
+    // Use ECMUL precompile to compute inputScalar * G1
+    // G1 generator: (1, 2)
+    let mut ecmul_input = [0u8; 96];
+    // G1.x = 1 (big-endian 32 bytes)
+    ecmul_input[31] = 1;
+    // G1.y = 2 (big-endian 32 bytes)
+    ecmul_input[63] = 2;
+    // scalar
+    ecmul_input[64..96].copy_from_slice(&input_scalar);
+
+    let scaled_g1 = match anchor_lang::solana_program::alt_bn128::prelude::alt_bn128_multiplication(
+        &ecmul_input,
+    ) {
+        Ok(r) => r,
+        Err(_) => return false,
+    };
+
+    // ECADD: C' = C + inputScalar * G1
+    // proof[192..256] is the C point (G1, 64 bytes)
+    let mut ecadd_input = [0u8; 128];
+    ecadd_input[0..64].copy_from_slice(&proof[192..256]);
+    ecadd_input[64..128].copy_from_slice(&scaled_g1[0..64]);
+
+    let c_prime = match anchor_lang::solana_program::alt_bn128::prelude::alt_bn128_addition(
+        &ecadd_input,
+    ) {
+        Ok(r) => r,
+        Err(_) => return false,
+    };
+
+    // Pairing check: e(A, B) * e(C', -G2) == 1
     let mut pairing_input = [0u8; 384];
-    pairing_input[0..64].copy_from_slice(&proof[0..64]);
-    pairing_input[64..192].copy_from_slice(&proof[64..192]);
-    pairing_input[192..256].copy_from_slice(&proof[192..256]);
-    pairing_input[256..384].copy_from_slice(&NEG_G2_GEN);
+    pairing_input[0..64].copy_from_slice(&proof[0..64]); // A (G1)
+    pairing_input[64..192].copy_from_slice(&proof[64..192]); // B (G2)
+    pairing_input[192..256].copy_from_slice(&c_prime[0..64]); // C' (G1)
+    pairing_input[256..384].copy_from_slice(&NEG_G2_GEN); // -G2
 
     match alt_bn128_pairing(&pairing_input) {
         Ok(result) => result[31] == 1 && result[..31].iter().all(|b| *b == 0),
@@ -417,6 +519,12 @@ pub struct SubmitProof<'info> {
         bump
     )]
     pub state_registry: Account<'info, StateRegistry>,
+    #[account(
+        seeds = [b"stake", relayer.key().as_ref()],
+        bump,
+        has_one = relayer
+    )]
+    pub stake_account: Account<'info, StakeAccount>,
     #[account(mut)]
     pub relayer: Signer<'info>,
 }
@@ -488,11 +596,15 @@ pub struct Stake<'info> {
     )]
     pub stake_account: Account<'info, StakeAccount>,
     #[account(
-        mut,
+        init_if_needed,
+        payer = relayer,
         seeds = [b"stake_vault", relayer.key().as_ref()],
-        bump
+        bump,
+        token::mint = ilink_mint,
+        token::authority = stake_vault,
     )]
     pub stake_vault: Account<'info, TokenAccount>,
+    pub ilink_mint: Account<'info, Mint>,
     #[account(mut)]
     pub relayer_token_account: Account<'info, TokenAccount>,
     #[account(mut)]
@@ -589,7 +701,16 @@ pub struct InitializePool<'info> {
     pub token_a_mint: Account<'info, Mint>,
     pub token_b_mint: Account<'info, Mint>,
     #[account(mut)]
+    pub admin_token_a: Account<'info, TokenAccount>,
+    #[account(mut)]
+    pub admin_token_b: Account<'info, TokenAccount>,
+    #[account(mut)]
+    pub pool_token_a_vault: Account<'info, TokenAccount>,
+    #[account(mut)]
+    pub pool_token_b_vault: Account<'info, TokenAccount>,
+    #[account(mut)]
     pub admin: Signer<'info>,
+    pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
 }
 

@@ -29,7 +29,7 @@ pub struct InterlinkConfig {
     /// Fixed columns for precomputed values (round constants, MDS matrix entries)
     pub fixed: [Column<Fixed>; 2],
 
-    /// Selector for Poseidon-style hash rounds: out = (in + rc)^3 + prev
+    /// Selector for Poseidon-style hash rounds: out = (in + rc)^5 + prev
     pub s_hash: Selector,
 
     /// Selector for verification constraints (signature checks, pairing gates)
@@ -58,8 +58,8 @@ impl InterlinkConfig {
             meta.enable_equality(*col);
         }
 
-        // Hash gate: out = (state_in + round_const)^3 + prev_val
-        // This is the cubic S-box used as a simplified Poseidon round.
+        // Hash gate: out = (state_in + round_const)^5 + prev_val
+        // Quintic S-box: gcd(5, p-1) = 1 for BN254, ensuring bijectivity.
         meta.create_gate("interlink_hash", |meta| {
             let s = meta.query_selector(s_hash);
             let state_in = meta.query_advice(advice[0], halo2_proofs::poly::Rotation::cur());
@@ -68,9 +68,10 @@ impl InterlinkConfig {
             let prev_val = meta.query_advice(advice[3], halo2_proofs::poly::Rotation::cur());
 
             let diff = state_in + round_const;
-            let cube = diff.clone() * diff.clone() * diff;
+            let sq = diff.clone() * diff.clone();
+            let quint = sq.clone() * sq * diff;
 
-            vec![s * (state_out - (cube + prev_val))]
+            vec![s * (state_out - (quint + prev_val))]
         });
 
         // Verify gate: checks that auxiliary == state_in * state_out (used for
@@ -122,7 +123,7 @@ mod tests {
             config: Self::Config,
             mut layouter: impl Layouter<F>,
         ) -> Result<(), Error> {
-            // Test hash gate: (3 + 2)^3 + 1 = 125 + 1 = 126
+            // Test hash gate: (3 + 2)^5 + 1 = 3125 + 1 = 3126
             layouter.assign_region(
                 || "test_hash",
                 |mut region| {
@@ -143,7 +144,7 @@ mod tests {
                         || "state_out",
                         config.advice[2],
                         0,
-                        || Value::known(F::from(126u64)),
+                        || Value::known(F::from(3126u64)),
                     )?;
                     region.assign_advice(
                         || "prev_val",

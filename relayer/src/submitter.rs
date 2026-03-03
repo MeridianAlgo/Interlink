@@ -5,6 +5,7 @@
 //! and confirmation tracking.
 
 use crate::prover::ProofPackage;
+use ed25519_dalek::Signer;
 use tracing::{error, info, warn};
 
 /// Configuration for the Solana submitter
@@ -204,11 +205,17 @@ impl ProofSubmitter {
             hasher.update(b"ProgramDerivedAddress");
             let hash = hasher.finalize();
 
-            // Check if point is off-curve (valid PDA)
-            // Simplified: accept first result (production would check ed25519 curve)
-            return Ok(hash[..32].to_vec());
+            // A valid PDA must be OFF the ed25519 curve.
+            // We check by trying to construct a VerifyingKey; if it fails,
+            // the point is off-curve and thus a valid PDA.
+            let candidate: [u8; 32] = hash[..32]
+                .try_into()
+                .map_err(|_| "hash length mismatch")?;
+            if ed25519_dalek::VerifyingKey::from_bytes(&candidate).is_err() {
+                return Ok(candidate.to_vec());
+            }
         }
-        Err("failed to find PDA".to_string())
+        Err("failed to find PDA: all bumps produce on-curve points".to_string())
     }
 
     fn build_raw_transaction(

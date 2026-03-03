@@ -211,7 +211,8 @@ impl Relayer {
         let rc = Fr::from(u64::from_be_bytes(arr));
 
         let diff = payload_f + rc;
-        let commitment = diff.square() * diff + Fr::from(nonce);
+        let sq = diff.square();
+        let commitment = sq * sq * diff + Fr::from(nonce);
 
         // nesting is a bit of a nightmare: &[&[&[scalar]]]
         // 1 circuit, 1 column, 1 value. easy.

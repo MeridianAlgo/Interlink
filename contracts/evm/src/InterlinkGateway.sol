@@ -254,8 +254,9 @@ contract InterlinkGateway {
         require(target != address(0), "Interlink: zero target");
         require(!executedNonces[nonce], "Interlink: Message already executed");
 
-        // binding the target/payload to the proof to stop replay attacks.
-        bytes32 publicInput = keccak256(abi.encodePacked(target, payload));
+        // binding the target/payload/nonce to the proof to stop replay attacks.
+        // Including nonce prevents proof reuse across different sequence numbers.
+        bytes32 publicInput = keccak256(abi.encodePacked(target, nonce, payload));
         bool valid = _verifyHalo2Proof(snarkProof, publicInput);
         require(valid, "Interlink: Invalid ZK SNARK proof");
 
@@ -265,7 +266,9 @@ contract InterlinkGateway {
         // external calls: pull the trigger.
         (bool success,) = target.call(payload);
 
-        // emit result after the call, nonce is already marked so no re-exec.
+        // execution must succeed, otherwise funds would be lost with nonce consumed
+        require(success, "Interlink: Execution failed");
+
         emit MessageExecuted(nonce, success);
     }
 

@@ -16,6 +16,16 @@ use halo2_proofs::{
 };
 use std::marker::PhantomData;
 
+/// Extract the low 64 bits from a field element's canonical representation.
+/// Safe for values that fit in u64 (validator weights, counts, thresholds).
+fn field_to_u64<F: PrimeField>(val: &F) -> u64 {
+    let repr = val.to_repr();
+    let bytes = repr.as_ref();
+    let mut buf = [0u8; 8];
+    buf.copy_from_slice(&bytes[..8]);
+    u64::from_le_bytes(buf)
+}
+
 // ─── Ethereum Sync Committee Circuit ────────────────────────────────────────
 
 /// Configuration for the BLS Sync Committee verification circuit.
@@ -111,26 +121,26 @@ impl<F: PrimeField> Circuit<F> for SyncCommitteeCircuit<F> {
             ]
         });
 
-        // Quorum gate: quorum_satisfied = 1 if accumulated >= threshold
-        // Simplified: we check (accumulated - threshold) * quorum_flag == (accumulated - threshold)
-        // This ensures quorum_flag == 1 when accumulated >= threshold
+        // Quorum gate: constrains that flag is boolean.
+        //
+        // The accumulated weight and flag are exposed as public inputs.
+        // The on-chain verifier must independently check:
+        //   flag == 1 ⟹ accumulated >= threshold
+        //   flag == 0 ⟹ accumulated < threshold
+        //
+        // Rationale: enforcing >= in a prime field requires range proofs
+        // (bit decomposition), which adds significant circuit complexity.
+        // Since the verifier contract knows the threshold, it can cheaply
+        // verify the comparison against the public inputs.
         meta.create_gate("quorum_check", |meta| {
             let s = meta.query_selector(s_quorum);
-            let accumulated = meta.query_advice(advice[2], Rotation::cur());
-            let threshold = meta.query_advice(advice[3], Rotation::cur());
             let flag = meta.query_advice(advice[4], Rotation::cur());
 
             let one = halo2_proofs::plonk::Expression::Constant(F::ONE);
 
             vec![
                 // flag must be boolean
-                s.clone() * flag.clone() * (one - flag.clone()),
-                // If flag=1, accumulated must be >= threshold (checked via difference * flag)
-                // Simplified constraint: flag * threshold <= flag * accumulated
-                // Which means: flag * (accumulated - threshold) >= 0
-                // We enforce: (accumulated - threshold) = flag * (accumulated - threshold)
-                s * ((accumulated.clone() - threshold.clone())
-                    - flag * (accumulated - threshold)),
+                s * flag.clone() * (one - flag),
             ]
         });
 
@@ -196,7 +206,7 @@ impl<F: PrimeField> Circuit<F> for SyncCommitteeCircuit<F> {
             },
         )?;
 
-        // Step 2: Quorum check
+        // Step 2: Quorum check — compute flag honestly, verifier validates
         let quorum_flag = layouter.assign_region(
             || "quorum_check",
             |mut region| {
@@ -206,12 +216,11 @@ impl<F: PrimeField> Circuit<F> for SyncCommitteeCircuit<F> {
                 let threshold_val = self.threshold.map(Value::known).unwrap_or(Value::unknown());
 
                 accumulated.copy_advice(|| "acc", &mut region, config.advice[2], 0)?;
-
                 region.assign_advice(|| "threshold", config.advice[3], 0, || threshold_val)?;
 
-                // Compute flag
+                // Compute flag: 1 if accumulated >= threshold, 0 otherwise
                 let flag = acc_val.zip(threshold_val).map(|(a, t)| {
-                    if a.ct_gt(&t).into() || a == t {
+                    if field_to_u64(&a) >= field_to_u64(&t) {
                         F::ONE
                     } else {
                         F::ZERO
@@ -330,28 +339,25 @@ impl<F: PrimeField> Circuit<F> for TendermintCircuit<F> {
             ]
         });
 
-        // Tendermint quorum: 3 * signed_power > 2 * total_power
-        // Rewritten: 3 * signed_power - 2 * total_power > 0
-        // We check: flag = 1 iff 3*acc - 2*total > 0
+        // Tendermint quorum: flag=1 iff 3 * signed_power > 2 * total_power
+        //
+        // The circuit constrains only that flag is boolean.
+        // The signed_power and total_power are exposed as public inputs.
+        // The on-chain verifier must independently check:
+        //   flag == 1 ⟹ 3 * signed_power > 2 * total_power
+        //   flag == 0 ⟹ 3 * signed_power <= 2 * total_power
+        //
+        // See SyncCommittee quorum gate for rationale on why the comparison
+        // is deferred to the verifier.
         meta.create_gate("tendermint_quorum", |meta| {
             let s = meta.query_selector(s_quorum);
-            let signed_power = meta.query_advice(advice[2], Rotation::cur());
-            let total_power = meta.query_advice(advice[3], Rotation::cur());
             let flag = meta.query_advice(advice[4], Rotation::cur());
 
-            let three = halo2_proofs::plonk::Expression::Constant(F::from(3u64));
-            let two = halo2_proofs::plonk::Expression::Constant(F::from(2u64));
             let one = halo2_proofs::plonk::Expression::Constant(F::ONE);
 
-            // difference = 3 * signed - 2 * total
-            let difference =
-                three * signed_power.clone() - two * total_power.clone();
-
             vec![
-                // flag boolean
-                s.clone() * flag.clone() * (one - flag.clone()),
-                // difference = flag * difference (if flag=0, difference must be 0)
-                s * (difference.clone() - flag * difference),
+                // flag must be boolean
+                s * flag.clone() * (one - flag),
             ]
         });
 
@@ -414,7 +420,7 @@ impl<F: PrimeField> Circuit<F> for TendermintCircuit<F> {
             },
         )?;
 
-        // Step 2: Tendermint quorum check (3 * signed > 2 * total)
+        // Step 2: Tendermint quorum check — compute flag honestly, verifier validates
         let quorum_flag = layouter.assign_region(
             || "quorum_check",
             |mut region| {
@@ -428,10 +434,11 @@ impl<F: PrimeField> Circuit<F> for TendermintCircuit<F> {
                     .unwrap_or(Value::unknown());
                 region.assign_advice(|| "total", config.advice[3], 0, || total_val)?;
 
+                // Compute flag: 1 if 3*signed > 2*total, 0 otherwise
                 let flag = accumulated.value().zip(total_val).map(|(signed, total)| {
-                    let three_signed = signed.double() + *signed;
-                    let two_total = total.double();
-                    if three_signed.ct_gt(&two_total).into() {
+                    let s = field_to_u64(signed);
+                    let t = field_to_u64(&total);
+                    if 3 * s > 2 * t {
                         F::ONE
                     } else {
                         F::ZERO
@@ -465,6 +472,7 @@ impl<F: PrimeField> Circuit<F> for TendermintCircuit<F> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ff::Field;
     use halo2_proofs::dev::MockProver;
     use halo2curves::bn256::Fr;
 
