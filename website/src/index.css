@@ -5,28 +5,28 @@
 /* ─── Design Tokens ─────────────────────────────── */
 :root {
   --bg: #000000;
-  --bg-1: #0a0a0a;
-  --bg-2: #111111;
-  --bg-3: #1a1a1a;
-  --border: #222222;
-  --border-bright: #333333;
-  --text: #e8e8e8;
-  --text-2: #888888;
-  --text-3: #555555;
-  --blue: #3b82f6;
-  --blue-dim: rgba(59, 130, 246, 0.12);
-  --blue-border: rgba(59, 130, 246, 0.25);
-  --green: #22c55e;
-  --orange: #f97316;
+  --bg-1: #050505;
+  --bg-2: #0a0a0a;
+  --bg-3: #111111;
+  --border: #1a1a1a;
+  --border-bright: #2a2a2a;
+  --text: #ffffff;
+  --text-2: #a0a0a0;
+  --text-3: #666666;
+  --blue: #ffffff;
+  --blue-dim: rgba(255, 255, 255, 0.05);
+  --blue-border: rgba(255, 255, 255, 0.15);
+  --green: #ffffff;
+  --orange: #ffffff;
 
   --font: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
   --mono: 'JetBrains Mono', 'Fira Code', monospace;
 
   --radius: 12px;
   --radius-lg: 16px;
-  --primary: #3b82f6;
-  --primary-glow: rgba(59, 130, 246, 0.4);
-  --glass: rgba(255, 255, 255, 0.03);
+  --primary: #ffffff;
+  --primary-glow: rgba(255, 255, 255, 0.2);
+  --glass: rgba(255, 255, 255, 0.02);
   --glass-border: rgba(255, 255, 255, 0.08);
   --glass-blur: blur(12px);
 }

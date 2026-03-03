@@ -75,29 +75,28 @@ const Home = () => (
     <div>
         <section className="hero" style={{ paddingBottom: '4rem', paddingTop: '8rem', position: 'relative', overflow: 'hidden' }}>
             {/* Ambient background glows for premium feel */}
-            <div style={{ position: 'absolute', top: '-10%', left: '50%', transform: 'translateX(-50%)', width: '800px', height: '400px', background: 'radial-gradient(ellipse at center, rgba(59, 130, 246, 0.15), transparent 70%)', zIndex: 0 }} />
+            <div style={{ position: 'absolute', top: '-10%', left: '50%', transform: 'translateX(-50%)', width: '800px', height: '400px', background: 'radial-gradient(ellipse at center, rgba(255, 255, 255, 0.05), transparent 70%)', zIndex: 0 }} />
 
             <div className="container" style={{ position: 'relative', zIndex: 10 }}>
                 <motion.div initial="hidden" animate="show" variants={featureIn} style={{ textAlign: 'center' }}>
-                    <div className="hero-eyebrow" style={{ margin: '0 auto 1.5rem', background: 'rgba(59, 130, 246, 0.1)', border: '1px solid rgba(59, 130, 246, 0.3)', color: '#60a5fa', padding: '0.4rem 1rem', borderRadius: '2rem' }}>
+                    <div className="hero-eyebrow" style={{ margin: '0 auto 1.5rem', background: 'rgba(255, 255, 255, 0.05)', border: '1px solid rgba(255, 255, 255, 0.15)', color: '#fff', padding: '0.4rem 1rem', borderRadius: '2rem' }}>
                         <CheckCircle size={12} style={{ marginRight: '4px' }} />
                         v0.7.1 · Mainnet Alpha Active
                     </div>
-
 
                     <h1 className="text-gradient" style={{ fontSize: 'clamp(3.5rem, 8vw, 6rem)', lineHeight: 1, fontWeight: 900, letterSpacing: '-0.04em', margin: '0 auto 1.5rem', maxWidth: '900px' }}>
                         Zero-Knowledge. Infinite Scale.
                     </h1>
 
-                    <p style={{ maxWidth: '680px', margin: '0 auto 3rem', color: '#cbd5e1', fontSize: '1.35rem', lineHeight: 1.6, fontWeight: 400 }}>
+                    <p style={{ maxWidth: '680px', margin: '0 auto 3rem', color: '#a0a0a0', fontSize: '1.35rem', lineHeight: 1.6, fontWeight: 400 }}>
                         The first mathematically proven interoperability protocol. Seamless liquidity across EVM, Solana, and beyond with O(1) continuous finality.
                     </p>
 
                     <div className="hero-actions" style={{ justifyContent: 'center', gap: '1.5rem', display: 'flex', flexWrap: 'wrap' }}>
-                        <Link to="/bridge" className="btn btn-primary float" style={{ padding: '1.1rem 2.5rem', fontSize: '1.1rem', borderRadius: '3rem', fontWeight: 600, boxShadow: '0 0 30px rgba(59, 130, 246, 0.5)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                        <Link to="/bridge" className="btn btn-primary float" style={{ padding: '1.1rem 2.5rem', fontSize: '1.1rem', borderRadius: '3rem', fontWeight: 600, boxShadow: '0 0 30px rgba(255, 255, 255, 0.1)', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#000', backgroundColor: '#fff' }}>
                             Start Bridging
                         </Link>
-                        <Link to="/docs" className="btn btn-ghost" style={{ padding: '1.1rem 2.5rem', fontSize: '1.1rem', borderRadius: '3rem', border: '1px solid rgba(255,255,255,0.2)', backgroundColor: 'rgba(255,255,255,0.03)', backdropFilter: 'blur(10px)' }}>
+                        <Link to="/docs" className="btn btn-ghost" style={{ padding: '1.1rem 2.5rem', fontSize: '1.1rem', borderRadius: '3rem', border: '1px solid rgba(255,255,255,0.2)', backgroundColor: 'rgba(255,255,255,0.03)', backdropFilter: 'blur(10px)', color: '#fff' }}>
                             Read Specifications
                         </Link>
                     </div>
@@ -173,6 +172,69 @@ const Home = () => (
                                 </div>
                             </div>
                         ))}
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        {/* ── Architecture Deep Dive (Documentation) ──────────────────────────── */}
+        <section className="pad" style={{ background: 'var(--bg-1)' }}>
+            <div className="container">
+                <div className="section-header" style={{ textAlign: 'center' }}>
+                    <h4>Architecture Documentation</h4>
+                    <h2>The Relayer & Prover Engine.</h2>
+                    <p style={{ margin: '0 auto', maxWidth: '600px' }}>
+                        Under the hood, InterLink orchestrates complex cryptographic constraints over standard compute. The Relayers act as untrusted builders that synthesize recursive ZK-SNARKs.
+                    </p>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '2rem', marginTop: '3rem' }}>
+                    <div className="glass-panel" style={{ padding: '2rem' }}>
+                        <h3 style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            <Server size={18} />
+                            v0.7.1 Rust Batched Relayer
+                        </h3>
+                        <p style={{ fontSize: '0.9rem', marginBottom: '1.5rem' }}>
+                            The rust <code>interlink-core</code> library wraps `halo2_proofs` to produce <strong>BatchedInterlinkCircuit</strong> constraints. This enables amortizing the gas cost of verifying $N$ payloads inside a single SNARK.
+                        </p>
+                        <pre style={{ margin: 0, fontSize: '0.8rem', background: '#000', border: '1px solid #333' }}>
+                            <code>{`// Batch compiling payloads inside Circuit
+for i in 0..BATCH_SIZE {
+    let state_in = self.payloads[i];
+    let seq = self.sequence_numbers[i];
+    
+    let out_cell = chip.hash_round(
+        state_in, round_const, seq
+    )?;
+    
+    layouter.constrain_instance(
+        out_cell.cell(), instance, i
+    )?;
+}`}</code>
+                        </pre>
+                    </div>
+
+                    <div className="glass-panel" style={{ padding: '2rem' }}>
+                        <h3 style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            <Layout size={18} />
+                            Solana PDA Resolution
+                        </h3>
+                        <p style={{ fontSize: '0.9rem', marginBottom: '1.5rem' }}>
+                            Using `ed25519-dalek` off-curve validation, the relayer natively crafts cross-chain execution payload bounds without depending on external Typescript SDK tooling.
+                        </p>
+                        <pre style={{ margin: 0, fontSize: '0.8rem', background: '#000', border: '1px solid #333' }}>
+                            <code>{`// Deterministic Ed25519 off-curve validation
+for bump in (0..=255).rev() {
+    let result = hasher.finalize();
+    registry_pda.copy_from_slice(&result);
+
+    // If it errors, it's NOT a valid point,
+    // thereby satisfying Solana PDA rules!
+    if VerifyingKey::from_bytes(&registry_pda).is_err() {
+        break; // Safe PDA acquired.
+    }
+}`}</code>
+                        </pre>
                     </div>
                 </div>
             </div>
