@@ -2,16 +2,16 @@ use interlink_core::relayer::{Relayer, RelayerConfig};
 
 #[tokio::main]
 async fn main() -> Result<(), interlink_core::InterlinkError> {
-    // setup logging so we're not flying blind.
     tracing_subscriber::fmt::init();
 
-    // load config from environment or use reasonable dev defaults.
+    // Load config from environment or use dev defaults.
     let config = RelayerConfig {
         chain_id: std::env::var("CHAIN_ID")
             .unwrap_or_else(|_| "1".to_string())
             .parse()
             .unwrap_or(1),
-        rpc_url: std::env::var("EVM_RPC_URL").unwrap_or_else(|_| "ws://localhost:8545".to_string()),
+        rpc_url: std::env::var("EVM_RPC_URL")
+            .unwrap_or_else(|_| "ws://localhost:8545".to_string()),
         hub_url: std::env::var("SOLANA_RPC_URL")
             .unwrap_or_else(|_| "https://api.devnet.solana.com".to_string()),
         gateway_address: std::env::var("GATEWAY_ADDRESS")
@@ -22,10 +22,10 @@ async fn main() -> Result<(), interlink_core::InterlinkError> {
             .unwrap_or_else(|_| "~/.config/solana/id.json".to_string()),
     };
 
-    // spin up the relayer.
+    // The core relayer (in interlink-core) handles the full pipeline.
+    // The modular components in relayer::* (listener, prover, submitter, finality)
+    // provide reusable building blocks for customized relayer deployments.
     let relayer = Relayer::new(config);
-
-    // run until it either works or crashes hard.
     relayer.run().await?;
 
     Ok(())

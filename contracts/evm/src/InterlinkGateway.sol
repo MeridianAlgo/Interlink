@@ -29,6 +29,11 @@ interface IERC20 {
     function transfer(address recipient, uint256 amount) external returns (bool);
 }
 
+interface IERC721 {
+    function transferFrom(address from, address to, uint256 tokenId) external;
+    function ownerOf(uint256 tokenId) external view returns (address);
+}
+
 contract InterlinkGateway {
     address public immutable daoGuardian;
     bool public paused;
@@ -46,6 +51,30 @@ contract InterlinkGateway {
     );
 
     event MessageExecuted(uint64 indexed nonce, bool success);
+
+    event SwapInitiated(
+        uint64 indexed nonce,
+        address indexed sender,
+        address recipient,
+        uint256 amountIn,
+        address tokenIn,
+        address tokenOut,
+        uint256 minAmountOut,
+        uint64 destinationChain,
+        bytes swapData,
+        bytes32 payloadHash
+    );
+
+    event NFTLocked(
+        uint64 indexed nonce,
+        address indexed sender,
+        address nftContract,
+        uint256 tokenId,
+        uint64 destinationChain,
+        bytes32 destinationRecipient,
+        bytes32 nftHash
+    );
+
     event GatewayPaused();
     event GatewayUnpaused();
     event EmergencyWithdraw(address indexed token, address indexed to, uint256 amount);
@@ -131,6 +160,78 @@ contract InterlinkGateway {
         if (token != address(0)) {
             require(IERC20(token).transferFrom(msg.sender, address(this), amount), "Interlink: Transfer failed");
         }
+    }
+
+    /**
+     * @dev Initiate a cross-chain swap. Locks input tokens and emits a
+     * SwapInitiated event for the relayer network to observe and prove.
+     *
+     * @param destChain       destination chain id
+     * @param tokenIn         address of the token being swapped (address(0) for ETH)
+     * @param amountIn        amount of input tokens to lock
+     * @param tokenOut        address of the desired output token on destination chain
+     * @param minAmountOut    minimum acceptable output amount (slippage protection)
+     * @param recipient       recipient address on the destination chain
+     * @param swapData        additional routing data for the hub's AMM
+     */
+    function initiateSwap(
+        uint64 destChain,
+        address tokenIn,
+        uint256 amountIn,
+        address tokenOut,
+        uint256 minAmountOut,
+        address recipient,
+        bytes calldata swapData
+    ) external payable whenNotPaused {
+        require(amountIn > 0, "Interlink: zero amount");
+        require(recipient != address(0), "Interlink: zero recipient");
+
+        if (tokenIn == address(0)) {
+            require(msg.value == amountIn, "Interlink: Incorrect native value sent");
+        }
+
+        uint64 nonce = currentNonce++;
+        bytes32 payloadHash = keccak256(abi.encode(
+            msg.sender, destChain, tokenIn, amountIn, tokenOut, minAmountOut, recipient, swapData
+        ));
+
+        emit SwapInitiated(
+            nonce, msg.sender, recipient, amountIn,
+            tokenIn, tokenOut, minAmountOut, destChain, swapData, payloadHash
+        );
+
+        if (tokenIn != address(0)) {
+            require(IERC20(tokenIn).transferFrom(msg.sender, address(this), amountIn), "Interlink: Transfer failed");
+        }
+    }
+
+    /**
+     * @dev Lock an ERC-721 NFT for cross-chain transfer. The NFT is held in
+     * custody by the gateway until the transfer is completed or refunded.
+     *
+     * @param nftContract           address of the ERC-721 contract
+     * @param tokenId               the token ID to lock
+     * @param destinationChain      target chain id
+     * @param destinationRecipient  recipient address on the destination chain (32 bytes)
+     */
+    function lockNFT(
+        address nftContract,
+        uint256 tokenId,
+        uint64 destinationChain,
+        bytes32 destinationRecipient
+    ) external whenNotPaused {
+        require(nftContract != address(0), "Interlink: zero NFT contract");
+        require(destinationRecipient != bytes32(0), "Interlink: zero recipient");
+
+        uint64 nonce = currentNonce++;
+        bytes32 nftHash = keccak256(abi.encode(nftContract, tokenId, msg.sender, destinationChain));
+
+        emit NFTLocked(
+            nonce, msg.sender, nftContract, tokenId,
+            destinationChain, destinationRecipient, nftHash
+        );
+
+        IERC721(nftContract).transferFrom(msg.sender, address(this), tokenId);
     }
 
     // relayer facing methods.

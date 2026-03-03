@@ -8,3 +8,16 @@ interlink-core = { path = "../interlink-core" }
 tokio = { version = "1.0", features = ["full"] }
 tracing = "0.1"
 tracing-subscriber = "0.3"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+reqwest = { version = "0.11", features = ["json"] }
+ethers-core = "2.0.14"
+ethers-providers = { version = "2.0.14", features = ["ws"] }
+halo2_proofs = { version = "0.3.0", features = ["multicore"] }
+halo2curves = "0.1.0"
+ff = "0.13"
+sha2 = "0.10"
+ed25519-dalek = "2.0"
+bs58 = "0.5"
+base64 = "0.21"
+rand = "0.8"

@@ -16,7 +16,20 @@ const LiveMetrics = () => {
         return () => clearInterval(interval)
     }, [])
 
-
+    return (
+        <div style={{ display: 'flex', gap: '2rem', justifyContent: 'center', padding: '1rem 0' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '2rem', padding: '0.5rem 1.2rem' }}>
+                <Activity size={14} style={{ color: '#4ade80' }} />
+                <span style={{ fontSize: '0.85rem', color: 'rgba(255,255,255,0.7)' }}>Block</span>
+                <span style={{ fontSize: '0.85rem', fontWeight: 600, fontFamily: 'monospace' }}>{block.toLocaleString()}</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '2rem', padding: '0.5rem 1.2rem' }}>
+                <Zap size={14} style={{ color: '#facc15' }} />
+                <span style={{ fontSize: '0.85rem', color: 'rgba(255,255,255,0.7)' }}>TPS</span>
+                <span style={{ fontSize: '0.85rem', fontWeight: 600, fontFamily: 'monospace' }}>{tps}</span>
+            </div>
+        </div>
+    )
 }
 
 const featureIn = { hidden: { opacity: 0, y: 16 }, show: { opacity: 1, y: 0 } }
@@ -88,9 +101,11 @@ const Home = () => (
                         Zero-Knowledge. Infinite Scale.
                     </h1>
 
-                    <p style={{ maxWidth: '680px', margin: '0 auto 3rem', color: '#a0a0a0', fontSize: '1.35rem', lineHeight: 1.6, fontWeight: 400 }}>
+                    <p style={{ maxWidth: '680px', margin: '0 auto 2rem', color: '#a0a0a0', fontSize: '1.35rem', lineHeight: 1.6, fontWeight: 400 }}>
                         The first mathematically proven interoperability protocol. Seamless liquidity across EVM, Solana, and beyond with O(1) continuous finality.
                     </p>
+
+                    <LiveMetrics />
 
                     <div className="hero-actions" style={{ justifyContent: 'center', gap: '1.5rem', display: 'flex', flexWrap: 'wrap' }}>
                         <Link to="/bridge" className="btn btn-primary float" style={{ padding: '1.1rem 2.5rem', fontSize: '1.1rem', borderRadius: '3rem', fontWeight: 600, boxShadow: '0 0 30px rgba(255, 255, 255, 0.1)', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#000', backgroundColor: '#fff' }}>

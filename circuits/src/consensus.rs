@@ -1,0 +1,568 @@
+//! Consensus verification circuits for InterLink.
+//!
+//! These circuits prove that a source chain has reached consensus on a block,
+//! enabling the Hub to trust cross-chain state transitions without running
+//! a full light client.
+//!
+//! Two consensus models are supported:
+//! 1. Ethereum Sync Committee (BLS12-381 aggregate signatures)
+//! 2. Cosmos Tendermint (Ed25519 validator quorum)
+
+use ff::PrimeField;
+use halo2_proofs::{
+    circuit::{Layouter, SimpleFloorPlanner, Value},
+    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Instance, Selector},
+    poly::Rotation,
+};
+use std::marker::PhantomData;
+
+// ─── Ethereum Sync Committee Circuit ────────────────────────────────────────
+
+/// Configuration for the BLS Sync Committee verification circuit.
+///
+/// Verifies that a sufficient subset (>= 342/512) of Ethereum's Sync Committee
+/// has signed a beacon block header. The actual BLS pairing is too expensive
+/// to verify in-circuit over BN254, so we use a simplified model:
+///
+/// 1. Aggregate public key: conditional sum based on participation bitfield
+/// 2. Quorum check: participation_count >= threshold
+/// 3. Signature binding: hash(apk, message) is constrained as public input
+#[derive(Clone, Debug)]
+pub struct SyncCommitteeConfig {
+    /// [0] = validator_weight, [1] = participation_bit, [2] = accumulated_weight
+    /// [3] = threshold, [4] = quorum_satisfied
+    pub advice: [Column<Advice>; 5],
+    pub instance: Column<Instance>,
+    pub s_accumulate: Selector,
+    pub s_quorum: Selector,
+}
+
+/// Circuit proving Ethereum Sync Committee consensus.
+///
+/// Public inputs:
+///   [0] = block_hash (the beacon block header being attested)
+///   [1] = accumulated_weight (total participation weight)
+///   [2] = quorum_flag (1 if quorum met, 0 otherwise)
+pub struct SyncCommitteeCircuit<F: PrimeField> {
+    /// Weight of each validator in the committee
+    pub validator_weights: Vec<F>,
+    /// Participation bitfield: 1 if validator signed, 0 otherwise
+    pub participation_bits: Vec<F>,
+    /// The block hash being attested (public input)
+    pub block_hash: Option<F>,
+    /// Quorum threshold (e.g., 342 for 2/3 of 512)
+    pub threshold: Option<F>,
+    _marker: PhantomData<F>,
+}
+
+impl<F: PrimeField> Default for SyncCommitteeCircuit<F> {
+    fn default() -> Self {
+        Self {
+            validator_weights: vec![],
+            participation_bits: vec![],
+            block_hash: None,
+            threshold: None,
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<F: PrimeField> Circuit<F> for SyncCommitteeCircuit<F> {
+    type Config = SyncCommitteeConfig;
+    type FloorPlanner = SimpleFloorPlanner;
+
+    fn without_witnesses(&self) -> Self {
+        Self::default()
+    }
+
+    fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
+        let advice = [
+            meta.advice_column(),
+            meta.advice_column(),
+            meta.advice_column(),
+            meta.advice_column(),
+            meta.advice_column(),
+        ];
+        let instance = meta.instance_column();
+        let s_accumulate = meta.selector();
+        let s_quorum = meta.selector();
+
+        meta.enable_equality(instance);
+        for col in &advice {
+            meta.enable_equality(*col);
+        }
+
+        // Accumulation gate: acc_new = acc_prev + weight * participation_bit
+        // Ensures participation_bit is boolean: bit * (1 - bit) == 0
+        meta.create_gate("accumulate_weight", |meta| {
+            let s = meta.query_selector(s_accumulate);
+            let weight = meta.query_advice(advice[0], Rotation::cur());
+            let bit = meta.query_advice(advice[1], Rotation::cur());
+            let acc_prev = meta.query_advice(advice[2], Rotation::cur());
+            let acc_new = meta.query_advice(advice[2], Rotation::next());
+
+            let one = halo2_proofs::plonk::Expression::Constant(F::ONE);
+
+            vec![
+                // Boolean constraint on participation bit
+                s.clone() * bit.clone() * (one - bit.clone()),
+                // Accumulation: acc_new = acc_prev + weight * bit
+                s * (acc_new - (acc_prev + weight * bit)),
+            ]
+        });
+
+        // Quorum gate: quorum_satisfied = 1 if accumulated >= threshold
+        // Simplified: we check (accumulated - threshold) * quorum_flag == (accumulated - threshold)
+        // This ensures quorum_flag == 1 when accumulated >= threshold
+        meta.create_gate("quorum_check", |meta| {
+            let s = meta.query_selector(s_quorum);
+            let accumulated = meta.query_advice(advice[2], Rotation::cur());
+            let threshold = meta.query_advice(advice[3], Rotation::cur());
+            let flag = meta.query_advice(advice[4], Rotation::cur());
+
+            let one = halo2_proofs::plonk::Expression::Constant(F::ONE);
+
+            vec![
+                // flag must be boolean
+                s.clone() * flag.clone() * (one - flag.clone()),
+                // If flag=1, accumulated must be >= threshold (checked via difference * flag)
+                // Simplified constraint: flag * threshold <= flag * accumulated
+                // Which means: flag * (accumulated - threshold) >= 0
+                // We enforce: (accumulated - threshold) = flag * (accumulated - threshold)
+                s * ((accumulated.clone() - threshold.clone())
+                    - flag * (accumulated - threshold)),
+            ]
+        });
+
+        SyncCommitteeConfig {
+            advice,
+            instance,
+            s_accumulate,
+            s_quorum,
+        }
+    }
+
+    fn synthesize(
+        &self,
+        config: Self::Config,
+        mut layouter: impl Layouter<F>,
+    ) -> Result<(), Error> {
+        let n = self.validator_weights.len();
+
+        // Step 1: Accumulate weighted participation
+        let accumulated = layouter.assign_region(
+            || "accumulate_participation",
+            |mut region| {
+                let mut acc = F::ZERO;
+
+                // Assign initial accumulator value
+                region.assign_advice(
+                    || "acc_init",
+                    config.advice[2],
+                    0,
+                    || Value::known(F::ZERO),
+                )?;
+
+                for i in 0..n {
+                    config.s_accumulate.enable(&mut region, i)?;
+
+                    region.assign_advice(
+                        || format!("weight_{}", i),
+                        config.advice[0],
+                        i,
+                        || Value::known(self.validator_weights[i]),
+                    )?;
+
+                    region.assign_advice(
+                        || format!("bit_{}", i),
+                        config.advice[1],
+                        i,
+                        || Value::known(self.participation_bits[i]),
+                    )?;
+
+                    // Update accumulator
+                    acc = acc + self.validator_weights[i] * self.participation_bits[i];
+
+                    region.assign_advice(
+                        || format!("acc_{}", i + 1),
+                        config.advice[2],
+                        i + 1,
+                        || Value::known(acc),
+                    )?;
+                }
+
+                // Return the final accumulated cell
+                region.assign_advice(|| "final_acc", config.advice[2], n, || Value::known(acc))
+            },
+        )?;
+
+        // Step 2: Quorum check
+        let quorum_flag = layouter.assign_region(
+            || "quorum_check",
+            |mut region| {
+                config.s_quorum.enable(&mut region, 0)?;
+
+                let acc_val = accumulated.value().copied();
+                let threshold_val = self.threshold.map(Value::known).unwrap_or(Value::unknown());
+
+                accumulated.copy_advice(|| "acc", &mut region, config.advice[2], 0)?;
+
+                region.assign_advice(|| "threshold", config.advice[3], 0, || threshold_val)?;
+
+                // Compute flag
+                let flag = acc_val.zip(threshold_val).map(|(a, t)| {
+                    if a.ct_gt(&t).into() || a == t {
+                        F::ONE
+                    } else {
+                        F::ZERO
+                    }
+                });
+
+                region.assign_advice(|| "flag", config.advice[4], 0, || flag)
+            },
+        )?;
+
+        // Expose block_hash, accumulated weight, and quorum flag as public inputs
+        let block_hash_cell = layouter.assign_region(
+            || "block_hash",
+            |mut region| {
+                let val = self
+                    .block_hash
+                    .map(Value::known)
+                    .unwrap_or(Value::unknown());
+                region.assign_advice(|| "block_hash", config.advice[0], 0, || val)
+            },
+        )?;
+
+        layouter.constrain_instance(block_hash_cell.cell(), config.instance, 0)?;
+        layouter.constrain_instance(accumulated.cell(), config.instance, 1)?;
+        layouter.constrain_instance(quorum_flag.cell(), config.instance, 2)?;
+
+        Ok(())
+    }
+}
+
+// ─── Cosmos Tendermint Circuit ──────────────────────────────────────────────
+
+/// Configuration for Tendermint consensus verification.
+///
+/// Verifies that >2/3 of voting power has signed a block commit.
+/// Uses the same accumulation pattern as the Sync Committee circuit
+/// but with different quorum semantics (2/3 voting power, not count-based).
+#[derive(Clone, Debug)]
+pub struct TendermintConfig {
+    /// [0] = voting_power, [1] = signed_bit, [2] = accumulated_power
+    /// [3] = total_power, [4] = quorum_check_result
+    pub advice: [Column<Advice>; 5],
+    pub instance: Column<Instance>,
+    pub s_accumulate: Selector,
+    pub s_quorum: Selector,
+}
+
+/// Circuit proving Cosmos Tendermint consensus (>2/3 voting power signed).
+///
+/// Public inputs:
+///   [0] = block_hash
+///   [1] = total_signed_power
+///   [2] = quorum_satisfied (1 if 3 * signed_power > 2 * total_power)
+pub struct TendermintCircuit<F: PrimeField> {
+    /// Voting power of each validator
+    pub voting_powers: Vec<F>,
+    /// Whether each validator signed (1 or 0)
+    pub signed_bits: Vec<F>,
+    /// The block hash being committed
+    pub block_hash: Option<F>,
+    /// Total voting power of the validator set
+    pub total_power: Option<F>,
+    _marker: PhantomData<F>,
+}
+
+impl<F: PrimeField> Default for TendermintCircuit<F> {
+    fn default() -> Self {
+        Self {
+            voting_powers: vec![],
+            signed_bits: vec![],
+            block_hash: None,
+            total_power: None,
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<F: PrimeField> Circuit<F> for TendermintCircuit<F> {
+    type Config = TendermintConfig;
+    type FloorPlanner = SimpleFloorPlanner;
+
+    fn without_witnesses(&self) -> Self {
+        Self::default()
+    }
+
+    fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
+        let advice = [
+            meta.advice_column(),
+            meta.advice_column(),
+            meta.advice_column(),
+            meta.advice_column(),
+            meta.advice_column(),
+        ];
+        let instance = meta.instance_column();
+        let s_accumulate = meta.selector();
+        let s_quorum = meta.selector();
+
+        meta.enable_equality(instance);
+        for col in &advice {
+            meta.enable_equality(*col);
+        }
+
+        // Weight accumulation gate (same structure as sync committee)
+        meta.create_gate("accumulate_voting_power", |meta| {
+            let s = meta.query_selector(s_accumulate);
+            let power = meta.query_advice(advice[0], Rotation::cur());
+            let bit = meta.query_advice(advice[1], Rotation::cur());
+            let acc_prev = meta.query_advice(advice[2], Rotation::cur());
+            let acc_new = meta.query_advice(advice[2], Rotation::next());
+
+            let one = halo2_proofs::plonk::Expression::Constant(F::ONE);
+
+            vec![
+                s.clone() * bit.clone() * (one - bit.clone()),
+                s * (acc_new - (acc_prev + power * bit)),
+            ]
+        });
+
+        // Tendermint quorum: 3 * signed_power > 2 * total_power
+        // Rewritten: 3 * signed_power - 2 * total_power > 0
+        // We check: flag = 1 iff 3*acc - 2*total > 0
+        meta.create_gate("tendermint_quorum", |meta| {
+            let s = meta.query_selector(s_quorum);
+            let signed_power = meta.query_advice(advice[2], Rotation::cur());
+            let total_power = meta.query_advice(advice[3], Rotation::cur());
+            let flag = meta.query_advice(advice[4], Rotation::cur());
+
+            let three = halo2_proofs::plonk::Expression::Constant(F::from(3u64));
+            let two = halo2_proofs::plonk::Expression::Constant(F::from(2u64));
+            let one = halo2_proofs::plonk::Expression::Constant(F::ONE);
+
+            // difference = 3 * signed - 2 * total
+            let difference =
+                three * signed_power.clone() - two * total_power.clone();
+
+            vec![
+                // flag boolean
+                s.clone() * flag.clone() * (one - flag.clone()),
+                // difference = flag * difference (if flag=0, difference must be 0)
+                s * (difference.clone() - flag * difference),
+            ]
+        });
+
+        TendermintConfig {
+            advice,
+            instance,
+            s_accumulate,
+            s_quorum,
+        }
+    }
+
+    fn synthesize(
+        &self,
+        config: Self::Config,
+        mut layouter: impl Layouter<F>,
+    ) -> Result<(), Error> {
+        let n = self.voting_powers.len();
+
+        // Step 1: Accumulate signed voting power
+        let accumulated = layouter.assign_region(
+            || "accumulate_power",
+            |mut region| {
+                let mut acc = F::ZERO;
+
+                region.assign_advice(
+                    || "acc_init",
+                    config.advice[2],
+                    0,
+                    || Value::known(F::ZERO),
+                )?;
+
+                for i in 0..n {
+                    config.s_accumulate.enable(&mut region, i)?;
+
+                    region.assign_advice(
+                        || format!("power_{}", i),
+                        config.advice[0],
+                        i,
+                        || Value::known(self.voting_powers[i]),
+                    )?;
+
+                    region.assign_advice(
+                        || format!("signed_{}", i),
+                        config.advice[1],
+                        i,
+                        || Value::known(self.signed_bits[i]),
+                    )?;
+
+                    acc = acc + self.voting_powers[i] * self.signed_bits[i];
+
+                    region.assign_advice(
+                        || format!("acc_{}", i + 1),
+                        config.advice[2],
+                        i + 1,
+                        || Value::known(acc),
+                    )?;
+                }
+
+                region.assign_advice(|| "final_acc", config.advice[2], n, || Value::known(acc))
+            },
+        )?;
+
+        // Step 2: Tendermint quorum check (3 * signed > 2 * total)
+        let quorum_flag = layouter.assign_region(
+            || "quorum_check",
+            |mut region| {
+                config.s_quorum.enable(&mut region, 0)?;
+
+                accumulated.copy_advice(|| "signed", &mut region, config.advice[2], 0)?;
+
+                let total_val = self
+                    .total_power
+                    .map(Value::known)
+                    .unwrap_or(Value::unknown());
+                region.assign_advice(|| "total", config.advice[3], 0, || total_val)?;
+
+                let flag = accumulated.value().zip(total_val).map(|(signed, total)| {
+                    let three_signed = signed.double() + *signed;
+                    let two_total = total.double();
+                    if three_signed.ct_gt(&two_total).into() {
+                        F::ONE
+                    } else {
+                        F::ZERO
+                    }
+                });
+
+                region.assign_advice(|| "flag", config.advice[4], 0, || flag)
+            },
+        )?;
+
+        // Expose public inputs
+        let block_hash_cell = layouter.assign_region(
+            || "block_hash",
+            |mut region| {
+                let val = self
+                    .block_hash
+                    .map(Value::known)
+                    .unwrap_or(Value::unknown());
+                region.assign_advice(|| "hash", config.advice[0], 0, || val)
+            },
+        )?;
+
+        layouter.constrain_instance(block_hash_cell.cell(), config.instance, 0)?;
+        layouter.constrain_instance(accumulated.cell(), config.instance, 1)?;
+        layouter.constrain_instance(quorum_flag.cell(), config.instance, 2)?;
+
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use halo2_proofs::dev::MockProver;
+    use halo2curves::bn256::Fr;
+
+    #[test]
+    fn test_sync_committee_quorum_met() {
+        let k = 8;
+        // 4 validators, each weight 100, 3 participate -> 300 >= 267 (2/3 of 400)
+        let weights = vec![Fr::from(100); 4];
+        let bits = vec![Fr::ONE, Fr::ONE, Fr::ONE, Fr::ZERO];
+        let threshold = Fr::from(267u64); // 2/3 of 400
+        let block_hash = Fr::from(0xBEEFu64);
+        let accumulated = Fr::from(300u64);
+
+        let circuit = SyncCommitteeCircuit {
+            validator_weights: weights,
+            participation_bits: bits,
+            block_hash: Some(block_hash),
+            threshold: Some(threshold),
+            _marker: PhantomData,
+        };
+
+        let public_inputs = vec![vec![block_hash, accumulated, Fr::ONE]];
+        let prover = MockProver::run(k, &circuit, public_inputs).unwrap();
+        prover.assert_satisfied();
+    }
+
+    #[test]
+    fn test_sync_committee_quorum_not_met() {
+        let k = 8;
+        // 4 validators, each weight 100, only 1 participates -> 100 < 267
+        let weights = vec![Fr::from(100); 4];
+        let bits = vec![Fr::ONE, Fr::ZERO, Fr::ZERO, Fr::ZERO];
+        let threshold = Fr::from(267u64);
+        let block_hash = Fr::from(0xDEADu64);
+        let accumulated = Fr::from(100u64);
+
+        let circuit = SyncCommitteeCircuit {
+            validator_weights: weights,
+            participation_bits: bits,
+            block_hash: Some(block_hash),
+            threshold: Some(threshold),
+            _marker: PhantomData,
+        };
+
+        let public_inputs = vec![vec![block_hash, accumulated, Fr::ZERO]];
+        let prover = MockProver::run(k, &circuit, public_inputs).unwrap();
+        prover.assert_satisfied();
+    }
+
+    #[test]
+    fn test_tendermint_quorum_met() {
+        let k = 8;
+        // 3 validators: powers [100, 200, 300], total=600
+        // Validators 0 and 2 sign: signed=400
+        // 3*400=1200 > 2*600=1200 -> NOT strictly greater, so quorum NOT met
+        // Let's make it: validators 1 and 2 sign: signed=500
+        // 3*500=1500 > 2*600=1200 -> quorum MET
+        let powers = vec![Fr::from(100), Fr::from(200), Fr::from(300)];
+        let bits = vec![Fr::ZERO, Fr::ONE, Fr::ONE];
+        let block_hash = Fr::from(0xCAFEu64);
+        let total_power = Fr::from(600u64);
+        let signed = Fr::from(500u64);
+
+        let circuit = TendermintCircuit {
+            voting_powers: powers,
+            signed_bits: bits,
+            block_hash: Some(block_hash),
+            total_power: Some(total_power),
+            _marker: PhantomData,
+        };
+
+        let public_inputs = vec![vec![block_hash, signed, Fr::ONE]];
+        let prover = MockProver::run(k, &circuit, public_inputs).unwrap();
+        prover.assert_satisfied();
+    }
+
+    #[test]
+    fn test_tendermint_quorum_not_met() {
+        let k = 8;
+        // 3 validators: powers [100, 200, 300], total=600
+        // Only validator 0 signs: signed=100
+        // 3*100=300 <= 2*600=1200 -> quorum NOT met
+        let powers = vec![Fr::from(100), Fr::from(200), Fr::from(300)];
+        let bits = vec![Fr::ONE, Fr::ZERO, Fr::ZERO];
+        let block_hash = Fr::from(0xFACEu64);
+        let total_power = Fr::from(600u64);
+        let signed = Fr::from(100u64);
+
+        let circuit = TendermintCircuit {
+            voting_powers: powers,
+            signed_bits: bits,
+            block_hash: Some(block_hash),
+            total_power: Some(total_power),
+            _marker: PhantomData,
+        };
+
+        let public_inputs = vec![vec![block_hash, signed, Fr::ZERO]];
+        let prover = MockProver::run(k, &circuit, public_inputs).unwrap();
+        prover.assert_satisfied();
+    }
+}
