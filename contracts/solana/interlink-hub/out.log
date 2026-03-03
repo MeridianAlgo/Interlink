@@ -1,0 +1,15 @@
+    Updating crates.io index
+error: failed to select a version for `solana-instruction`.
+    ... required by package `solana-zk-sdk v2.2.0`
+    ... which satisfies dependency `solana-zk-sdk = "^2.2.0"` of package `spl-token-2022 v8.0.1`
+    ... which satisfies dependency `spl-token-2022 = "^8"` of package `anchor-spl v0.32.1`
+    ... which satisfies dependency `anchor-spl = "^0.32.1"` of package `interlink-hub v0.1.0 (C:\Users\Ishaan\OneDrive\Desktop\Cobalt\contracts\solana\interlink-hub\programs\interlink-hub)`
+versions that meet the requirements `=2.2.1` are: 2.2.1
+
+all possible versions conflict with previously selected packages.
+
+  previously selected package `solana-instruction v2.3.3`
+    ... which satisfies dependency `solana-instruction = "^2"` of package `anchor-lang v0.32.1`
+    ... which satisfies dependency `anchor-lang = "^0.32.1"` of package `interlink-hub v0.1.0 (C:\Users\Ishaan\OneDrive\Desktop\Cobalt\contracts\solana\interlink-hub\programs\interlink-hub)`
+
+failed to select a version for `solana-instruction` which could resolve this conflict
