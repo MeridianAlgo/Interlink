@@ -245,8 +245,12 @@ impl<F: PrimeField, const BATCH_SIZE: usize> Circuit<F> for BatchedInterlinkCirc
 
         // For efficiency, loop over BATCH_SIZE payloads and hash them all in one SNARK
         for i in 0..BATCH_SIZE {
-            let state_in = self.payloads[i].map(Value::known).unwrap_or(Value::unknown());
-            let seq = self.sequence_numbers[i].map(Value::known).unwrap_or(Value::unknown());
+            let state_in = self.payloads[i]
+                .map(Value::known)
+                .unwrap_or(Value::unknown());
+            let seq = self.sequence_numbers[i]
+                .map(Value::known)
+                .unwrap_or(Value::unknown());
 
             let out_cell = chip.hash_round(
                 layouter.namespace(|| format!("batched_commitment_generation_{}", i)),
@@ -273,7 +277,7 @@ mod batched_tests {
     fn test_batched_interlink_circuit_valid() {
         const BATCH_SIZE: usize = 3;
         let k = 6;
-        
+
         let hash = ethers_core::utils::keccak256(b"interlink_v1_domain");
         let mut arr = [0u8; 8];
         arr.copy_from_slice(&hash[0..8]);

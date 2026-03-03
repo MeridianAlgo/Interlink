@@ -48,10 +48,15 @@ jobs:
       - name: "Stage 6: High-Fidelity Test Suite Execution"
         run: cargo test --all --verbose
 
+      - name: "Stage 7: Solana Gateway Hub Integration"
+        run: |
+          cd contracts/solana/interlink-hub
+          cargo test --all --verbose
+
       - name: Generate InterLink CI Summary
         if: always()
         run: |
-          echo "## InterLink Protocol v0.6.2 CI" >> $GITHUB_STEP_SUMMARY
+          echo "## InterLink Protocol v0.7.1 CI" >> $GITHUB_STEP_SUMMARY
           echo "### Pipeline Flow" >> $GITHUB_STEP_SUMMARY
           echo '```mermaid' >> $GITHUB_STEP_SUMMARY
           echo 'graph LR' >> $GITHUB_STEP_SUMMARY
