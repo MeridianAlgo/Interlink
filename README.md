@@ -42,7 +42,7 @@ A documentation-first web application built with React and Vite. It provides a t
 
 ---
 
-## Recent Breakthroughs (v0.7.1)
+## Recent Breakthroughs (v0.7.3)
 
 Significant progress has been made in transitioning the protocol from a research prototype to a production-grade environment:
 
