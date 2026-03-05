@@ -2,7 +2,7 @@
 
 ## Overview
 
-InterLink is a zero-knowledge interoperability protocol enabling mathematically guaranteed cross-chain state transitions. Version 0.7.1 introduces full BN254 coupling.
+InterLink is a prototype for a zero-knowledge interoperability protocol enabling mathematically guaranteed cross-chain state transitions. Version 0.7.1 introduces full BN254 coupling.
 <p align="center">
   <img src="InterLink.png" alt="InterLink Architecture" width="80%">
 </p>
@@ -18,7 +18,7 @@ The protocol follows a Hub-and-Spoke architecture where Solana acts as the centr
 
 ## Project Architecture
 
-The InterLink repository is organized into several specialized components that handle the end-to-end lifecycle of a cross-chain message:
+The InterLink prototype is organized into several specialized components that handle the end-to-end lifecycle of a cross-chain message:
 
 ### 1. Interlink Core (`interlink-core/`)
 The foundational engine of the protocol. It contains the cryptographic logic, circuit definitions, and the relayer's internal machinery.

@@ -111,12 +111,17 @@ impl EventListener {
         let swap_initiated_topic = ethers_core::utils::keccak256(
             b"SwapInitiated(uint64,address,address,uint256,address,address,uint256,uint64,bytes,bytes32)"
         );
+        // NFTLocked event topic
+        let nft_locked_topic = ethers_core::utils::keccak256(
+            b"NFTLocked(uint64,address,address,uint256,uint64,bytes32,bytes32)"
+        );
 
         let filter = ethers_core::types::Filter::new()
             .address(gateway_addr)
             .topic0(vec![
                 ethers_core::types::H256::from(message_published_topic),
                 ethers_core::types::H256::from(swap_initiated_topic),
+                ethers_core::types::H256::from(nft_locked_topic),
             ]);
 
         use ethers_providers::Middleware;
@@ -223,6 +228,20 @@ impl EventListener {
         }
 
         // Parse SwapInitiated event
+        // Signature: SwapInitiated(uint64 indexed nonce, address indexed sender,
+        //   address recipient, uint256 amountIn, address tokenIn, address tokenOut,
+        //   uint256 minAmountOut, uint64 destinationChain, bytes swapData, bytes32 payloadHash)
+        // Topics: [topic0, nonce, sender]
+        // Data ABI layout (head = 8 slots = 256 bytes):
+        //   slot 0 (0..32):   recipient (address, last 20 bytes)
+        //   slot 1 (32..64):  amountIn (uint256)
+        //   slot 2 (64..96):  tokenIn (address, last 20 bytes)
+        //   slot 3 (96..128): tokenOut (address, last 20 bytes)
+        //   slot 4 (128..160): minAmountOut (uint256)
+        //   slot 5 (160..192): destinationChain (uint64, last 8 bytes)
+        //   slot 6 (192..224): swapData offset pointer
+        //   slot 7 (224..256): payloadHash (bytes32)
+        //   tail (256..): swapData length + bytes
         let swap_topic = ethers_core::types::H256::from(
             ethers_core::utils::keccak256(
                 b"SwapInitiated(uint64,address,address,uint256,address,address,uint256,uint64,bytes,bytes32)"
@@ -233,26 +252,138 @@ impl EventListener {
             let nonce_topic = log.topics.get(1)?;
             let nonce = u64::from_be_bytes(nonce_topic.as_bytes()[24..32].try_into().ok()?);
 
+            // sender is topic2 (indexed address)
+            let mut sender = [0u8; 20];
+            if let Some(sender_topic) = log.topics.get(2) {
+                sender.copy_from_slice(&sender_topic.as_bytes()[12..32]);
+            }
+
+            let data = &log.data;
+
+            let mut recipient = [0u8; 20];
+            if data.len() >= 32 {
+                recipient.copy_from_slice(&data[12..32]);
+            }
+
+            let amount_in: u128 = if data.len() >= 64 {
+                u128::from_be_bytes(data[48..64].try_into().ok()?)
+            } else { 0 };
+
+            let mut token_in = [0u8; 20];
+            if data.len() >= 96 {
+                token_in.copy_from_slice(&data[76..96]);
+            }
+
+            let mut token_out = [0u8; 20];
+            if data.len() >= 128 {
+                token_out.copy_from_slice(&data[108..128]);
+            }
+
+            let min_amount_out: u128 = if data.len() >= 160 {
+                u128::from_be_bytes(data[144..160].try_into().ok()?)
+            } else { 0 };
+
+            let destination_chain: u16 = if data.len() >= 192 {
+                u16::from_be_bytes(data[190..192].try_into().ok()?)
+            } else { 0 };
+
+            // swapData: offset at slot 6 (bytes 192..224), tail starts at byte 256
+            let swap_data = if data.len() >= 288 {
+                let swap_data_len = u64::from_be_bytes(data[280..288].try_into().ok()?) as usize;
+                let swap_data_end = 288 + swap_data_len;
+                if data.len() >= swap_data_end {
+                    data[288..swap_data_end].to_vec()
+                } else {
+                    vec![]
+                }
+            } else {
+                vec![]
+            };
+
+            // payloadHash at slot 7 (bytes 224..256)
             let mut payload_hash = [0u8; 32];
-            // payloadHash is the last bytes32 in the event data
-            if log.data.len() >= 32 {
-                let ph_start = log.data.len() - 32;
-                payload_hash.copy_from_slice(&log.data[ph_start..]);
+            if data.len() >= 256 {
+                payload_hash.copy_from_slice(&data[224..256]);
             }
 
             return Some(GatewayEvent::Swap(crate::events::SwapInitiatedEvent {
                 block_number,
                 tx_hash: log.transaction_hash.map(|h| h.0).unwrap_or([0u8; 32]),
                 sequence: nonce,
-                sender: [0u8; 20],
-                recipient: [0u8; 20],
-                amount_in: 0,
-                token_in: [0u8; 20],
-                token_out: [0u8; 20],
-                min_amount_out: 0,
-                destination_chain: 0,
-                swap_data: vec![],
+                sender,
+                recipient,
+                amount_in,
+                token_in,
+                token_out,
+                min_amount_out,
+                destination_chain,
+                swap_data,
                 payload_hash,
+            }));
+        }
+
+        // Parse NFTLocked event
+        // Signature: NFTLocked(uint64 indexed nonce, address indexed sender,
+        //   address nftContract, uint256 tokenId, uint64 destinationChain,
+        //   bytes32 destinationRecipient, bytes32 nftHash)
+        // Topics: [topic0, nonce, sender]
+        // Data ABI layout (all static, 5 slots = 160 bytes):
+        //   slot 0 (0..32):   nftContract (address, last 20 bytes)
+        //   slot 1 (32..64):  tokenId (uint256)
+        //   slot 2 (64..96):  destinationChain (uint64, last 8 bytes)
+        //   slot 3 (96..128): destinationRecipient (bytes32)
+        //   slot 4 (128..160): nftHash (bytes32)
+        let nft_topic = ethers_core::types::H256::from(
+            ethers_core::utils::keccak256(
+                b"NFTLocked(uint64,address,address,uint256,uint64,bytes32,bytes32)"
+            )
+        );
+
+        if *topic0 == nft_topic {
+            let nonce_topic = log.topics.get(1)?;
+            let nonce = u64::from_be_bytes(nonce_topic.as_bytes()[24..32].try_into().ok()?);
+
+            let mut sender = [0u8; 20];
+            if let Some(sender_topic) = log.topics.get(2) {
+                sender.copy_from_slice(&sender_topic.as_bytes()[12..32]);
+            }
+
+            let data = &log.data;
+
+            let mut nft_contract = [0u8; 20];
+            if data.len() >= 32 {
+                nft_contract.copy_from_slice(&data[12..32]);
+            }
+
+            let mut token_id = [0u8; 32];
+            if data.len() >= 64 {
+                token_id.copy_from_slice(&data[32..64]);
+            }
+
+            let destination_chain: u16 = if data.len() >= 96 {
+                u16::from_be_bytes(data[94..96].try_into().ok()?)
+            } else { 0 };
+
+            let mut destination_recipient = [0u8; 32];
+            if data.len() >= 128 {
+                destination_recipient.copy_from_slice(&data[96..128]);
+            }
+
+            let mut nft_hash = [0u8; 32];
+            if data.len() >= 160 {
+                nft_hash.copy_from_slice(&data[128..160]);
+            }
+
+            return Some(GatewayEvent::NFTLock(crate::events::NFTLockedEvent {
+                block_number,
+                tx_hash: log.transaction_hash.map(|h| h.0).unwrap_or([0u8; 32]),
+                sequence: nonce,
+                sender,
+                nft_contract,
+                token_id,
+                destination_chain,
+                destination_recipient,
+                nft_hash,
             }));
         }
 

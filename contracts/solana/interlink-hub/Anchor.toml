@@ -4,15 +4,19 @@ package_manager = "yarn"
 [features]
 resolution = true
 skip-lint = false
+init-if-needed = true
 
 [programs.localnet]
+interlink_hub = "AKzpc9tvxfhLjj5AantKizK2YZgSjoyhLmYqRZy6b8Lz"
+
+[programs.devnet]
 interlink_hub = "AKzpc9tvxfhLjj5AantKizK2YZgSjoyhLmYqRZy6b8Lz"
 
 [registry]
 url = "https://api.apr.dev"
 
 [provider]
-cluster = "localnet"
+cluster = "devnet"
 wallet = "~/.config/solana/id.json"
 
 [scripts]

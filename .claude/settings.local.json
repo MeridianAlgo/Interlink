@@ -5,8 +5,8 @@
       "Bash(cargo test:*)",
       "Bash(cargo build:*)",
       "Bash(cargo run:*)",
-      "Bash(*)",
-      "npm(*)"
+      "Bash(*)"
     ]
-  }
+  },
+  "outputStyle": "default"
 }

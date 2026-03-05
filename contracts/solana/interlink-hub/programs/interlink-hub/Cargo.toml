@@ -9,7 +9,8 @@ crate-type = ["cdylib", "lib"]
 name = "interlink_hub"
 
 [features]
-default = []
+default = ["init-if-needed"]
+init-if-needed = ["anchor-lang/init-if-needed"]
 cpi = ["no-entrypoint"]
 no-entrypoint = []
 no-idl = []

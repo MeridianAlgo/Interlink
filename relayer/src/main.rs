@@ -15,8 +15,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or_else(|_| "1".to_string())
         .parse()
         .unwrap_or(1);
-    let ws_rpc_url = std::env::var("EVM_RPC_URL")
+    let ws_rpc_url = std::env::var("EVM_WS_RPC_URL")
+        .or_else(|_| std::env::var("EVM_RPC_URL"))
         .unwrap_or_else(|_| "ws://localhost:8545".to_string());
+    let http_rpc_url = std::env::var("EVM_HTTP_RPC_URL")
+        .unwrap_or_else(|_| "http://localhost:8545".to_string());
     let solana_rpc_url = std::env::var("SOLANA_RPC_URL")
         .unwrap_or_else(|_| "https://api.devnet.solana.com".to_string());
     let gateway_address = std::env::var("GATEWAY_ADDRESS")
@@ -70,8 +73,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let sequence = event.sequence();
             info!(sequence, "processing gateway event");
 
-            // Wait for source chain finality
-            match wait_for_finality(chain_id, event.block_number(), &ws_rpc_url).await {
+            // Wait for source chain finality (use HTTP RPC, not WebSocket)
+            match wait_for_finality(chain_id, event.block_number(), &http_rpc_url).await {
                 Ok(()) => info!(sequence, "finality confirmed"),
                 Err(e) => {
                     error!(sequence, error = %e, "finality check failed, skipping");

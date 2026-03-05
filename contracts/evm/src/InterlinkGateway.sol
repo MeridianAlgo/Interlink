@@ -2,26 +2,20 @@
 pragma solidity 0.8.28;
 
 /**
- * @title interlinkgateway
- * @dev source chain gateway (spoke) for evm chains.
- * handles asset custody, logs for relayers, and verified hub commands.
+ * @title InterlinkGateway
+ * @dev Source chain gateway (spoke) for EVM chains.
+ * Handles asset custody, event logging for relayers, and verified hub commands.
  *
- * security (slither verified):
- *  - cei pattern in sendcrosschainmessage
- *  - zero-address guards
- *  - emergencywithdraw for untrapping funds
- *  - pinned to 0.8.28 for stability
+ * Security:
+ *  - CEI pattern in sendCrossChainMessage
+ *  - Zero-address guards
+ *  - emergencyWithdraw for untrapping funds
+ *  - Standard Groth16 verification (4-pairing check)
+ *  - Pinned to 0.8.28 for stability
  *
- * =========================================================================
- * 🚨 IMPORTANT – PROVER CONSISTENCY REQUIREMENT 🚨
- *
- * The relayer's Halo2 prover MUST use the exact same "interlink_v1_domain" 
- * salt when generating proofs. 
- * This is strictly required to match the updated Solidity input binding 
- * logic in this contract (specifically around lines 175-180).
- * Ensure the entire pipeline (prover -> relayer -> on-chain verification) 
- * uses consistent domain separation to prevent proof mismatches.
- * =========================================================================
+ * Groth16 verification uses stored verification key (VK) with the equation:
+ *   e(-A, B) · e(α, β) · e(L, γ) · e(C, δ) = 1
+ * where L = IC[0] + publicInput * IC[1]
  */
 
 interface IERC20 {
@@ -38,9 +32,28 @@ contract InterlinkGateway {
     address public immutable daoGuardian;
     bool public paused;
 
-    // anti-replay map. don't execute a nonce more than once.
+    // Anti-replay. Don't execute a nonce more than once.
     mapping(uint64 => bool) public executedNonces;
     uint64 public currentNonce;
+
+    // ─── Groth16 Verification Key ───────────────────────────────────────────
+    // Stored on-chain after trusted setup. Set via setVerificationKey().
+    bool public vkInitialized;
+
+    // VK points (BN254, big-endian, EVM precompile format)
+    uint256[2] public vk_alpha;     // G1: (x, y)
+    uint256[2][2] public vk_beta;   // G2: (x_im, x_re, y_im, y_re) packed as [[x_im,x_re],[y_im,y_re]]
+    uint256[2][2] public vk_gamma;  // G2
+    uint256[2][2] public vk_delta;  // G2
+    uint256[2] public vk_ic0;       // G1: IC base
+    uint256[2] public vk_ic1;       // G1: IC for public input
+
+    // BN254 scalar field modulus
+    uint256 constant BN254_SCALAR_FIELD = 21888242871839275222246405745257275088548364400416034343698204186575808495617;
+    // BN254 base field modulus (for point negation)
+    uint256 constant BN254_BASE_FIELD = 21888242871839275222246405745257275088696311157297823662689037894645226208583;
+
+    // ─── Events ─────────────────────────────────────────────────────────────
 
     event MessagePublished(
         uint64 indexed nonce,
@@ -78,6 +91,9 @@ contract InterlinkGateway {
     event GatewayPaused();
     event GatewayUnpaused();
     event EmergencyWithdraw(address indexed token, address indexed to, uint256 amount);
+    event VerificationKeyUpdated();
+
+    // ─── Modifiers ──────────────────────────────────────────────────────────
 
     modifier onlyGuardian() {
         require(msg.sender == daoGuardian, "Interlink: Unauthorized");
@@ -94,11 +110,8 @@ contract InterlinkGateway {
         daoGuardian = _guardian;
     }
 
-    // admin stuff.
+    // ─── Admin ──────────────────────────────────────────────────────────────
 
-    /**
-     * @dev Pauses the gateway. Only callable by the Dao Guardian.
-     */
     function pause() external onlyGuardian {
         paused = true;
         emit GatewayPaused();
@@ -109,12 +122,6 @@ contract InterlinkGateway {
         emit GatewayUnpaused();
     }
 
-    /**
-     * @dev recovery mode: pull stuck tokens out of the contract.
-     * @param token erc-20 address, or address(0) for native eth.
-     * @param to    recipient of the withdrawal.
-     * @param amount amount to withdraw.
-     */
     function emergencyWithdraw(address token, address to, uint256 amount) external onlyGuardian {
         require(to != address(0), "Interlink: zero recipient");
         if (token == address(0)) {
@@ -126,54 +133,57 @@ contract InterlinkGateway {
         emit EmergencyWithdraw(token, to, amount);
     }
 
-    // user facing methods.
-
     /**
-     * @dev Endpoint for end-users to initiate cross-chain messages.
+     * @dev Set the Groth16 verification key. Must be called once after trusted
+     * setup before any proofs can be verified. Guardian-only.
      *
-     * Utilizes the CEI (Checks-Effects-Interactions) pattern.
-     *
-     * @param destChain target chain id (e.g. solana hub id)
-     * @param token     token address (address(0) for native eth)
-     * @param amount    tokens to lock
-     * @param payload   opaque data for execution
+     * @param alpha   G1 point (2 uint256: x, y)
+     * @param beta    G2 point (2x2 uint256: [x_im,x_re], [y_im,y_re])
+     * @param gamma   G2 point
+     * @param delta   G2 point
+     * @param ic0     G1 point — IC base
+     * @param ic1     G1 point — IC for public input
      */
+    function setVerificationKey(
+        uint256[2] calldata alpha,
+        uint256[2][2] calldata beta,
+        uint256[2][2] calldata gamma,
+        uint256[2][2] calldata delta,
+        uint256[2] calldata ic0,
+        uint256[2] calldata ic1
+    ) external onlyGuardian {
+        vk_alpha = alpha;
+        vk_beta = beta;
+        vk_gamma = gamma;
+        vk_delta = delta;
+        vk_ic0 = ic0;
+        vk_ic1 = ic1;
+        vkInitialized = true;
+        emit VerificationKeyUpdated();
+    }
+
+    // ─── User-facing ────────────────────────────────────────────────────────
+
     function sendCrossChainMessage(
         uint64 destChain,
         address token,
         uint256 amount,
         bytes calldata payload
     ) external payable whenNotPaused {
-        // checks.
         if (token == address(0)) {
             require(msg.value == amount, "Interlink: Incorrect native value sent");
         }
 
-        // state updates.
         uint64 nonce = currentNonce++;
         bytes32 payloadHash = keccak256(abi.encode(msg.sender, destChain, token, amount, payload));
 
-        // Emit before external calls to satisfy CEI
         emit MessagePublished(nonce, destChain, msg.sender, payloadHash, payload);
 
-        // external calls.
         if (token != address(0)) {
             require(IERC20(token).transferFrom(msg.sender, address(this), amount), "Interlink: Transfer failed");
         }
     }
 
-    /**
-     * @dev Initiate a cross-chain swap. Locks input tokens and emits a
-     * SwapInitiated event for the relayer network to observe and prove.
-     *
-     * @param destChain       destination chain id
-     * @param tokenIn         address of the token being swapped (address(0) for ETH)
-     * @param amountIn        amount of input tokens to lock
-     * @param tokenOut        address of the desired output token on destination chain
-     * @param minAmountOut    minimum acceptable output amount (slippage protection)
-     * @param recipient       recipient address on the destination chain
-     * @param swapData        additional routing data for the hub's AMM
-     */
     function initiateSwap(
         uint64 destChain,
         address tokenIn,
@@ -205,15 +215,6 @@ contract InterlinkGateway {
         }
     }
 
-    /**
-     * @dev Lock an ERC-721 NFT for cross-chain transfer. The NFT is held in
-     * custody by the gateway until the transfer is completed or refunded.
-     *
-     * @param nftContract           address of the ERC-721 contract
-     * @param tokenId               the token ID to lock
-     * @param destinationChain      target chain id
-     * @param destinationRecipient  recipient address on the destination chain (32 bytes)
-     */
     function lockNFT(
         address nftContract,
         uint256 tokenId,
@@ -234,15 +235,16 @@ contract InterlinkGateway {
         IERC721(nftContract).transferFrom(msg.sender, address(this), tokenId);
     }
 
-    // relayer facing methods.
+    // ─── Relayer-facing ─────────────────────────────────────────────────────
 
     /**
-     * @dev relayer endpoint: settle verified messages from the hub.
+     * @dev Execute a verified message from the hub. Uses standard Groth16
+     * verification with stored VK.
      *
-     * @param target    destination contract for the payload.
-     * @param nonce     origin sequence id — stops replay attacks.
-     * @param payload   abi-encoded call data.
-     * @param snarkProof proof bytes (256 bytes).
+     * @param target     Destination contract for the payload.
+     * @param nonce      Origin sequence ID — prevents replay.
+     * @param payload    ABI-encoded call data.
+     * @param snarkProof 256-byte Groth16 proof: A(64) + B(128) + C(64).
      */
     function executeVerifiedMessage(
         address target,
@@ -250,110 +252,123 @@ contract InterlinkGateway {
         bytes calldata payload,
         bytes calldata snarkProof
     ) external whenNotPaused {
-        // safety checks.
         require(target != address(0), "Interlink: zero target");
         require(!executedNonces[nonce], "Interlink: Message already executed");
+        require(vkInitialized, "Interlink: VK not initialized");
 
-        // binding the target/payload/nonce to the proof to stop replay attacks.
-        // Including nonce prevents proof reuse across different sequence numbers.
-        bytes32 publicInput = keccak256(abi.encodePacked(target, nonce, payload));
-        bool valid = _verifyHalo2Proof(snarkProof, publicInput);
-        require(valid, "Interlink: Invalid ZK SNARK proof");
+        // Derive public input: keccak256(target, nonce, payload) domain-separated
+        bytes32 publicInputHash = keccak256(abi.encodePacked(target, nonce, payload));
+        uint256 publicInput = uint256(
+            keccak256(abi.encodePacked(publicInputHash, "interlink_v1_domain"))
+        ) % BN254_SCALAR_FIELD;
 
-        // persistence: mark it done.
+        bool valid = _verifyGroth16(snarkProof, publicInput);
+        require(valid, "Interlink: Invalid Groth16 proof");
+
         executedNonces[nonce] = true;
 
-        // external calls: pull the trigger.
         (bool success,) = target.call(payload);
-
-        // execution must succeed, otherwise funds would be lost with nonce consumed
         require(success, "Interlink: Execution failed");
 
         emit MessageExecuted(nonce, success);
     }
 
-    // internal helper.
+    // ─── Groth16 Verification ───────────────────────────────────────────────
 
     /**
-     * @dev BN254 pairing check via precompile 0x08.
-     * Verifies: e(A, B) * e(C, -G2_gen) == 1.
+     * @dev Standard Groth16 verification using BN254 precompiles.
      *
-     * architecture:
-     *  - snarkproof contains points A, B, C.
-     *  - publicinput (hash of payload) is hashed to an scalar field element.
-     *  - we "bind" the input by ensuring the pairing points are correctly derived.
+     * Verification equation (4-pairing multi-check):
+     *   e(-A, B) · e(α, β) · e(L, γ) · e(C, δ) = 1
      *
-     * @param snarkProof  snark points (256 bytes).
-     * @param publicInput hash of the public inputs.
+     * Where L = IC[0] + publicInput * IC[1]
+     *
+     * @param proof        256-byte proof: A(64) + B(128) + C(64)
+     * @param publicInput  Scalar field element (the commitment)
      */
-    function _verifyHalo2Proof(bytes calldata snarkProof, bytes32 publicInput) internal view returns (bool) {
-        if (snarkProof.length != 256) return false;
+    function _verifyGroth16(bytes calldata proof, uint256 publicInput) internal view returns (bool) {
+        if (proof.length != 256) return false;
+        require(publicInput < BN254_SCALAR_FIELD, "Interlink: input >= scalar field");
 
-        // unpacked snark points (a, b, c).
-        (uint256 ax, uint256 ay) = abi.decode(snarkProof[0:64], (uint256, uint256));
-        (uint256 bx1, uint256 bx2, uint256 by1, uint256 by2) = abi.decode(snarkProof[64:192], (uint256, uint256, uint256, uint256));
-        (uint256 cx, uint256 cy) = abi.decode(snarkProof[192:256], (uint256, uint256));
+        // Decode proof points
+        (uint256 ax, uint256 ay) = abi.decode(proof[0:64], (uint256, uint256));
+        (uint256 bx1, uint256 bx2, uint256 by1, uint256 by2) = abi.decode(proof[64:192], (uint256, uint256, uint256, uint256));
+        (uint256 cx, uint256 cy) = abi.decode(proof[192:256], (uint256, uint256));
 
-        /**
-         * public input binding (real verification strategy):
-         * Compute C' = C + (inputScalar * G1) using BN254 precompiles.
-         */
-        uint256 BN254_SCALAR_FIELD = 21888242871839275222246405745257275088548364400416034343698204186575808495617;
-        uint256 inputScalar = uint256(keccak256(abi.encodePacked(publicInput, "interlink_v1_domain"))) % BN254_SCALAR_FIELD;
-        
-        require(inputScalar != 0 && cx != 0 && cy != 0, "Interlink: Invalid inputs");
-
-        // ECMUL: inputScalar * G1
+        // Compute L = IC[0] + publicInput * IC[1]
+        // Step 1: ECMUL — publicInput * IC[1]
         uint256[3] memory mulInput;
-        mulInput[0] = 1; // G1_x
-        mulInput[1] = 2; // G1_y
-        mulInput[2] = inputScalar;
-        uint256[2] memory p1;
-        bool mulSuccess;
+        mulInput[0] = vk_ic1[0];
+        mulInput[1] = vk_ic1[1];
+        mulInput[2] = publicInput;
+        uint256[2] memory scaledIC1;
+        bool mulOk;
         assembly {
-            mulSuccess := staticcall(gas(), 0x07, mulInput, 0x60, p1, 0x40)
+            mulOk := staticcall(gas(), 0x07, mulInput, 0x60, scaledIC1, 0x40)
         }
-        require(mulSuccess, "Interlink: ECMUL failed");
+        require(mulOk, "Interlink: ECMUL failed");
 
-        // ECADD: C + (inputScalar * G1)
+        // Step 2: ECADD — IC[0] + scaledIC1
         uint256[4] memory addInput;
-        addInput[0] = cx;
-        addInput[1] = cy;
-        addInput[2] = p1[0];
-        addInput[3] = p1[1];
-        uint256[2] memory newC;
-        bool addSuccess;
+        addInput[0] = vk_ic0[0];
+        addInput[1] = vk_ic0[1];
+        addInput[2] = scaledIC1[0];
+        addInput[3] = scaledIC1[1];
+        uint256[2] memory L;
+        bool addOk;
         assembly {
-            addSuccess := staticcall(gas(), 0x06, addInput, 0x80, newC, 0x40)
+            addOk := staticcall(gas(), 0x06, addInput, 0x80, L, 0x40)
         }
-        require(addSuccess, "Interlink: ECADD failed");
+        require(addOk, "Interlink: ECADD failed");
 
-        uint256[12] memory input;
-        input[0] = ax;
-        input[1] = ay;
-        input[2] = bx1;
-        input[3] = bx2;
-        input[4] = by1;
-        input[5] = by2;
-        input[6] = newC[0];
-        input[7] = newC[1];
-        
-        // bn254 g2 generator (negated y).
-        input[8]  = 0x1800deef121f1e76426a00665e5c4479674322d4f75edadd46debd5cd992f6ed;
-        input[9]  = 0x198e9393920d483a7260bfb731fb5d25f1aa493335a9e71297e485b7aef312c2;
-        input[10] = 0x12c85ea5db8c6deb4aab71808dcb408fe3d1e7690c43d37b4ce6cc0166fa7daa;
-        input[11] = 0x090689d0585ff075ec9e99ad6b8563ef4066380c1073d528399e71592c34a233;
+        // 4-pairing check: e(-A, B) · e(α, β) · e(L, γ) · e(C, δ) = 1
+        // -A: negate y coordinate → (ax, BN254_BASE_FIELD - ay)
+        uint256 neg_ay = (ay == 0) ? 0 : BN254_BASE_FIELD - ay;
 
-        uint256[1] memory out;
-        bool success;
+        uint256[24] memory pairingInput;
+
+        // Pair 0: (-A, B)
+        pairingInput[0]  = ax;
+        pairingInput[1]  = neg_ay;
+        pairingInput[2]  = bx1;
+        pairingInput[3]  = bx2;
+        pairingInput[4]  = by1;
+        pairingInput[5]  = by2;
+
+        // Pair 1: (alpha, beta)
+        pairingInput[6]  = vk_alpha[0];
+        pairingInput[7]  = vk_alpha[1];
+        pairingInput[8]  = vk_beta[0][0];
+        pairingInput[9]  = vk_beta[0][1];
+        pairingInput[10] = vk_beta[1][0];
+        pairingInput[11] = vk_beta[1][1];
+
+        // Pair 2: (L, gamma)
+        pairingInput[12] = L[0];
+        pairingInput[13] = L[1];
+        pairingInput[14] = vk_gamma[0][0];
+        pairingInput[15] = vk_gamma[0][1];
+        pairingInput[16] = vk_gamma[1][0];
+        pairingInput[17] = vk_gamma[1][1];
+
+        // Pair 3: (C, delta)
+        pairingInput[18] = cx;
+        pairingInput[19] = cy;
+        pairingInput[20] = vk_delta[0][0];
+        pairingInput[21] = vk_delta[0][1];
+        pairingInput[22] = vk_delta[1][0];
+        pairingInput[23] = vk_delta[1][1];
+
+        // Call ecPairing precompile (0x08): returns 1 if the pairing product == 1
+        uint256[1] memory result;
+        bool pairingOk;
         assembly {
-            // staticcall to the ecpairing precompile (0x08)
-            success := staticcall(gas(), 0x08, input, 384, out, 0x20)
+            pairingOk := staticcall(gas(), 0x08, pairingInput, 768, result, 0x20)
         }
-        
-        return (success && out[0] == 1);
+
+        return pairingOk && result[0] == 1;
     }
 
-    /// @dev accept plain eth sends (e.g. top-ups from the guardian).
+    /// @dev Accept plain ETH sends.
     receive() external payable {}
 }

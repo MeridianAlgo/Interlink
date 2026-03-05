@@ -27,13 +27,23 @@ pub struct SubmitterConfig {
 pub struct ProofSubmitter {
     config: SubmitterConfig,
     client: reqwest::Client,
+    /// Cached raw keypair bytes (64 bytes: secret || public) loaded at startup.
+    keypair: Vec<u8>,
 }
 
 impl ProofSubmitter {
+    /// Load the keypair from disk once at construction. Fails fast if the
+    /// path is invalid so the relayer surfaces the misconfiguration at startup.
     pub fn new(config: SubmitterConfig) -> Self {
+        let raw = std::fs::read(&config.keypair_path)
+            .unwrap_or_else(|e| panic!("failed to load keypair from {}: {}", config.keypair_path, e));
+        let keypair: Vec<u8> = serde_json::from_slice(&raw)
+            .unwrap_or_else(|e| panic!("invalid keypair JSON at {}: {}", config.keypair_path, e));
+        assert!(keypair.len() >= 64, "keypair must be at least 64 bytes");
         Self {
             config,
             client: reqwest::Client::new(),
+            keypair,
         }
     }
 
@@ -84,12 +94,8 @@ impl ProofSubmitter {
         // Step 1: Get recent blockhash
         let blockhash = self.get_recent_blockhash().await?;
 
-        // Step 2: Load keypair
-        let keypair_bytes = tokio::fs::read(&self.config.keypair_path)
-            .await
-            .map_err(|e| format!("failed to read keypair: {}", e))?;
-        let keypair_json: Vec<u8> = serde_json::from_slice(&keypair_bytes)
-            .map_err(|e| format!("invalid keypair json: {}", e))?;
+        // Step 2: Use cached keypair (loaded at startup)
+        let keypair_json = &self.keypair;
 
         // Step 3: Build instruction data
         // Anchor instruction sighash for "submit_proof" = sha256("global:submit_proof")[0..8]
@@ -111,24 +117,28 @@ impl ProofSubmitter {
         ix_data.extend_from_slice(&package.payload_hash); // payload_hash
         ix_data.extend_from_slice(&[0u8; 32]); // commitment_input (placeholder)
 
-        // Step 4: Derive PDA for state registry
+        // Step 4: Derive PDAs
         let program_id_bytes = bs58::decode(&self.config.program_id)
             .into_vec()
             .map_err(|e| format!("invalid program id: {}", e))?;
 
-        let state_seed = b"state";
-        let pda = Self::find_pda(&program_id_bytes, &[state_seed])?;
+        let relayer_pubkey = &keypair_json[32..64];
+
+        let state_pda = Self::find_pda(&program_id_bytes, &[b"state"])?;
+        let stake_pda = Self::find_pda(&program_id_bytes, &[b"stake", relayer_pubkey])?;
+        let vk_pda = Self::find_pda(&program_id_bytes, &[b"vk"])?;
 
         // Step 5: Build and sign transaction
-        let relayer_pubkey = &keypair_json[32..64];
 
         // Step 6: Send via RPC
         let tx_base64 = self
             .build_raw_transaction(
-                &keypair_json,
+                keypair_json,
                 relayer_pubkey,
                 &program_id_bytes,
-                &pda,
+                &state_pda,
+                &stake_pda,
+                &vk_pda,
                 &ix_data,
                 &blockhash,
             )
@@ -218,27 +228,66 @@ impl ProofSubmitter {
         Err("failed to find PDA: all bumps produce on-curve points".to_string())
     }
 
+    /// Encode a usize as Solana compact-u16 (variable-length, 1-3 bytes).
+    fn encode_compact_u16(n: usize) -> Vec<u8> {
+        let mut out = Vec::new();
+        let mut val = n;
+        loop {
+            let byte = (val & 0x7F) as u8;
+            val >>= 7;
+            if val == 0 {
+                out.push(byte);
+                break;
+            } else {
+                out.push(byte | 0x80);
+            }
+        }
+        out
+    }
+
     fn build_raw_transaction(
         &self,
         keypair: &[u8],
         pubkey: &[u8],
         program_id: &[u8],
-        pda: &[u8],
+        state_pda: &[u8],
+        stake_pda: &[u8],
+        vk_pda: &[u8],
         ix_data: &[u8],
         blockhash: &[u8],
     ) -> Result<String, String> {
-        // Build a minimal Solana transaction message
-        // Header: num_required_signatures(1), num_readonly_signed(0), num_readonly_unsigned(1)
+        // Build a minimal Solana transaction message.
+        // Account ordering per Solana convention:
+        //   1. Writable signers first
+        //   2. Readonly signers
+        //   3. Writable non-signers
+        //   4. Readonly non-signers
+        //
+        // For SubmitProof the Anchor context is:
+        //   state_registry (mut)         → writable non-signer
+        //   stake_account  (readonly)    → readonly non-signer
+        //   verification_key (readonly)  → readonly non-signer
+        //   relayer (Signer, mut)        → writable signer
+        //
+        // Final account list:
+        //   index 0: relayer         (writable signer)
+        //   index 1: state_registry  (writable non-signer)
+        //   index 2: stake_account   (readonly non-signer)
+        //   index 3: verification_key(readonly non-signer)
+        //   index 4: program_id      (readonly non-signer)
+        //
+        // Header: (1 signer, 0 readonly-signed, 3 readonly-unsigned)
         let mut message = Vec::new();
         message.push(1u8); // num_required_signatures
         message.push(0u8); // num_readonly_signed_accounts
-        message.push(1u8); // num_readonly_unsigned_accounts
+        message.push(3u8); // num_readonly_unsigned_accounts (stake_account, vk, program_id)
 
-        // Account keys: [relayer (signer), pda (writable), program_id (readonly)]
-        message.push(3u8); // num_accounts
-        message.extend_from_slice(pubkey);
-        message.extend_from_slice(pda);
-        message.extend_from_slice(program_id);
+        message.push(5u8); // num_account_keys
+        message.extend_from_slice(pubkey);      // 0: relayer
+        message.extend_from_slice(state_pda);   // 1: state_registry
+        message.extend_from_slice(stake_pda);   // 2: stake_account
+        message.extend_from_slice(vk_pda);      // 3: verification_key
+        message.extend_from_slice(program_id);  // 4: program_id
 
         // Recent blockhash
         if blockhash.len() >= 32 {
@@ -250,13 +299,16 @@ impl ProofSubmitter {
 
         // Instructions: 1 instruction
         message.push(1u8); // num_instructions
-        message.push(2u8); // program_id_index (index 2 in account keys)
-        message.push(2u8); // num_accounts for this instruction
+        message.push(4u8); // program_id_index (index 4 in account keys)
+        // Accounts for SubmitProof: state_registry, stake_account, verification_key, relayer
+        message.push(4u8); // num_accounts for this instruction
+        message.push(1u8); // account index: state_registry
+        message.push(2u8); // account index: stake_account
+        message.push(3u8); // account index: verification_key
         message.push(0u8); // account index: relayer
-        message.push(1u8); // account index: pda
 
-        // Instruction data
-        message.extend_from_slice(&(ix_data.len() as u16).to_le_bytes());
+        // Instruction data length as compact-u16, then the data
+        message.extend_from_slice(&Self::encode_compact_u16(ix_data.len()));
         message.extend_from_slice(ix_data);
 
         // Sign with ed25519
@@ -283,6 +335,14 @@ impl ProofSubmitter {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_compact_u16() {
+        assert_eq!(ProofSubmitter::encode_compact_u16(0), vec![0x00]);
+        assert_eq!(ProofSubmitter::encode_compact_u16(127), vec![0x7F]);
+        assert_eq!(ProofSubmitter::encode_compact_u16(128), vec![0x80, 0x01]);
+        assert_eq!(ProofSubmitter::encode_compact_u16(492), vec![0xEC, 0x03]);
+    }
 
     #[test]
     fn test_submitter_config() {

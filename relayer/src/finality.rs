@@ -83,6 +83,9 @@ pub async fn wait_for_finality(
         ChainFinality::OptimisticRollup => 2,
     });
 
+    // Reuse a single HTTP client across all poll iterations.
+    let client = reqwest::Client::new();
+
     loop {
         if start.elapsed() > timeout {
             warn!(chain_id, block_number, "finality wait timed out");
@@ -93,7 +96,6 @@ pub async fn wait_for_finality(
         }
 
         // Query current block height via the appropriate RPC method
-        let client = reqwest::Client::new();
 
         let (method, parse_fn): (&str, fn(&serde_json::Value) -> Option<u64>) = match finality {
             ChainFinality::Solana => (
