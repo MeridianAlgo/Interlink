@@ -243,6 +243,7 @@ impl ProofSubmitter {
         out
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn build_raw_transaction(
         &self,
         keypair: &[u8],
@@ -275,12 +276,12 @@ impl ProofSubmitter {
         //   index 4: program_id      (readonly non-signer)
         //
         // Header: (1 signer, 0 readonly-signed, 3 readonly-unsigned)
-        let mut message = Vec::new();
-        message.push(1u8); // num_required_signatures
-        message.push(0u8); // num_readonly_signed_accounts
-        message.push(3u8); // num_readonly_unsigned_accounts (stake_account, vk, program_id)
-
-        message.push(5u8); // num_account_keys
+        let mut message = vec![
+            1u8, // num_required_signatures
+            0u8, // num_readonly_signed_accounts
+            3u8, // num_readonly_unsigned_accounts (stake_account, vk, program_id)
+            5u8, // num_account_keys
+        ];
         message.extend_from_slice(pubkey); // 0: relayer
         message.extend_from_slice(state_pda); // 1: state_registry
         message.extend_from_slice(stake_pda); // 2: stake_account

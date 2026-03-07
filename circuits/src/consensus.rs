@@ -191,7 +191,7 @@ impl<F: PrimeField> Circuit<F> for SyncCommitteeCircuit<F> {
                     )?;
 
                     // Update accumulator
-                    acc = acc + self.validator_weights[i] * self.participation_bits[i];
+                    acc += self.validator_weights[i] * self.participation_bits[i];
 
                     region.assign_advice(
                         || format!("acc_{}", i + 1),
@@ -406,7 +406,7 @@ impl<F: PrimeField> Circuit<F> for TendermintCircuit<F> {
                         || Value::known(self.signed_bits[i]),
                     )?;
 
-                    acc = acc + self.voting_powers[i] * self.signed_bits[i];
+                    acc += self.voting_powers[i] * self.signed_bits[i];
 
                     region.assign_advice(
                         || format!("acc_{}", i + 1),
