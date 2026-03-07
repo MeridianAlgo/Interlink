@@ -65,11 +65,11 @@ impl EventListener {
                 Err(e) => {
                     attempts += 1;
                     if attempts >= self.config.max_reconnect_attempts {
-                        error!(
-                            attempts,
-                            "max reconnection attempts reached, giving up"
-                        );
-                        return Err(format!("listener failed after {} attempts: {}", attempts, e));
+                        error!(attempts, "max reconnection attempts reached, giving up");
+                        return Err(format!(
+                            "listener failed after {} attempts: {}",
+                            attempts, e
+                        ));
                     }
 
                     warn!(
@@ -90,9 +90,10 @@ impl EventListener {
     /// This is the inner loop that gets retried on disconnection.
     async fn subscribe_and_process(&mut self) -> Result<(), String> {
         // Connect via ethers-rs WebSocket provider
-        let provider = ethers_providers::Provider::<ethers_providers::Ws>::connect(&self.config.ws_rpc_url)
-            .await
-            .map_err(|e| format!("ws connect failed: {}", e))?;
+        let provider =
+            ethers_providers::Provider::<ethers_providers::Ws>::connect(&self.config.ws_rpc_url)
+                .await
+                .map_err(|e| format!("ws connect failed: {}", e))?;
 
         info!("WebSocket connected, subscribing to Gateway events");
 
@@ -104,16 +105,15 @@ impl EventListener {
             .map_err(|e| format!("invalid gateway address: {}", e))?;
 
         // MessagePublished event topic
-        let message_published_topic = ethers_core::utils::keccak256(
-            b"MessagePublished(uint64,uint64,address,bytes32,bytes)"
-        );
+        let message_published_topic =
+            ethers_core::utils::keccak256(b"MessagePublished(uint64,uint64,address,bytes32,bytes)");
         // SwapInitiated event topic
         let swap_initiated_topic = ethers_core::utils::keccak256(
             b"SwapInitiated(uint64,address,address,uint256,address,address,uint256,uint64,bytes,bytes32)"
         );
         // NFTLocked event topic
         let nft_locked_topic = ethers_core::utils::keccak256(
-            b"NFTLocked(uint64,address,address,uint256,uint64,bytes32,bytes32)"
+            b"NFTLocked(uint64,address,address,uint256,uint64,bytes32,bytes32)",
         );
 
         let filter = ethers_core::types::Filter::new()
@@ -164,9 +164,7 @@ impl EventListener {
         let block_number = log.block_number?.as_u64();
 
         let message_published_topic = ethers_core::types::H256::from(
-            ethers_core::utils::keccak256(
-                b"MessagePublished(uint64,uint64,address,bytes32,bytes)"
-            )
+            ethers_core::utils::keccak256(b"MessagePublished(uint64,uint64,address,bytes32,bytes)"),
         );
 
         if *topic0 == message_published_topic {
@@ -267,7 +265,9 @@ impl EventListener {
 
             let amount_in: u128 = if data.len() >= 64 {
                 u128::from_be_bytes(data[48..64].try_into().ok()?)
-            } else { 0 };
+            } else {
+                0
+            };
 
             let mut token_in = [0u8; 20];
             if data.len() >= 96 {
@@ -281,11 +281,15 @@ impl EventListener {
 
             let min_amount_out: u128 = if data.len() >= 160 {
                 u128::from_be_bytes(data[144..160].try_into().ok()?)
-            } else { 0 };
+            } else {
+                0
+            };
 
             let destination_chain: u16 = if data.len() >= 192 {
                 u16::from_be_bytes(data[190..192].try_into().ok()?)
-            } else { 0 };
+            } else {
+                0
+            };
 
             // swapData: offset at slot 6 (bytes 192..224), tail starts at byte 256
             let swap_data = if data.len() >= 288 {
@@ -333,11 +337,9 @@ impl EventListener {
         //   slot 2 (64..96):  destinationChain (uint64, last 8 bytes)
         //   slot 3 (96..128): destinationRecipient (bytes32)
         //   slot 4 (128..160): nftHash (bytes32)
-        let nft_topic = ethers_core::types::H256::from(
-            ethers_core::utils::keccak256(
-                b"NFTLocked(uint64,address,address,uint256,uint64,bytes32,bytes32)"
-            )
-        );
+        let nft_topic = ethers_core::types::H256::from(ethers_core::utils::keccak256(
+            b"NFTLocked(uint64,address,address,uint256,uint64,bytes32,bytes32)",
+        ));
 
         if *topic0 == nft_topic {
             let nonce_topic = log.topics.get(1)?;
@@ -362,7 +364,9 @@ impl EventListener {
 
             let destination_chain: u16 = if data.len() >= 96 {
                 u16::from_be_bytes(data[94..96].try_into().ok()?)
-            } else { 0 };
+            } else {
+                0
+            };
 
             let mut destination_recipient = [0u8; 32];
             if data.len() >= 128 {

@@ -26,17 +26,17 @@ impl ChainFinality {
     /// Number of confirmation blocks to wait before considering a transaction final.
     pub fn required_confirmations(&self) -> u64 {
         match self {
-            ChainFinality::Ethereum => 64,           // 2 epochs
-            ChainFinality::Solana => 1,              // single confirmation
-            ChainFinality::Cosmos => 1,              // BFT instant finality
-            ChainFinality::OptimisticRollup => 10,   // ~20s for sequencer batch
+            ChainFinality::Ethereum => 64,         // 2 epochs
+            ChainFinality::Solana => 1,            // single confirmation
+            ChainFinality::Cosmos => 1,            // BFT instant finality
+            ChainFinality::OptimisticRollup => 10, // ~20s for sequencer batch
         }
     }
 
     /// Expected time to finality in seconds.
     pub fn expected_finality_secs(&self) -> u64 {
         match self {
-            ChainFinality::Ethereum => 768,   // 64 * 12s
+            ChainFinality::Ethereum => 768, // 64 * 12s
             ChainFinality::Solana => 1,
             ChainFinality::Cosmos => 7,
             ChainFinality::OptimisticRollup => 20,
@@ -46,11 +46,11 @@ impl ChainFinality {
     /// From chain_id to finality config
     pub fn from_chain_id(chain_id: u64) -> Self {
         match chain_id {
-            1 => ChainFinality::Ethereum,         // Ethereum mainnet
-            2 => ChainFinality::Solana,            // Solana
-            5 => ChainFinality::Cosmos,            // Cosmos
+            1 => ChainFinality::Ethereum,                 // Ethereum mainnet
+            2 => ChainFinality::Solana,                   // Solana
+            5 => ChainFinality::Cosmos,                   // Cosmos
             3 | 4 | 7 => ChainFinality::OptimisticRollup, // Arbitrum, Optimism, Base
-            _ => ChainFinality::Ethereum,          // conservative default
+            _ => ChainFinality::Ethereum,                 // conservative default
         }
     }
 }
@@ -98,18 +98,14 @@ pub async fn wait_for_finality(
         // Query current block height via the appropriate RPC method
 
         let (method, parse_fn): (&str, fn(&serde_json::Value) -> Option<u64>) = match finality {
-            ChainFinality::Solana => (
-                "getSlot",
-                |body: &serde_json::Value| body["result"].as_u64(),
-            ),
-            _ => (
-                "eth_blockNumber",
-                |body: &serde_json::Value| {
-                    body["result"]
-                        .as_str()
-                        .and_then(|s| u64::from_str_radix(s.trim_start_matches("0x"), 16).ok())
-                },
-            ),
+            ChainFinality::Solana => ("getSlot", |body: &serde_json::Value| {
+                body["result"].as_u64()
+            }),
+            _ => ("eth_blockNumber", |body: &serde_json::Value| {
+                body["result"]
+                    .as_str()
+                    .and_then(|s| u64::from_str_radix(s.trim_start_matches("0x"), 16).ok())
+            }),
         };
 
         let resp = client
@@ -128,7 +124,10 @@ pub async fn wait_for_finality(
             .await
             .map_err(|e| format!("rpc error: {}", e))?;
 
-        let body: serde_json::Value = resp.json().await.map_err(|e| format!("parse error: {}", e))?;
+        let body: serde_json::Value = resp
+            .json()
+            .await
+            .map_err(|e| format!("parse error: {}", e))?;
 
         if let Some(current_block) = parse_fn(&body) {
             let confirmations = current_block.saturating_sub(block_number);
@@ -136,18 +135,12 @@ pub async fn wait_for_finality(
             if confirmations >= required {
                 info!(
                     chain_id,
-                    block_number,
-                    confirmations,
-                    "block finality confirmed"
+                    block_number, confirmations, "block finality confirmed"
                 );
                 return Ok(());
             }
 
-            tracing::debug!(
-                confirmations,
-                required,
-                "waiting for more confirmations"
-            );
+            tracing::debug!(confirmations, required, "waiting for more confirmations");
         }
 
         tokio::time::sleep(poll_interval).await;
@@ -167,8 +160,17 @@ mod tests {
 
     #[test]
     fn test_from_chain_id() {
-        assert!(matches!(ChainFinality::from_chain_id(1), ChainFinality::Ethereum));
-        assert!(matches!(ChainFinality::from_chain_id(2), ChainFinality::Solana));
-        assert!(matches!(ChainFinality::from_chain_id(3), ChainFinality::OptimisticRollup));
+        assert!(matches!(
+            ChainFinality::from_chain_id(1),
+            ChainFinality::Ethereum
+        ));
+        assert!(matches!(
+            ChainFinality::from_chain_id(2),
+            ChainFinality::Solana
+        ));
+        assert!(matches!(
+            ChainFinality::from_chain_id(3),
+            ChainFinality::OptimisticRollup
+        ));
     }
 }

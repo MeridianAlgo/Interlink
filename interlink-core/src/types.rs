@@ -38,13 +38,13 @@ impl Chain {
     /// this window has elapsed.
     pub fn finality_seconds(&self) -> u64 {
         match self {
-            Chain::Ethereum => 768,      // 2 epochs (~12.8 min)
-            Chain::Solana => 1,          // ~400ms slot, near-instant finality
-            Chain::Arbitrum => 604_800,  // 7 day fraud proof window
-            Chain::Optimism => 604_800,  // 7 day fraud proof window
-            Chain::Cosmos => 7,          // ~6s block time + 1 confirmation
-            Chain::Sui => 3,             // ~2-3s finality
-            Chain::Base => 604_800,      // 7 day fraud proof window (OP Stack)
+            Chain::Ethereum => 768,     // 2 epochs (~12.8 min)
+            Chain::Solana => 1,         // ~400ms slot, near-instant finality
+            Chain::Arbitrum => 604_800, // 7 day fraud proof window
+            Chain::Optimism => 604_800, // 7 day fraud proof window
+            Chain::Cosmos => 7,         // ~6s block time + 1 confirmation
+            Chain::Sui => 3,            // ~2-3s finality
+            Chain::Base => 604_800,     // 7 day fraud proof window (OP Stack)
         }
     }
 }
@@ -178,7 +178,12 @@ mod tests {
 
     #[test]
     fn test_chain_roundtrip() {
-        for chain in [Chain::Ethereum, Chain::Solana, Chain::Arbitrum, Chain::Cosmos] {
+        for chain in [
+            Chain::Ethereum,
+            Chain::Solana,
+            Chain::Arbitrum,
+            Chain::Cosmos,
+        ] {
             assert_eq!(Chain::from_id(chain.id()), Some(chain));
         }
         assert_eq!(Chain::from_id(99), None);

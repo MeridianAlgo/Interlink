@@ -68,18 +68,14 @@ impl ConstraintSynthesizer<Fr> for InterlinkCircuit {
         let rc = self.round_constant;
 
         // Private witnesses
-        let msg = cs.new_witness_variable(|| {
-            self.message.ok_or(SynthesisError::AssignmentMissing)
-        })?;
-        let seq = cs.new_witness_variable(|| {
-            self.sequence.ok_or(SynthesisError::AssignmentMissing)
-        })?;
+        let msg =
+            cs.new_witness_variable(|| self.message.ok_or(SynthesisError::AssignmentMissing))?;
+        let seq =
+            cs.new_witness_variable(|| self.sequence.ok_or(SynthesisError::AssignmentMissing))?;
 
         // w = msg + rc
         let w_val = self.message.map(|m| m + rc);
-        let w = cs.new_witness_variable(|| {
-            w_val.ok_or(SynthesisError::AssignmentMissing)
-        })?;
+        let w = cs.new_witness_variable(|| w_val.ok_or(SynthesisError::AssignmentMissing))?;
 
         // Enforce: (msg + rc) * 1 = w
         {
@@ -95,9 +91,7 @@ impl ConstraintSynthesizer<Fr> for InterlinkCircuit {
 
         // v1 = w²
         let v1_val = w_val.map(|w| w.square());
-        let v1 = cs.new_witness_variable(|| {
-            v1_val.ok_or(SynthesisError::AssignmentMissing)
-        })?;
+        let v1 = cs.new_witness_variable(|| v1_val.ok_or(SynthesisError::AssignmentMissing))?;
         cs.enforce_constraint(
             LinearCombination::from(w),
             LinearCombination::from(w),
@@ -106,9 +100,7 @@ impl ConstraintSynthesizer<Fr> for InterlinkCircuit {
 
         // v2 = v1² = w⁴
         let v2_val = v1_val.map(|v| v.square());
-        let v2 = cs.new_witness_variable(|| {
-            v2_val.ok_or(SynthesisError::AssignmentMissing)
-        })?;
+        let v2 = cs.new_witness_variable(|| v2_val.ok_or(SynthesisError::AssignmentMissing))?;
         cs.enforce_constraint(
             LinearCombination::from(v1),
             LinearCombination::from(v1),
@@ -117,9 +109,7 @@ impl ConstraintSynthesizer<Fr> for InterlinkCircuit {
 
         // v3 = v2 * w = w⁵
         let v3_val = v2_val.zip(w_val).map(|(v2, w)| v2 * w);
-        let v3 = cs.new_witness_variable(|| {
-            v3_val.ok_or(SynthesisError::AssignmentMissing)
-        })?;
+        let v3 = cs.new_witness_variable(|| v3_val.ok_or(SynthesisError::AssignmentMissing))?;
         cs.enforce_constraint(
             LinearCombination::from(v2),
             LinearCombination::from(w),
@@ -128,9 +118,8 @@ impl ConstraintSynthesizer<Fr> for InterlinkCircuit {
 
         // commitment = v3 + seq  (PUBLIC INPUT)
         let commitment_val = v3_val.zip(self.sequence).map(|(v3, s)| v3 + s);
-        let commitment = cs.new_input_variable(|| {
-            commitment_val.ok_or(SynthesisError::AssignmentMissing)
-        })?;
+        let commitment =
+            cs.new_input_variable(|| commitment_val.ok_or(SynthesisError::AssignmentMissing))?;
 
         // Enforce: (v3 + seq) * 1 = commitment
         {
@@ -347,7 +336,10 @@ impl ProverEngine {
         .map_err(|e| format!("proof task panicked: {}", e))??;
 
         if proof_bytes.len() != 256 {
-            return Err(format!("proof has unexpected length: {}", proof_bytes.len()));
+            return Err(format!(
+                "proof has unexpected length: {}",
+                proof_bytes.len()
+            ));
         }
 
         info!(sequence, "Groth16 proof generated and locally verified");
@@ -411,8 +403,8 @@ mod tests {
     #[test]
     fn test_proof_serialization_size() {
         // Verify that G1 = 64 bytes, G2 = 128 bytes, total = 256
-        assert_eq!(std::mem::size_of::<[u8; 64]>(), 64);  // G1
-        assert_eq!(64 + 128 + 64, 256);                   // A + B + C
+        assert_eq!(std::mem::size_of::<[u8; 64]>(), 64); // G1
+        assert_eq!(64 + 128 + 64, 256); // A + B + C
     }
 
     #[test]

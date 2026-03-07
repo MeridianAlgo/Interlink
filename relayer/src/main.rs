@@ -18,16 +18,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let ws_rpc_url = std::env::var("EVM_WS_RPC_URL")
         .or_else(|_| std::env::var("EVM_RPC_URL"))
         .unwrap_or_else(|_| "ws://localhost:8545".to_string());
-    let http_rpc_url = std::env::var("EVM_HTTP_RPC_URL")
-        .unwrap_or_else(|_| "http://localhost:8545".to_string());
+    let http_rpc_url =
+        std::env::var("EVM_HTTP_RPC_URL").unwrap_or_else(|_| "http://localhost:8545".to_string());
     let solana_rpc_url = std::env::var("SOLANA_RPC_URL")
         .unwrap_or_else(|_| "https://api.devnet.solana.com".to_string());
     let gateway_address = std::env::var("GATEWAY_ADDRESS")
         .unwrap_or_else(|_| "0x0000000000000000000000000000000000000000".to_string());
     let program_id = std::env::var("HUB_PROGRAM_ID")
         .unwrap_or_else(|_| "AKzpc9tvxfhLjj5AantKizK2YZgSjoyhLmYqRZy6b8Lz".to_string());
-    let keypair_path = std::env::var("KEYPAIR_PATH")
-        .unwrap_or_else(|_| "~/.config/solana/id.json".to_string());
+    let keypair_path =
+        std::env::var("KEYPAIR_PATH").unwrap_or_else(|_| "~/.config/solana/id.json".to_string());
 
     // Initialize prover engine (generates VK/PK once at startup)
     let prover = ProverEngine::new(6);

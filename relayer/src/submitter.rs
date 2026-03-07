@@ -35,8 +35,9 @@ impl ProofSubmitter {
     /// Load the keypair from disk once at construction. Fails fast if the
     /// path is invalid so the relayer surfaces the misconfiguration at startup.
     pub fn new(config: SubmitterConfig) -> Self {
-        let raw = std::fs::read(&config.keypair_path)
-            .unwrap_or_else(|e| panic!("failed to load keypair from {}: {}", config.keypair_path, e));
+        let raw = std::fs::read(&config.keypair_path).unwrap_or_else(|e| {
+            panic!("failed to load keypair from {}: {}", config.keypair_path, e)
+        });
         let keypair: Vec<u8> = serde_json::from_slice(&raw)
             .unwrap_or_else(|e| panic!("invalid keypair JSON at {}: {}", config.keypair_path, e));
         assert!(keypair.len() >= 64, "keypair must be at least 64 bytes");
@@ -72,8 +73,7 @@ impl ProofSubmitter {
                             error = %e,
                             "submission failed, retrying"
                         );
-                        tokio::time::sleep(std::time::Duration::from_secs(2u64.pow(attempt)))
-                            .await;
+                        tokio::time::sleep(std::time::Duration::from_secs(2u64.pow(attempt))).await;
                     }
                 }
             }
@@ -111,7 +111,7 @@ impl ProofSubmitter {
         ix_data.extend_from_slice(&sighash);
         ix_data.extend_from_slice(&self.config.source_chain_id.to_le_bytes()); // source_chain
         ix_data.extend_from_slice(&package.sequence.to_le_bytes()); // sequence
-        // proof_data as borsh Vec<u8>: length prefix + data
+                                                                    // proof_data as borsh Vec<u8>: length prefix + data
         ix_data.extend_from_slice(&(package.proof_bytes.len() as u32).to_le_bytes());
         ix_data.extend_from_slice(&package.proof_bytes);
         ix_data.extend_from_slice(&package.payload_hash); // payload_hash
@@ -218,9 +218,7 @@ impl ProofSubmitter {
             // A valid PDA must be OFF the ed25519 curve.
             // We check by trying to construct a VerifyingKey; if it fails,
             // the point is off-curve and thus a valid PDA.
-            let candidate: [u8; 32] = hash[..32]
-                .try_into()
-                .map_err(|_| "hash length mismatch")?;
+            let candidate: [u8; 32] = hash[..32].try_into().map_err(|_| "hash length mismatch")?;
             if ed25519_dalek::VerifyingKey::from_bytes(&candidate).is_err() {
                 return Ok(candidate.to_vec());
             }
@@ -283,11 +281,11 @@ impl ProofSubmitter {
         message.push(3u8); // num_readonly_unsigned_accounts (stake_account, vk, program_id)
 
         message.push(5u8); // num_account_keys
-        message.extend_from_slice(pubkey);      // 0: relayer
-        message.extend_from_slice(state_pda);   // 1: state_registry
-        message.extend_from_slice(stake_pda);   // 2: stake_account
-        message.extend_from_slice(vk_pda);      // 3: verification_key
-        message.extend_from_slice(program_id);  // 4: program_id
+        message.extend_from_slice(pubkey); // 0: relayer
+        message.extend_from_slice(state_pda); // 1: state_registry
+        message.extend_from_slice(stake_pda); // 2: stake_account
+        message.extend_from_slice(vk_pda); // 3: verification_key
+        message.extend_from_slice(program_id); // 4: program_id
 
         // Recent blockhash
         if blockhash.len() >= 32 {
@@ -300,7 +298,7 @@ impl ProofSubmitter {
         // Instructions: 1 instruction
         message.push(1u8); // num_instructions
         message.push(4u8); // program_id_index (index 4 in account keys)
-        // Accounts for SubmitProof: state_registry, stake_account, verification_key, relayer
+                           // Accounts for SubmitProof: state_registry, stake_account, verification_key, relayer
         message.push(4u8); // num_accounts for this instruction
         message.push(1u8); // account index: state_registry
         message.push(2u8); // account index: stake_account

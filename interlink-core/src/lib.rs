@@ -24,7 +24,11 @@ impl std::fmt::Display for InterlinkError {
             InterlinkError::InvalidChain(id) => write!(f, "invalid chain id: {}", id),
             InterlinkError::InvalidSequence(seq) => write!(f, "invalid sequence: {}", seq),
             InterlinkError::SlippageExceeded { expected, actual } => {
-                write!(f, "slippage exceeded: expected {}, got {}", expected, actual)
+                write!(
+                    f,
+                    "slippage exceeded: expected {}, got {}",
+                    expected, actual
+                )
             }
             InterlinkError::Timeout => write!(f, "operation timed out"),
         }

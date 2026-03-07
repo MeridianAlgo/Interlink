@@ -245,10 +245,7 @@ impl<F: PrimeField> FoldingPipeline<F> {
     }
 
     /// Add a proof to the pipeline. Returns the folded result if batch is full.
-    pub fn add_proof(
-        &mut self,
-        proof: ProofAccumulator<F>,
-    ) -> Option<ProofAccumulator<F>> {
+    pub fn add_proof(&mut self, proof: ProofAccumulator<F>) -> Option<ProofAccumulator<F>> {
         self.pending.push(proof);
         if self.pending.len() >= self.batch_size {
             Some(self.flush_batch())
@@ -277,17 +274,17 @@ impl<F: PrimeField> FoldingPipeline<F> {
             current = next;
         }
 
-        current.into_iter().next().expect("pipeline cannot be empty")
+        current
+            .into_iter()
+            .next()
+            .expect("pipeline cannot be empty")
     }
 
     /// Fold two proof accumulators into one.
     /// alpha = (C1 + C2)^5  (Fiat-Shamir challenge)
     /// C_new = C1 + alpha * C2
     /// e_new = e1 + alpha * e2
-    pub fn fold_pair(
-        a: &ProofAccumulator<F>,
-        b: &ProofAccumulator<F>,
-    ) -> ProofAccumulator<F> {
+    pub fn fold_pair(a: &ProofAccumulator<F>, b: &ProofAccumulator<F>) -> ProofAccumulator<F> {
         let sum = a.commitment + b.commitment;
         let sq = sum.square();
         let alpha = sq * sq * sum;
