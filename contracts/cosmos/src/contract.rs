@@ -397,7 +397,6 @@ fn verify_proof(proof: &[u8], public_inputs: &[u8]) -> Result<(), ContractError>
 
 /// Compute SHA-256 hash using cosmwasm_std's built-in API.
 fn sha256_hash(data: &[u8]) -> Vec<u8> {
-    use cosmwasm_std::Api;
     // cosmwasm_std provides SHA-256 via the crypto API.
     // Since we don't have deps.api here, we use a manual implementation.
     // SHA-256 initial hash values (first 32 bits of fractional parts of sqrt of first 8 primes)
