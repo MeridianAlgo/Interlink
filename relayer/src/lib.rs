@@ -1,5 +1,11 @@
+pub mod batch;
 pub mod events;
+pub mod fee;
 pub mod finality;
+pub mod gas;
+pub mod http_api;
 pub mod listener;
+pub mod metrics;
+pub mod nonce;
 pub mod prover;
 pub mod submitter;

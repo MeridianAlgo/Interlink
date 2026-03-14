@@ -24,6 +24,11 @@ pub struct SubmitterConfig {
 }
 
 /// Submits proof packages to the Solana Hub.
+///
+/// Cheaply cloneable — `reqwest::Client` is an `Arc` internally and all config
+/// fields are value types. Clone once per concurrent task; no extra connections
+/// are opened until a request is actually made.
+#[derive(Clone)]
 pub struct ProofSubmitter {
     config: SubmitterConfig,
     client: reqwest::Client,

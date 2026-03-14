@@ -216,6 +216,11 @@ struct ProverCache {
 }
 
 /// Groth16 proof generation engine with key caching.
+///
+/// Cheaply cloneable — the inner `Arc` means all clones share the same initialized
+/// key cache. Wrap in `Arc` once and clone into each concurrent processing task
+/// without re-running the trusted setup.
+#[derive(Clone)]
 pub struct ProverEngine {
     cache: Arc<RwLock<Option<ProverCache>>>,
 }
