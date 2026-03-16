@@ -1,0 +1,53 @@
+{
+  "name": "@interlink/sdk",
+  "version": "0.7.3",
+  "description": "InterLink ZK cross-chain bridge SDK — O(1) on-chain verification with zero fees for transfers under $1,000",
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "test": "jest",
+    "lint": "eslint src --ext .ts",
+    "clean": "rm -rf dist"
+  },
+  "keywords": [
+    "interlink",
+    "bridge",
+    "zk",
+    "cross-chain",
+    "solana",
+    "ethereum",
+    "zk-snark",
+    "groth16"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/MeridianAlgo/Interlink"
+  },
+  "dependencies": {
+    "ethers": "^6.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0",
+    "jest": "^29.0.0",
+    "@types/jest": "^29.0.0",
+    "ts-jest": "^29.0.0"
+  },
+  "peerDependencies": {
+    "ethers": ">=5.0.0 <7.0.0"
+  }
+}

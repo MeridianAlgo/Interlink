@@ -35,6 +35,7 @@
 
 use crate::gas;
 use crate::metrics::Metrics;
+use crate::webhook::{EventType, WebhookRegistry};
 use std::collections::HashMap;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
@@ -47,6 +48,11 @@ use tracing::{debug, error, info, warn};
 /// Runs until cancelled (drops when the enclosing future is cancelled or the
 /// process exits).  Each incoming connection is handled in its own task.
 pub async fn serve(addr: &str, metrics: Metrics) {
+    serve_with_webhooks(addr, metrics, WebhookRegistry::new()).await;
+}
+
+/// Start the HTTP API server with a shared webhook registry.
+pub async fn serve_with_webhooks(addr: &str, metrics: Metrics, registry: WebhookRegistry) {
     let listener = match TcpListener::bind(addr).await {
         Ok(l) => l,
         Err(e) => {
@@ -61,8 +67,9 @@ pub async fn serve(addr: &str, metrics: Metrics) {
             Ok((stream, peer)) => {
                 debug!(peer = %peer, "HTTP connection accepted");
                 let m = metrics.clone();
+                let r = registry.clone();
                 tokio::spawn(async move {
-                    if let Err(e) = handle_connection(stream, m).await {
+                    if let Err(e) = handle_connection(stream, m, r).await {
                         warn!(peer = %peer, error = %e, "HTTP connection error");
                     }
                 });
@@ -74,7 +81,7 @@ pub async fn serve(addr: &str, metrics: Metrics) {
 
 // ─── Connection handler ───────────────────────────────────────────────────────
 
-async fn handle_connection(mut stream: TcpStream, metrics: Metrics) -> Result<(), String> {
+async fn handle_connection(mut stream: TcpStream, metrics: Metrics, registry: WebhookRegistry) -> Result<(), String> {
     let mut buf = [0u8; 8192]; // generous for any query string
     let n = stream
         .read(&mut buf)
@@ -86,9 +93,9 @@ async fn handle_connection(mut stream: TcpStream, metrics: Metrics) -> Result<()
     }
 
     let raw = String::from_utf8_lossy(&buf[..n]);
-    let (method, path, query) = parse_request_line(&raw);
+    let (method, path, query, body_str) = parse_request(&raw);
 
-    let (status, content_type, body) = route(method, path, &query, &metrics);
+    let (status, content_type, body) = route(method, path, &query, &body_str, &metrics, &registry);
 
     let response = format!(
         "HTTP/1.1 {status} {reason}\r\n\
@@ -119,7 +126,9 @@ fn route(
     method: &str,
     path: &str,
     query: &HashMap<String, String>,
+    body: &str,
     metrics: &Metrics,
+    registry: &WebhookRegistry,
 ) -> (u16, &'static str, String) {
     match (method, path) {
         ("GET", "/health") => health(),
@@ -127,6 +136,16 @@ fn route(
         ("GET", "/compare") => compare(query),
         ("GET", "/metrics") => prometheus(metrics),
         ("GET", "/metrics/json") => metrics_json(metrics),
+        ("GET", "/webhooks") => webhooks_list(registry),
+        ("POST", "/webhooks/register") => webhooks_register(registry, body),
+        _ if method == "DELETE" && path.starts_with("/webhooks/") => {
+            let id = &path["/webhooks/".len()..];
+            webhooks_deregister(registry, id)
+        }
+        _ if method == "GET" && path.starts_with("/webhooks/") => {
+            let id = &path["/webhooks/".len()..];
+            webhooks_get(registry, id)
+        }
         _ => not_found(),
     }
 }
@@ -220,23 +239,121 @@ fn metrics_json(metrics: &Metrics) -> (u16, &'static str, String) {
     (200, "application/json", metrics.as_json().to_string())
 }
 
+/// GET /webhooks — list all registered webhooks.
+fn webhooks_list(registry: &WebhookRegistry) -> (u16, &'static str, String) {
+    let hooks = registry.list();
+    let body = serde_json::json!({
+        "count": hooks.len(),
+        "active_count": registry.active_count(),
+        "webhooks": hooks,
+    });
+    (200, "application/json", body.to_string())
+}
+
+/// POST /webhooks/register — register a new webhook.
+///
+/// Body: `{ "url": "https://...", "events": ["settlement.complete", "transfer.failed"] }`
+/// Use `"events": ["all"]` to receive every event type.
+fn webhooks_register(registry: &WebhookRegistry, body: &str) -> (u16, &'static str, String) {
+    let parsed: serde_json::Value = match serde_json::from_str(body) {
+        Ok(v) => v,
+        Err(_) => {
+            return (
+                400,
+                "application/json",
+                r#"{"error":"invalid JSON body"}"#.into(),
+            );
+        }
+    };
+
+    let url = match parsed["url"].as_str() {
+        Some(u) if u.starts_with("http://") || u.starts_with("https://") => u.to_string(),
+        Some(_) => {
+            return (
+                400,
+                "application/json",
+                r#"{"error":"url must start with http:// or https://"}"#.into(),
+            );
+        }
+        None => {
+            return (
+                400,
+                "application/json",
+                r#"{"error":"url field required"}"#.into(),
+            );
+        }
+    };
+
+    let events: Vec<EventType> = parsed["events"]
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str())
+                .map(|s| match s {
+                    "transfer.initiated" => EventType::TransferInitiated,
+                    "finality.confirmed" => EventType::FinalityConfirmed,
+                    "proof.generated" => EventType::ProofGenerated,
+                    "settlement.complete" => EventType::SettlementComplete,
+                    "transfer.failed" => EventType::TransferFailed,
+                    _ => EventType::All,
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let reg = registry.register(url, events);
+    (201, "application/json", serde_json::to_string(&reg).unwrap_or_default())
+}
+
+/// DELETE /webhooks/{id} — deregister a webhook.
+fn webhooks_deregister(registry: &WebhookRegistry, id: &str) -> (u16, &'static str, String) {
+    if registry.deregister(id) {
+        let body = serde_json::json!({ "deleted": true, "id": id });
+        (200, "application/json", body.to_string())
+    } else {
+        let body = serde_json::json!({ "error": "webhook not found", "id": id });
+        (404, "application/json", body.to_string())
+    }
+}
+
+/// GET /webhooks/{id} — fetch a single webhook by ID.
+fn webhooks_get(registry: &WebhookRegistry, id: &str) -> (u16, &'static str, String) {
+    match registry.get(id) {
+        Some(reg) => (200, "application/json", serde_json::to_string(&reg).unwrap_or_default()),
+        None => {
+            let body = serde_json::json!({ "error": "webhook not found", "id": id });
+            (404, "application/json", body.to_string())
+        }
+    }
+}
+
 fn not_found() -> (u16, &'static str, String) {
     let body = serde_json::json!({
         "error": "not found",
-        "routes": ["/health", "/quote", "/compare", "/metrics", "/metrics/json"],
+        "routes": [
+            "/health",
+            "/quote",
+            "/compare",
+            "/metrics",
+            "/metrics/json",
+            "/webhooks",
+            "/webhooks/register (POST)",
+            "/webhooks/{id} (GET, DELETE)",
+        ],
     });
     (404, "application/json", body.to_string())
 }
 
 // ─── HTTP helpers ─────────────────────────────────────────────────────────────
 
-fn parse_request_line<'a>(
+/// Parse an HTTP request into (method, path, query_params, body).
+fn parse_request<'a>(
     request: &'a str,
-) -> (&'a str, &'a str, HashMap<String, String>) {
+) -> (&'a str, &'a str, HashMap<String, String>, String) {
     let first_line = request.lines().next().unwrap_or("");
     let parts: Vec<&str> = first_line.splitn(3, ' ').collect();
     if parts.len() < 2 {
-        return ("", "/", HashMap::new());
+        return ("", "/", HashMap::new(), String::new());
     }
     let method = parts[0];
     let full_path = parts.get(1).copied().unwrap_or("/");
@@ -257,7 +374,13 @@ fn parse_request_line<'a>(
         })
         .collect();
 
-    (method, path, query)
+    // Extract HTTP body (after the blank line \r\n\r\n separator)
+    let body = request
+        .find("\r\n\r\n")
+        .map(|pos| request[pos + 4..].trim_end_matches('\0').to_string())
+        .unwrap_or_default();
+
+    (method, path, query, body)
 }
 
 fn reason(status: u16) -> &'static str {
@@ -361,30 +484,87 @@ mod tests {
 
     #[test]
     fn test_not_found_route() {
+        use crate::webhook::WebhookRegistry;
         let q = HashMap::new();
         let m = Metrics::new();
-        let (status, _, body) = route("GET", "/nonexistent", &q, &m);
+        let r = WebhookRegistry::new();
+        let (status, _, body) = route("GET", "/nonexistent", &q, "", &m, &r);
         assert_eq!(status, 404);
         assert!(body.contains("routes"));
     }
 
     #[test]
-    fn test_parse_request_line_no_query() {
-        let (method, path, query) =
-            parse_request_line("GET /health HTTP/1.1\r\nHost: localhost\r\n\r\n");
+    fn test_parse_request_no_query() {
+        let (method, path, query, body) =
+            parse_request("GET /health HTTP/1.1\r\nHost: localhost\r\n\r\n");
         assert_eq!(method, "GET");
         assert_eq!(path, "/health");
         assert!(query.is_empty());
+        assert!(body.is_empty());
     }
 
     #[test]
-    fn test_parse_request_line_with_query() {
-        let (method, path, query) =
-            parse_request_line("GET /quote?usd_cents=100000&gas_gwei=30 HTTP/1.1\r\n");
+    fn test_parse_request_with_query() {
+        let (method, path, query, _) =
+            parse_request("GET /quote?usd_cents=100000&gas_gwei=30 HTTP/1.1\r\n");
         assert_eq!(method, "GET");
         assert_eq!(path, "/quote");
         assert_eq!(query.get("usd_cents"), Some(&"100000".to_string()));
         assert_eq!(query.get("gas_gwei"), Some(&"30".to_string()));
+    }
+
+    #[test]
+    fn test_parse_request_with_body() {
+        let raw = "POST /webhooks/register HTTP/1.1\r\nContent-Type: application/json\r\n\r\n{\"url\":\"https://example.com\"}";
+        let (method, path, _, body) = parse_request(raw);
+        assert_eq!(method, "POST");
+        assert_eq!(path, "/webhooks/register");
+        assert!(body.contains("https://example.com"));
+    }
+
+    #[test]
+    fn test_webhook_register_and_list() {
+        use crate::webhook::WebhookRegistry;
+        let registry = WebhookRegistry::new();
+        // Register a webhook
+        let body = r#"{"url":"https://example.com/hook","events":["settlement.complete"]}"#;
+        let (status, _, resp) = webhooks_register(&registry, body);
+        assert_eq!(status, 201);
+        assert!(resp.contains("https://example.com/hook"));
+
+        // List should show 1
+        let (status, _, list_resp) = webhooks_list(&registry);
+        assert_eq!(status, 200);
+        let v: serde_json::Value = serde_json::from_str(&list_resp).unwrap();
+        assert_eq!(v["count"], 1);
+        assert_eq!(v["active_count"], 1);
+
+        // Invalid URL should fail
+        let bad = r#"{"url":"ftp://bad.com","events":[]}"#;
+        let (status2, _, _) = webhooks_register(&registry, bad);
+        assert_eq!(status2, 400);
+
+        // Missing URL should fail
+        let missing = r#"{"events":["all"]}"#;
+        let (status3, _, _) = webhooks_register(&registry, missing);
+        assert_eq!(status3, 400);
+    }
+
+    #[test]
+    fn test_webhook_deregister() {
+        use crate::webhook::WebhookRegistry;
+        let registry = WebhookRegistry::new();
+
+        let body = r#"{"url":"https://example.com/hook","events":[]}"#;
+        let (_, _, resp) = webhooks_register(&registry, body);
+        let reg: serde_json::Value = serde_json::from_str(&resp).unwrap();
+        let id = reg["id"].as_str().unwrap();
+
+        let (status, _, _) = webhooks_deregister(&registry, id);
+        assert_eq!(status, 200);
+
+        let (status, _, _) = webhooks_deregister(&registry, id);
+        assert_eq!(status, 404);
     }
 
     #[test]

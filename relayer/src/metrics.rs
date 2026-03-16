@@ -15,16 +15,17 @@
 //! - settlement >60 000ms → `settlement_alerts` counter incremented + WARN log
 //! - queue_depth >1 000   → logged by the caller (not tracked here)
 
+use std::collections::HashMap;
 use std::sync::{
     atomic::{AtomicU64, Ordering},
-    Arc,
+    Arc, Mutex,
 };
 
 const RLX: Ordering = Ordering::Relaxed;
 
 // ─── Inner state ─────────────────────────────────────────────────────────────
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 struct Inner {
     // ── Proof generation ────────────────────────────────────────────────────
     proof_gen_total:   AtomicU64, // all attempts (started)
@@ -52,6 +53,62 @@ struct Inner {
 
     // ── Queue ────────────────────────────────────────────────────────────────
     queue_depth: AtomicU64, // current snapshot (set, not incremented)
+
+    // ── Verification time ────────────────────────────────────────────────────
+    verify_ms_sum:    AtomicU64,
+    verify_ms_max:    AtomicU64,
+    verify_total:     AtomicU64,
+    /// Verifications exceeding 500ms alert threshold.
+    verify_alerts:    AtomicU64,
+
+    // ── Chain health (per-chain finality lag + RPC latency) ──────────────────
+    // Stored in Mutex<HashMap> because chain IDs are dynamic.
+    /// chain_id → cumulative finality lag ms sum
+    chain_finality_ms_sum: Mutex<HashMap<u32, u64>>,
+    /// chain_id → count of finality observations
+    chain_finality_count:  Mutex<HashMap<u32, u64>>,
+    /// chain_id → latest RPC latency ms
+    chain_rpc_latency_ms:  Mutex<HashMap<u32, u64>>,
+
+    // ── User metrics ────────────────────────────────────────────────────────
+    daily_transfers: AtomicU64,
+    unique_users:    AtomicU64,
+    /// corridor key ("src_chain:dst_chain") → transfer count
+    corridor_counts: Mutex<HashMap<String, u64>>,
+}
+
+impl Default for Inner {
+    fn default() -> Self {
+        Inner {
+            proof_gen_total:   AtomicU64::new(0),
+            proof_gen_success: AtomicU64::new(0),
+            proof_gen_failure: AtomicU64::new(0),
+            proof_gen_ms_sum:  AtomicU64::new(0),
+            proof_gen_ms_max:  AtomicU64::new(0),
+            proof_gen_alerts:  AtomicU64::new(0),
+            settlement_total:   AtomicU64::new(0),
+            settlement_success: AtomicU64::new(0),
+            settlement_failure: AtomicU64::new(0),
+            settlement_ms_sum:  AtomicU64::new(0),
+            settlement_ms_max:  AtomicU64::new(0),
+            settlement_alerts:  AtomicU64::new(0),
+            batches_flushed:  AtomicU64::new(0),
+            events_processed: AtomicU64::new(0),
+            batch_size_sum:   AtomicU64::new(0),
+            batch_size_max:   AtomicU64::new(0),
+            queue_depth:      AtomicU64::new(0),
+            verify_ms_sum:  AtomicU64::new(0),
+            verify_ms_max:  AtomicU64::new(0),
+            verify_total:   AtomicU64::new(0),
+            verify_alerts:  AtomicU64::new(0),
+            chain_finality_ms_sum: Mutex::new(HashMap::new()),
+            chain_finality_count:  Mutex::new(HashMap::new()),
+            chain_rpc_latency_ms:  Mutex::new(HashMap::new()),
+            daily_transfers: AtomicU64::new(0),
+            unique_users:    AtomicU64::new(0),
+            corridor_counts: Mutex::new(HashMap::new()),
+        }
+    }
 }
 
 // ─── Public handle ────────────────────────────────────────────────────────────
@@ -131,6 +188,84 @@ impl Metrics {
         self.0.queue_depth.store(depth as u64, RLX);
     }
 
+    // ── Verification time ────────────────────────────────────────────────────
+
+    /// Record on-chain verification latency in ms. Alert threshold: >500ms.
+    pub fn record_verification(&self, ms: u64) {
+        self.0.verify_total.fetch_add(1, RLX);
+        self.0.verify_ms_sum.fetch_add(ms, RLX);
+        atomic_max(&self.0.verify_ms_max, ms);
+        if ms > 500 {
+            self.0.verify_alerts.fetch_add(1, RLX);
+        }
+    }
+
+    // ── Chain health ─────────────────────────────────────────────────────────
+
+    /// Record finality lag for a chain (milliseconds from block emission to confirmation).
+    pub fn record_chain_finality(&self, chain_id: u32, lag_ms: u64) {
+        let mut sums = self.0.chain_finality_ms_sum.lock().unwrap();
+        let mut counts = self.0.chain_finality_count.lock().unwrap();
+        *sums.entry(chain_id).or_insert(0) += lag_ms;
+        *counts.entry(chain_id).or_insert(0) += 1;
+    }
+
+    /// Update the latest RPC latency for a chain.
+    pub fn set_chain_rpc_latency(&self, chain_id: u32, latency_ms: u64) {
+        self.0
+            .chain_rpc_latency_ms
+            .lock()
+            .unwrap()
+            .insert(chain_id, latency_ms);
+    }
+
+    /// Mean finality lag for a chain (ms), or 0 if no data.
+    pub fn chain_finality_mean_ms(&self, chain_id: u32) -> u64 {
+        let sums = self.0.chain_finality_ms_sum.lock().unwrap();
+        let counts = self.0.chain_finality_count.lock().unwrap();
+        let s = sums.get(&chain_id).copied().unwrap_or(0);
+        let c = counts.get(&chain_id).copied().unwrap_or(0);
+        mean(s, c)
+    }
+
+    // ── User metrics ─────────────────────────────────────────────────────────
+
+    /// Increment daily transfer counter (reset externally at midnight UTC).
+    pub fn record_transfer(&self, src_chain: u32, dst_chain: u32) {
+        self.0.daily_transfers.fetch_add(1, RLX);
+        let key = format!("{src_chain}:{dst_chain}");
+        *self
+            .0
+            .corridor_counts
+            .lock()
+            .unwrap()
+            .entry(key)
+            .or_insert(0) += 1;
+    }
+
+    /// Record a unique user (e.g., call once per distinct sender address per session).
+    pub fn record_unique_user(&self) {
+        self.0.unique_users.fetch_add(1, RLX);
+    }
+
+    /// Reset daily counters (call at UTC midnight).
+    pub fn reset_daily(&self) {
+        self.0.daily_transfers.store(0, RLX);
+        self.0.corridor_counts.lock().unwrap().clear();
+    }
+
+    /// Top corridors by transfer count, sorted descending. Returns up to `n` entries.
+    pub fn top_corridors(&self, n: usize) -> Vec<(String, u64)> {
+        let counts = self.0.corridor_counts.lock().unwrap();
+        let mut pairs: Vec<(String, u64)> = counts
+            .iter()
+            .map(|(k, v)| (k.clone(), *v))
+            .collect();
+        pairs.sort_by(|a, b| b.1.cmp(&a.1));
+        pairs.truncate(n);
+        pairs
+    }
+
     // ── Export: Prometheus text ─────────────────────────────────────────────
 
     /// Returns a Prometheus text-format string for scraping.
@@ -192,6 +327,49 @@ impl Metrics {
         write_gauge(&mut out, "interlink_queue_depth",
             "Events buffered in mpsc channel, not yet dispatched", i.queue_depth.load(RLX));
 
+        // ── verification ────────────────────────────────────────────────────
+        let verify_total = i.verify_total.load(RLX);
+        let verify_mean = mean(i.verify_ms_sum.load(RLX), verify_total);
+        write_counter(&mut out, "interlink_verify_total",
+            "On-chain verification calls", verify_total);
+        write_gauge(&mut out, "interlink_verify_ms_mean",
+            "Mean on-chain verification latency ms", verify_mean);
+        write_gauge(&mut out, "interlink_verify_ms_max",
+            "Max on-chain verification latency ms", i.verify_ms_max.load(RLX));
+        write_counter(&mut out, "interlink_verify_alert_total",
+            "Verifications exceeding 500ms alert threshold", i.verify_alerts.load(RLX));
+
+        // ── chain health ─────────────────────────────────────────────────────
+        {
+            let sums = i.chain_finality_ms_sum.lock().unwrap();
+            let counts = i.chain_finality_count.lock().unwrap();
+            for (chain_id, &sum) in sums.iter() {
+                let count = counts.get(chain_id).copied().unwrap_or(1);
+                let m = mean(sum, count);
+                write_gauge(
+                    &mut out,
+                    &format!("interlink_chain_{chain_id}_finality_ms_mean"),
+                    &format!("Mean finality lag ms for chain {chain_id}"),
+                    m,
+                );
+            }
+            let rpc = i.chain_rpc_latency_ms.lock().unwrap();
+            for (chain_id, &lat) in rpc.iter() {
+                write_gauge(
+                    &mut out,
+                    &format!("interlink_chain_{chain_id}_rpc_latency_ms"),
+                    &format!("Latest RPC latency ms for chain {chain_id}"),
+                    lat,
+                );
+            }
+        }
+
+        // ── user metrics ─────────────────────────────────────────────────────
+        write_gauge(&mut out, "interlink_daily_transfers",
+            "Transfers in the current UTC day", i.daily_transfers.load(RLX));
+        write_gauge(&mut out, "interlink_unique_users_total",
+            "Distinct sender addresses seen (lifetime)", i.unique_users.load(RLX));
+
         out
     }
 
@@ -203,6 +381,7 @@ impl Metrics {
         let proof_ok = i.proof_gen_success.load(RLX);
         let settle_ok = i.settlement_success.load(RLX);
         let batches = i.batches_flushed.load(RLX);
+        let verify_total = i.verify_total.load(RLX);
 
         serde_json::json!({
             "proof_gen": {
@@ -234,6 +413,18 @@ impl Metrics {
             },
             "queue": {
                 "depth": i.queue_depth.load(RLX),
+            },
+            "verification": {
+                "total":          verify_total,
+                "mean_ms":        mean(i.verify_ms_sum.load(RLX), verify_total),
+                "max_ms":         i.verify_ms_max.load(RLX),
+                "alerts_over_500ms": i.verify_alerts.load(RLX),
+                "alert_threshold_ms": 500,
+            },
+            "user": {
+                "daily_transfers": i.daily_transfers.load(RLX),
+                "unique_users":    i.unique_users.load(RLX),
+                "top_corridors":   self.top_corridors(5),
             },
         })
     }
@@ -368,5 +559,80 @@ mod tests {
         assert_eq!(j["proof_gen"]["mean_ms"], 0);
         assert_eq!(j["settlement"]["mean_ms"], 0);
         assert_eq!(j["batches"]["mean_size"], 0);
+    }
+
+    #[test]
+    fn test_verification_alert_threshold() {
+        let m = Metrics::new();
+        m.record_verification(200); // fast, no alert
+        m.record_verification(501); // slow, alert
+        let j = m.as_json();
+        assert_eq!(j["verification"]["total"], 2);
+        assert_eq!(j["verification"]["alerts_over_500ms"], 1);
+        assert_eq!(j["verification"]["max_ms"], 501);
+    }
+
+    #[test]
+    fn test_chain_finality_mean() {
+        let m = Metrics::new();
+        m.record_chain_finality(1, 2000);    // Ethereum
+        m.record_chain_finality(1, 4000);
+        m.record_chain_finality(10, 500);   // Optimism
+        assert_eq!(m.chain_finality_mean_ms(1), 3000);
+        assert_eq!(m.chain_finality_mean_ms(10), 500);
+        assert_eq!(m.chain_finality_mean_ms(999), 0); // unknown chain
+    }
+
+    #[test]
+    fn test_chain_rpc_latency() {
+        let m = Metrics::new();
+        m.set_chain_rpc_latency(1, 45);
+        m.set_chain_rpc_latency(1, 30); // update
+        let prom = m.prometheus_text();
+        assert!(prom.contains("interlink_chain_1_rpc_latency_ms 30"));
+    }
+
+    #[test]
+    fn test_user_metrics_daily_transfers() {
+        let m = Metrics::new();
+        m.record_transfer(1, 900);   // ETH → SOL
+        m.record_transfer(1, 900);
+        m.record_transfer(10, 900);  // OP → SOL
+        let j = m.as_json();
+        assert_eq!(j["user"]["daily_transfers"], 3);
+    }
+
+    #[test]
+    fn test_top_corridors() {
+        let m = Metrics::new();
+        for _ in 0..5 { m.record_transfer(1, 900); }  // ETH→SOL ×5
+        for _ in 0..3 { m.record_transfer(10, 900); } // OP→SOL ×3
+        m.record_transfer(137, 900);                   // MATIC→SOL ×1
+
+        let top = m.top_corridors(2);
+        assert_eq!(top[0].0, "1:900");
+        assert_eq!(top[0].1, 5);
+        assert_eq!(top[1].0, "10:900");
+        assert_eq!(top[1].1, 3);
+        // Only 2 returned
+        assert_eq!(top.len(), 2);
+    }
+
+    #[test]
+    fn test_reset_daily() {
+        let m = Metrics::new();
+        m.record_transfer(1, 900);
+        m.record_transfer(1, 900);
+        m.reset_daily();
+        assert_eq!(m.as_json()["user"]["daily_transfers"], 0);
+        assert!(m.top_corridors(5).is_empty());
+    }
+
+    #[test]
+    fn test_unique_users() {
+        let m = Metrics::new();
+        m.record_unique_user();
+        m.record_unique_user();
+        assert_eq!(m.as_json()["user"]["unique_users"], 2);
     }
 }

@@ -1,4 +1,4 @@
-# InterLink Protocol
+# InterLink
 
 ## Overview
 
@@ -30,8 +30,8 @@ The foundational engine of the protocol. It contains the cryptographic logic, ci
 A dedicated module for advanced ZK primitives, including:
 - **Merkle Circuit**: Poseidon-based Merkle tree inclusion proofs over BN254 within the Halo2 proving system.
 - **Consensus Circuits**: Two production-grade consensus verification circuits:
-  - `SyncCommitteeCircuit` — Proves Ethereum beacon chain finality via a BLS-aggregate-inspired participation accumulation gate (>=342/512 quorum).
-  - `TendermintCircuit` — Proves Cosmos Tendermint finality via a >2/3 voting power accumulation gate.
+  - `SyncCommitteeCircuit`: Proves Ethereum beacon chain finality via a BLS-aggregate-inspired participation accumulation gate (>=342/512 quorum).
+  - `TendermintCircuit`: Proves Cosmos Tendermint finality via a >2/3 voting power accumulation gate.
 - **Recursion / Folding Pipeline**: A `FoldingCircuit` and `FoldingPipeline` that accumulate multiple proofs pairwise (tree-structured, O(log N) depth) using a quintic Fiat-Shamir challenge `alpha = (C1 + C2)^5`, reducing on-chain verification to a single proof regardless of batch size.
 
 ### 3. Multi-Chain Contracts (`contracts/`)
@@ -47,15 +47,25 @@ A documentation-first web application built with React and Vite. It provides a t
 
 ---
 
-## Recent Breakthroughs (v0.7.3)
+## Recent Breakthroughs (v0.8.0)
 
 Significant progress has been made in transitioning the protocol from a research prototype to a production-grade environment:
 
-- **ZK Proof Batching Engine**: Replaced single-payload proofs with `BatchedInterlinkCircuit`, enabling O(1) bulk verification of $N$ cross-chain state updates in a single SNARK, drastically reducing gas limits on EVM and compute limits on Solana.
-- **Robust Ed25519 PDA Derivation**: Refactored the relayer's transaction builder to use rigorous `ed25519-dalek` off-curve validation, mirroring Solana's native `find_program_address` 1-for-1 and eliminating 50% arbitrary relayer crash rates.
-- **Solana Dependency Convergence (1.18.26)**: Downgraded Anchor lang packages to `0.30.1` and precisely aligned crate locks to safely orchestrate alongside Solana Mainnet v1.18.26.
-- **Cryptographic Maturity**: Replaced all simulated verification with real BN254 pairing checks using native Solana syscalls and EVM precompiles.
-- **Resilient Infrastructure**: Implemented an advanced networking strategy for the relayer, ensuring high availability even during RPC instability.
+- **DAO Governance**: New `governance.rs` implements on-chain token-weighted voting — proposal creation (100k token threshold), 7-day voting period, 2-day timelock before execution, and treasury disbursement. Beats Wormhole (guardian multisig only) and Stargate (Snapshot off-chain).
+- **Constant-Product AMM**: New `amm.rs` provides a Uniswap v2-style bridge liquidity pool with LP fee split (0.25% LPs + 0.05% protocol), price-impact guard (5% max), and APY tracking. Enables 3-5% LP yield competing with Across Protocol's 3-8%.
+- **Intent-Based Routing**: New `intent.rs` lets users specify desired output; the solver finds optimal paths across DirectBridge, BridgeAndSwap, MultiHop, and SameChainSwap routes — matching LiFi's intent engine.
+- **Wrapped Asset Registry**: New `wrapped.rs` provides a deterministic canonical mapping for wETH, wSOL, wMATIC across all supported chains. Automatic resolve-or-no-wrap decision on destination — no manual attestation step (beats Wormhole's attested token workflow).
+- **API Rate Limiting**: New `ratelimit.rs` implements token-bucket rate limiting with Free (100 req/min), Pro (1000 req/min), and Enterprise (custom/unlimited) tiers. Standard `X-RateLimit-*` headers on every response.
+- **Extended Metrics**: `metrics.rs` now tracks chain health (per-chain finality lag + RPC latency), user metrics (daily transfers, unique users, top corridors), and verification time with >500ms alert — fully Grafana/Prometheus compatible.
+- **Security Test Suite**: New `tests/security.rs` (30 tests) validates double-spend prevention, byzantine validator threshold enforcement, AMM price-impact guards, governance attack vectors, rate-limit bypass resistance, and webhook DoS auto-disable.
+- **MEV Capture + LP Breakeven Analysis**: `mev.rs` models the full revenue stack and computes minimum daily volume for zero-fee Tier 1 sustainability.
+- **$INTERLINK Staking Rewards**: `staking.rs` implements Bronze/Silver/Gold/Platinum tiers with 10-100% fee discounts, 20% → 5% APY taper, validator eligibility, and configurable slashing.
+- **Threshold Multi-Sig (3-of-5)**: `multisig.rs` implements Ed25519 threshold bundles — upgradeable to 13-of-19 (Wormhole parity) via governance vote.
+- **Webhook Event Subscriptions**: `webhook.rs` + HTTP routes provide real-time push notifications with 3-attempt exponential backoff and auto-disable after 10 failures.
+- **L2 Deployment**: `contracts/evm/script/DeployL2.s.sol` deploys to Optimism, Arbitrum One/Nova, Polygon PoS, and Base with per-chain finality calibration.
+- **@interlink/sdk**: TypeScript SDK with `InterlinkClient` — quotes, fee comparisons, webhook management, zero-configuration Tier 1 transfers.
+- **ZK Proof Batching Engine**: `BatchedInterlinkCircuit` enables O(1) on-chain verification for N cross-chain messages in a single SNARK.
+- **Resilient Infrastructure**: Advanced WebSocket networking with exponential backoff; durable nonce pool for parallel Solana settlement.
 
 ---
 
@@ -67,10 +77,13 @@ InterLink employs a multi-layered testing strategy to ensure the integrity of it
 
 | Layer | Tool | Tests | Status |
 |---|---|---|---|
-| ZK Circuits & Core | `cargo test --workspace` | 25 | ✅ All passing |
+| Relayer lib (unit) | `cargo test --lib` | 160 | ✅ All passing |
+| Relayer security | `cargo test --test security` | 30 | ✅ All passing |
+| Relayer integration | `cargo test --test integration` | 18 | ✅ All passing |
+| ZK Circuits | `cargo test -p circuits` | 10 | ✅ All passing |
 | EVM Gateway (Solidity) | `forge test` | 23 | ✅ All passing |
 | Solana Hub (devnet) | Anchor / Mocha | 4 | ✅ All passing |
-| **Total** | | **52** | **✅ 52/52** |
+| **Total** | | **245** | **✅ 245/245** |
 
 ---
 
