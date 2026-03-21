@@ -1,0 +1,264 @@
+name: Daily Security Builds
+
+on:
+  schedule:
+    - cron: "0 4 * * *" # 04:00 UTC every day
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  security-events: write
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  # ── 1. Audit known CVEs via RustSec advisory database ──────────────────────
+  audit:
+    name: Security Audit (cargo-audit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+
+      - name: Run cargo audit
+        id: audit
+        run: |
+          cargo audit --json > audit-report.json 2>&1 || true
+          cargo audit 2>&1 | tee audit-output.txt || true
+
+      - name: Write audit results to step summary
+        if: always()
+        run: |
+          echo "## Security Audit Report – $(date -u +%Y-%m-%d)" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          cat audit-output.txt >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload audit JSON report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: audit-report
+          path: audit-report.json
+          retention-days: 90
+
+      - name: Fail on vulnerabilities
+        run: cargo audit
+
+  # ── 2. Policy enforcement: licenses, bans, advisories ─────────────────────
+  deny:
+    name: Dependency Policy (cargo-deny)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-deny
+        run: cargo install cargo-deny --locked
+
+      - name: Check deny policies
+        run: |
+          if [ -f deny.toml ]; then
+            cargo deny check
+          else
+            # Sensible defaults when no deny.toml exists yet
+            cargo deny check advisories licenses bans --config /dev/stdin <<'DENYEOF'
+          [advisories]
+          db-path = "~/.cargo/advisory-db"
+          db-urls = ["https://github.com/rustsec/advisory-db"]
+          vulnerability = "deny"
+          unmaintained = "warn"
+          yanked = "warn"
+          notice = "warn"
+
+          [licenses]
+          unlicensed = "deny"
+          allow = [
+            "MIT", "Apache-2.0", "Apache-2.0 WITH LLVM-exception",
+            "BSD-2-Clause", "BSD-3-Clause", "ISC", "Unicode-DFS-2016",
+            "CC0-1.0", "MPL-2.0", "OpenSSL", "Zlib"
+          ]
+
+          [bans]
+          multiple-versions = "warn"
+
+          [sources]
+          unknown-registry = "deny"
+          unknown-git = "warn"
+          DENYEOF
+          fi
+
+  # ── 3. Detect outdated dependencies ───────────────────────────────────────
+  outdated:
+    name: Outdated Dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-outdated
+        run: cargo install cargo-outdated --locked
+
+      - name: Check for outdated deps
+        run: |
+          cargo outdated --workspace --depth 1 2>&1 | tee outdated-report.txt || true
+
+      - name: Post outdated summary
+        if: always()
+        run: |
+          echo "## Outdated Dependencies – $(date -u +%Y-%m-%d)" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          cat outdated-report.txt >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload outdated report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: outdated-report
+          path: outdated-report.txt
+          retention-days: 30
+
+  # ── 4. Patch-level auto-update and push ───────────────────────────────────
+  patch-update:
+    name: Patch-level Lockfile Update
+    runs-on: ubuntu-latest
+    needs: [audit, deny]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Apply patch-level updates
+        run: cargo update
+
+      - name: Check if Cargo.lock changed
+        id: lockfile
+        run: |
+          if git diff --quiet Cargo.lock; then
+            echo "changed=false" >> $GITHUB_OUTPUT
+          else
+            echo "changed=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Run audit on updated lockfile
+        if: steps.lockfile.outputs.changed == 'true'
+        run: cargo install cargo-audit --locked && cargo audit
+
+      - name: Run full build on updated lockfile
+        if: steps.lockfile.outputs.changed == 'true'
+        run: cargo build --workspace
+
+      - name: Commit and push updated Cargo.lock
+        if: steps.lockfile.outputs.changed == 'true'
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Cargo.lock
+          git commit -m "chore(deps): daily patch-level lockfile update $(date -u +%Y-%m-%d)"
+          git push origin main
+
+  # ── 5. SARIF upload for GitHub Security tab ───────────────────────────────
+  sarif:
+    name: Upload SARIF Security Report
+    runs-on: ubuntu-latest
+    needs: audit
+    if: always()
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+
+      - name: Generate SARIF report
+        run: |
+          cargo audit --json 2>/dev/null \
+            | python3 - <<'PYEOF'
+          import json, sys, datetime
+
+          raw = sys.stdin.read()
+          try:
+              data = json.loads(raw)
+          except Exception:
+              data = {}
+
+          vulns = data.get("vulnerabilities", {}).get("list", [])
+
+          results = []
+          for v in vulns:
+              adv = v.get("advisory", {})
+              pkg = v.get("package", {})
+              results.append({
+                  "ruleId": adv.get("id", "RUSTSEC-UNKNOWN"),
+                  "level": "error",
+                  "message": {"text": adv.get("title", "Unknown vulnerability")},
+                  "locations": [{
+                      "physicalLocation": {
+                          "artifactLocation": {"uri": "Cargo.lock"},
+                          "region": {"startLine": 1}
+                      },
+                      "logicalLocations": [{
+                          "name": pkg.get("name", "unknown"),
+                          "kind": "package"
+                      }]
+                  }],
+                  "properties": {
+                      "package": pkg.get("name", ""),
+                      "version": pkg.get("version", ""),
+                      "url": adv.get("url", "")
+                  }
+              })
+
+          sarif = {
+              "version": "2.1.0",
+              "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+              "runs": [{
+                  "tool": {
+                      "driver": {
+                          "name": "cargo-audit",
+                          "version": "latest",
+                          "informationUri": "https://rustsec.org",
+                          "rules": []
+                      }
+                  },
+                  "results": results,
+                  "invocations": [{
+                      "executionSuccessful": True,
+                      "endTimeUtc": datetime.datetime.utcnow().isoformat() + "Z"
+                  }]
+              }]
+          }
+
+          with open("audit.sarif", "w") as f:
+              json.dump(sarif, f, indent=2)
+
+          print(f"SARIF written with {len(results)} finding(s).")
+          PYEOF
+
+      - name: Upload SARIF to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: audit.sarif
+          category: cargo-audit
