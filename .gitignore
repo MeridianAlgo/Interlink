@@ -9,3 +9,10 @@ Cargo.lock
 .claude/
 .env
 *.log
+
+# Foundry build artifacts
+contracts/evm/out/
+contracts/evm/cache/
+
+# Node dependencies
+node_modules/
