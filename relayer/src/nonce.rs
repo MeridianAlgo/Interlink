@@ -245,11 +245,8 @@ mod tests {
     async fn test_empty_pool_blocks_until_timeout() {
         let pool = DurableNoncePool::new(2);
         // No nonces added → semaphore has 0 permits.
-        let result = tokio::time::timeout(
-            tokio::time::Duration::from_millis(20),
-            pool.acquire(),
-        )
-        .await;
+        let result =
+            tokio::time::timeout(tokio::time::Duration::from_millis(20), pool.acquire()).await;
         assert!(result.is_err(), "empty pool must block, not return None");
     }
 
@@ -257,7 +254,8 @@ mod tests {
     async fn test_exhaustion_alert_below_threshold() {
         let pool = DurableNoncePool::new(10);
         // 1 nonce → threshold = max(10/10, 1) = 1, avail=1 not < 1 → no alert
-        pool.add_nonce(DurableNonce::new("K1", "/dev/null", "0".repeat(64))).await;
+        pool.add_nonce(DurableNonce::new("K1", "/dev/null", "0".repeat(64)))
+            .await;
         assert!(!pool.check_exhaustion_alert().await);
 
         // Acquire the only nonce → avail=0 < threshold=1 → alert

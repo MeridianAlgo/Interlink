@@ -252,7 +252,8 @@ pub fn solve(intent: &IntentRequest, now_secs: u64) -> Result<IntentQuote, Inten
 
     let protocol_fee_bps = FeeTier::from_usd_cents(
         (intent.amount_in / 1_000_000_000_000u128) as u64 * 3, // rough USD estimate
-    ).bps();
+    )
+    .bps();
 
     let quote_id = format!("quote_{now_secs}_{}", intent.amount_in % 10_000);
 
@@ -267,8 +268,7 @@ pub fn solve(intent: &IntentRequest, now_secs: u64) -> Result<IntentQuote, Inten
         protocol_fee_bps,
         estimated_secs: best.total_secs,
         expires_at: now_secs + INTENT_EXPIRY_SECS,
-        interlink_wins: best.route_type == RouteType::DirectBridge
-            || best.total_fee_bps <= 10, // beats Wormhole's 10 bps
+        interlink_wins: best.route_type == RouteType::DirectBridge || best.total_fee_bps <= 10, // beats Wormhole's 10 bps
     })
 }
 
@@ -303,12 +303,9 @@ fn generate_routes(intent: &IntentRequest) -> Vec<IntentRoute> {
 
 fn build_direct_bridge_route(intent: &IntentRequest) -> IntentRoute {
     // InterLink ZK bridge: 30s finality, 0-5 bps fee
-    let fee_bps = FeeTier::from_usd_cents(
-        (intent.amount_in / 1_000_000_000_000u128) as u64 * 3
-    ).bps();
-    let amount_out = intent.amount_in
-        .saturating_mul(10_000 - fee_bps as u128)
-        / 10_000;
+    let fee_bps =
+        FeeTier::from_usd_cents((intent.amount_in / 1_000_000_000_000u128) as u64 * 3).bps();
+    let amount_out = intent.amount_in.saturating_mul(10_000 - fee_bps as u128) / 10_000;
 
     IntentRoute {
         hops: vec![RouteHop {
@@ -333,10 +330,10 @@ fn build_direct_bridge_route(intent: &IntentRequest) -> IntentRoute {
 
 fn build_bridge_and_swap_route(intent: &IntentRequest) -> IntentRoute {
     // Step 1: Bridge input token to destination chain (30s, 0-5 bps)
-    let bridge_fee_bps = FeeTier::from_usd_cents(
-        (intent.amount_in / 1_000_000_000_000u128) as u64 * 3
-    ).bps();
-    let after_bridge = intent.amount_in
+    let bridge_fee_bps =
+        FeeTier::from_usd_cents((intent.amount_in / 1_000_000_000_000u128) as u64 * 3).bps();
+    let after_bridge = intent
+        .amount_in
         .saturating_mul(10_000 - bridge_fee_bps as u128)
         / 10_000;
 
@@ -386,7 +383,8 @@ fn build_bridge_and_swap_route(intent: &IntentRequest) -> IntentRoute {
 
 fn build_same_chain_swap_route(intent: &IntentRequest) -> IntentRoute {
     let swap_fee_bps = 30u32;
-    let amount_out = intent.amount_in
+    let amount_out = intent
+        .amount_in
         .saturating_mul(10_000 - swap_fee_bps as u128)
         / 10_000;
 
@@ -418,18 +416,16 @@ fn build_multihop_route(intent: &IntentRequest) -> Option<IntentRoute> {
     }
 
     // Intermediate: bridge via ETH as common token
-    let bridge_fee_bps = FeeTier::from_usd_cents(
-        (intent.amount_in / 1_000_000_000_000u128) as u64 * 3
-    ).bps();
-    let after_hop1 = intent.amount_in
+    let bridge_fee_bps =
+        FeeTier::from_usd_cents((intent.amount_in / 1_000_000_000_000u128) as u64 * 3).bps();
+    let after_hop1 = intent
+        .amount_in
         .saturating_mul(10_000 - bridge_fee_bps as u128)
         / 10_000;
     let after_hop2 = after_hop1
         .saturating_mul(10_000 - 25u128)   // 0.25% DEX fee
         / 10_000;
-    let after_hop3 = after_hop2
-        .saturating_mul(10_000 - bridge_fee_bps as u128)
-        / 10_000;
+    let after_hop3 = after_hop2.saturating_mul(10_000 - bridge_fee_bps as u128) / 10_000;
 
     Some(IntentRoute {
         hops: vec![
@@ -513,15 +509,17 @@ impl std::fmt::Display for IntentError {
 mod tests {
     use super::*;
 
-    fn now() -> u64 { 1_700_000_000 }
+    fn now() -> u64 {
+        1_700_000_000
+    }
 
     fn bridge_intent() -> IntentRequest {
         IntentRequest {
             token_in: [0xAA; 20],
-            chain_in: 1,  // Ethereum
-            amount_in: 1_000_000_000_000_000_000u128, // 1 ETH
-            token_out: [0xAA; 20],  // same token
-            chain_out: 900, // Solana
+            chain_in: 1,                                 // Ethereum
+            amount_in: 1_000_000_000_000_000_000u128,    // 1 ETH
+            token_out: [0xAA; 20],                       // same token
+            chain_out: 900,                              // Solana
             min_amount_out: 900_000_000_000_000_000u128, // 0.9 ETH min
             recipient: vec![0xBB; 32],
             deadline: now() + 600,
@@ -531,7 +529,7 @@ mod tests {
 
     fn swap_intent() -> IntentRequest {
         IntentRequest {
-            token_in: [0xAA; 20],  // ETH
+            token_in: [0xAA; 20], // ETH
             chain_in: 1,
             amount_in: 1_000_000_000_000_000_000u128,
             token_out: [0xBB; 20], // USDC
@@ -594,10 +592,16 @@ mod tests {
     #[test]
     fn test_direct_transfer_detection() {
         let intent = bridge_intent();
-        assert!(intent.is_direct_transfer(), "same token different chain = direct transfer");
+        assert!(
+            intent.is_direct_transfer(),
+            "same token different chain = direct transfer"
+        );
 
         let swap = swap_intent();
-        assert!(!swap.is_direct_transfer(), "different token = not direct transfer");
+        assert!(
+            !swap.is_direct_transfer(),
+            "different token = not direct transfer"
+        );
     }
 
     #[test]
@@ -628,7 +632,10 @@ mod tests {
         // Wormhole charges 10 bps ($1 flat). InterLink Tier 1 = 0 bps.
         let intent = bridge_intent();
         let quote = solve(&intent, now()).unwrap();
-        assert!(quote.fee_bps <= 10, "InterLink must match or beat Wormhole 10 bps");
+        assert!(
+            quote.fee_bps <= 10,
+            "InterLink must match or beat Wormhole 10 bps"
+        );
     }
 
     #[test]

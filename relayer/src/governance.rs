@@ -8,7 +8,6 @@
 ///   - Stargate: STG token voting via Snapshot (off-chain)
 ///   - Across: UMA Optimistic Oracle governance
 ///   - InterLink: on-chain weighted voting + timelock (beats all three)
-
 use std::collections::HashMap;
 
 // ─── Token Supply ───────────────────────────────────────────────────────────
@@ -183,8 +182,7 @@ impl Treasury {
             });
         }
         self.balance_tokens -= amount;
-        self.history
-            .push((recipient.into(), amount, reason.into()));
+        self.history.push((recipient.into(), amount, reason.into()));
         Ok(())
     }
 }
@@ -272,15 +270,20 @@ impl Governance {
                 proposal.votes_abstain = proposal.votes_abstain.saturating_add(weight)
             }
         }
-        self.votes
-            .get_mut(&proposal_id)
-            .unwrap()
-            .push(Vote { voter, weight, choice });
+        self.votes.get_mut(&proposal_id).unwrap().push(Vote {
+            voter,
+            weight,
+            choice,
+        });
         Ok(())
     }
 
     /// Finalize a proposal after its voting period.
-    pub fn finalize(&mut self, proposal_id: u64, now: u64) -> Result<ProposalStatus, GovernanceError> {
+    pub fn finalize(
+        &mut self,
+        proposal_id: u64,
+        now: u64,
+    ) -> Result<ProposalStatus, GovernanceError> {
         let proposal = self
             .proposals
             .get_mut(&proposal_id)
@@ -366,10 +369,7 @@ mod tests {
 
     #[test]
     fn test_token_supply_constants() {
-        assert_eq!(
-            COMMUNITY_ALLOC + TEAM_ALLOC + TREASURY_ALLOC,
-            TOTAL_SUPPLY
-        );
+        assert_eq!(COMMUNITY_ALLOC + TEAM_ALLOC + TREASURY_ALLOC, TOTAL_SUPPLY);
     }
 
     #[test]
@@ -479,8 +479,10 @@ mod tests {
             .propose(ProposalKind::UpdateFees, "t", "d", "x", 200_000, now)
             .unwrap();
         // Enough votes to pass quorum + majority
-        g.vote(id, "a", 30_000_000, VoteChoice::For, now + 1).unwrap();
-        g.vote(id, "b", 15_000_000, VoteChoice::For, now + 2).unwrap();
+        g.vote(id, "a", 30_000_000, VoteChoice::For, now + 1)
+            .unwrap();
+        g.vote(id, "b", 15_000_000, VoteChoice::For, now + 2)
+            .unwrap();
 
         let status = g.finalize(id, now + VOTING_PERIOD_SECS + 1).unwrap();
         assert_eq!(status, ProposalStatus::Succeeded);
@@ -503,7 +505,8 @@ mod tests {
     #[test]
     fn test_treasury_disburse() {
         let mut t = Treasury::new(1_000_000);
-        t.disburse("auditor", 500_000, "Trail of Bits audit").unwrap();
+        t.disburse("auditor", 500_000, "Trail of Bits audit")
+            .unwrap();
         assert_eq!(t.balance_tokens, 500_000);
         assert_eq!(t.history.len(), 1);
     }

@@ -28,51 +28,51 @@ const RLX: Ordering = Ordering::Relaxed;
 #[derive(Debug)]
 struct Inner {
     // ── Proof generation ────────────────────────────────────────────────────
-    proof_gen_total:   AtomicU64, // all attempts (started)
+    proof_gen_total: AtomicU64, // all attempts (started)
     proof_gen_success: AtomicU64,
     proof_gen_failure: AtomicU64,
-    proof_gen_ms_sum:  AtomicU64, // sum → mean = sum / success
-    proof_gen_ms_max:  AtomicU64,
+    proof_gen_ms_sum: AtomicU64, // sum → mean = sum / success
+    proof_gen_ms_max: AtomicU64,
     /// Count of proofs exceeding 1 000ms alert threshold.
-    proof_gen_alerts:  AtomicU64,
+    proof_gen_alerts: AtomicU64,
 
     // ── Settlement (end-to-end: finality + proof + submission) ──────────────
-    settlement_total:   AtomicU64,
+    settlement_total: AtomicU64,
     settlement_success: AtomicU64,
     settlement_failure: AtomicU64,
-    settlement_ms_sum:  AtomicU64,
-    settlement_ms_max:  AtomicU64,
+    settlement_ms_sum: AtomicU64,
+    settlement_ms_max: AtomicU64,
     /// Settlements exceeding 60 000ms SLA threshold.
-    settlement_alerts:  AtomicU64,
+    settlement_alerts: AtomicU64,
 
     // ── Batch pipeline ───────────────────────────────────────────────────────
-    batches_flushed:  AtomicU64, // total flushes (size+timer)
+    batches_flushed: AtomicU64,  // total flushes (size+timer)
     events_processed: AtomicU64, // total events across all batches
-    batch_size_sum:   AtomicU64, // sum → mean = sum / batches_flushed
-    batch_size_max:   AtomicU64,
+    batch_size_sum: AtomicU64,   // sum → mean = sum / batches_flushed
+    batch_size_max: AtomicU64,
 
     // ── Queue ────────────────────────────────────────────────────────────────
     queue_depth: AtomicU64, // current snapshot (set, not incremented)
 
     // ── Verification time ────────────────────────────────────────────────────
-    verify_ms_sum:    AtomicU64,
-    verify_ms_max:    AtomicU64,
-    verify_total:     AtomicU64,
+    verify_ms_sum: AtomicU64,
+    verify_ms_max: AtomicU64,
+    verify_total: AtomicU64,
     /// Verifications exceeding 500ms alert threshold.
-    verify_alerts:    AtomicU64,
+    verify_alerts: AtomicU64,
 
     // ── Chain health (per-chain finality lag + RPC latency) ──────────────────
     // Stored in Mutex<HashMap> because chain IDs are dynamic.
     /// chain_id → cumulative finality lag ms sum
     chain_finality_ms_sum: Mutex<HashMap<u32, u64>>,
     /// chain_id → count of finality observations
-    chain_finality_count:  Mutex<HashMap<u32, u64>>,
+    chain_finality_count: Mutex<HashMap<u32, u64>>,
     /// chain_id → latest RPC latency ms
-    chain_rpc_latency_ms:  Mutex<HashMap<u32, u64>>,
+    chain_rpc_latency_ms: Mutex<HashMap<u32, u64>>,
 
     // ── User metrics ────────────────────────────────────────────────────────
     daily_transfers: AtomicU64,
-    unique_users:    AtomicU64,
+    unique_users: AtomicU64,
     /// corridor key ("src_chain:dst_chain") → transfer count
     corridor_counts: Mutex<HashMap<String, u64>>,
 }
@@ -80,32 +80,32 @@ struct Inner {
 impl Default for Inner {
     fn default() -> Self {
         Inner {
-            proof_gen_total:   AtomicU64::new(0),
+            proof_gen_total: AtomicU64::new(0),
             proof_gen_success: AtomicU64::new(0),
             proof_gen_failure: AtomicU64::new(0),
-            proof_gen_ms_sum:  AtomicU64::new(0),
-            proof_gen_ms_max:  AtomicU64::new(0),
-            proof_gen_alerts:  AtomicU64::new(0),
-            settlement_total:   AtomicU64::new(0),
+            proof_gen_ms_sum: AtomicU64::new(0),
+            proof_gen_ms_max: AtomicU64::new(0),
+            proof_gen_alerts: AtomicU64::new(0),
+            settlement_total: AtomicU64::new(0),
             settlement_success: AtomicU64::new(0),
             settlement_failure: AtomicU64::new(0),
-            settlement_ms_sum:  AtomicU64::new(0),
-            settlement_ms_max:  AtomicU64::new(0),
-            settlement_alerts:  AtomicU64::new(0),
-            batches_flushed:  AtomicU64::new(0),
+            settlement_ms_sum: AtomicU64::new(0),
+            settlement_ms_max: AtomicU64::new(0),
+            settlement_alerts: AtomicU64::new(0),
+            batches_flushed: AtomicU64::new(0),
             events_processed: AtomicU64::new(0),
-            batch_size_sum:   AtomicU64::new(0),
-            batch_size_max:   AtomicU64::new(0),
-            queue_depth:      AtomicU64::new(0),
-            verify_ms_sum:  AtomicU64::new(0),
-            verify_ms_max:  AtomicU64::new(0),
-            verify_total:   AtomicU64::new(0),
-            verify_alerts:  AtomicU64::new(0),
+            batch_size_sum: AtomicU64::new(0),
+            batch_size_max: AtomicU64::new(0),
+            queue_depth: AtomicU64::new(0),
+            verify_ms_sum: AtomicU64::new(0),
+            verify_ms_max: AtomicU64::new(0),
+            verify_total: AtomicU64::new(0),
+            verify_alerts: AtomicU64::new(0),
             chain_finality_ms_sum: Mutex::new(HashMap::new()),
-            chain_finality_count:  Mutex::new(HashMap::new()),
-            chain_rpc_latency_ms:  Mutex::new(HashMap::new()),
+            chain_finality_count: Mutex::new(HashMap::new()),
+            chain_rpc_latency_ms: Mutex::new(HashMap::new()),
             daily_transfers: AtomicU64::new(0),
-            unique_users:    AtomicU64::new(0),
+            unique_users: AtomicU64::new(0),
             corridor_counts: Mutex::new(HashMap::new()),
         }
     }
@@ -257,10 +257,7 @@ impl Metrics {
     /// Top corridors by transfer count, sorted descending. Returns up to `n` entries.
     pub fn top_corridors(&self, n: usize) -> Vec<(String, u64)> {
         let counts = self.0.corridor_counts.lock().unwrap();
-        let mut pairs: Vec<(String, u64)> = counts
-            .iter()
-            .map(|(k, v)| (k.clone(), *v))
-            .collect();
+        let mut pairs: Vec<(String, u64)> = counts.iter().map(|(k, v)| (k.clone(), *v)).collect();
         pairs.sort_by(|a, b| b.1.cmp(&a.1));
         pairs.truncate(n);
         pairs
@@ -286,58 +283,142 @@ impl Metrics {
         let batch_mean = mean(i.batch_size_sum.load(RLX), batches);
 
         // ── proof_gen ───────────────────────────────────────────────────────
-        write_counter(&mut out, "interlink_proof_gen_total",
-            "Total proof generation attempts", i.proof_gen_total.load(RLX));
-        write_counter(&mut out, "interlink_proof_gen_success_total",
-            "Successful proof generations", proof_ok);
-        write_counter(&mut out, "interlink_proof_gen_failure_total",
-            "Failed proof generations", i.proof_gen_failure.load(RLX));
-        write_gauge(&mut out, "interlink_proof_gen_ms_mean",
-            "Mean proof gen time ms — target <100 vs Wormhole 300+", proof_mean);
-        write_gauge(&mut out, "interlink_proof_gen_ms_max",
-            "Max proof gen time ms seen", i.proof_gen_ms_max.load(RLX));
-        write_counter(&mut out, "interlink_proof_gen_alert_total",
-            "Proofs exceeding 1000ms alert threshold", i.proof_gen_alerts.load(RLX));
+        write_counter(
+            &mut out,
+            "interlink_proof_gen_total",
+            "Total proof generation attempts",
+            i.proof_gen_total.load(RLX),
+        );
+        write_counter(
+            &mut out,
+            "interlink_proof_gen_success_total",
+            "Successful proof generations",
+            proof_ok,
+        );
+        write_counter(
+            &mut out,
+            "interlink_proof_gen_failure_total",
+            "Failed proof generations",
+            i.proof_gen_failure.load(RLX),
+        );
+        write_gauge(
+            &mut out,
+            "interlink_proof_gen_ms_mean",
+            "Mean proof gen time ms — target <100 vs Wormhole 300+",
+            proof_mean,
+        );
+        write_gauge(
+            &mut out,
+            "interlink_proof_gen_ms_max",
+            "Max proof gen time ms seen",
+            i.proof_gen_ms_max.load(RLX),
+        );
+        write_counter(
+            &mut out,
+            "interlink_proof_gen_alert_total",
+            "Proofs exceeding 1000ms alert threshold",
+            i.proof_gen_alerts.load(RLX),
+        );
 
         // ── settlement ──────────────────────────────────────────────────────
-        write_counter(&mut out, "interlink_settlement_total",
-            "Total settlement pipeline attempts", i.settlement_total.load(RLX));
-        write_counter(&mut out, "interlink_settlement_success_total",
-            "Successful end-to-end settlements", settle_ok);
-        write_counter(&mut out, "interlink_settlement_failure_total",
-            "Failed settlements", i.settlement_failure.load(RLX));
-        write_gauge(&mut out, "interlink_settlement_ms_mean",
-            "Mean settlement ms — target <30000 vs Wormhole 120000+", settle_mean);
-        write_gauge(&mut out, "interlink_settlement_ms_max",
-            "Max settlement ms seen", i.settlement_ms_max.load(RLX));
-        write_counter(&mut out, "interlink_settlement_sla_breach_total",
-            "Settlements exceeding 60s SLA", i.settlement_alerts.load(RLX));
+        write_counter(
+            &mut out,
+            "interlink_settlement_total",
+            "Total settlement pipeline attempts",
+            i.settlement_total.load(RLX),
+        );
+        write_counter(
+            &mut out,
+            "interlink_settlement_success_total",
+            "Successful end-to-end settlements",
+            settle_ok,
+        );
+        write_counter(
+            &mut out,
+            "interlink_settlement_failure_total",
+            "Failed settlements",
+            i.settlement_failure.load(RLX),
+        );
+        write_gauge(
+            &mut out,
+            "interlink_settlement_ms_mean",
+            "Mean settlement ms — target <30000 vs Wormhole 120000+",
+            settle_mean,
+        );
+        write_gauge(
+            &mut out,
+            "interlink_settlement_ms_max",
+            "Max settlement ms seen",
+            i.settlement_ms_max.load(RLX),
+        );
+        write_counter(
+            &mut out,
+            "interlink_settlement_sla_breach_total",
+            "Settlements exceeding 60s SLA",
+            i.settlement_alerts.load(RLX),
+        );
 
         // ── batch ───────────────────────────────────────────────────────────
-        write_counter(&mut out, "interlink_batches_flushed_total",
-            "Total batches dispatched to proof pipeline", batches);
-        write_counter(&mut out, "interlink_events_processed_total",
-            "Total events processed across all batches", i.events_processed.load(RLX));
-        write_gauge(&mut out, "interlink_batch_size_mean",
-            "Mean events per batch — target 100-1000 vs Wormhole 1-20", batch_mean);
-        write_gauge(&mut out, "interlink_batch_size_max",
-            "Largest single batch seen", i.batch_size_max.load(RLX));
+        write_counter(
+            &mut out,
+            "interlink_batches_flushed_total",
+            "Total batches dispatched to proof pipeline",
+            batches,
+        );
+        write_counter(
+            &mut out,
+            "interlink_events_processed_total",
+            "Total events processed across all batches",
+            i.events_processed.load(RLX),
+        );
+        write_gauge(
+            &mut out,
+            "interlink_batch_size_mean",
+            "Mean events per batch — target 100-1000 vs Wormhole 1-20",
+            batch_mean,
+        );
+        write_gauge(
+            &mut out,
+            "interlink_batch_size_max",
+            "Largest single batch seen",
+            i.batch_size_max.load(RLX),
+        );
 
         // ── queue ───────────────────────────────────────────────────────────
-        write_gauge(&mut out, "interlink_queue_depth",
-            "Events buffered in mpsc channel, not yet dispatched", i.queue_depth.load(RLX));
+        write_gauge(
+            &mut out,
+            "interlink_queue_depth",
+            "Events buffered in mpsc channel, not yet dispatched",
+            i.queue_depth.load(RLX),
+        );
 
         // ── verification ────────────────────────────────────────────────────
         let verify_total = i.verify_total.load(RLX);
         let verify_mean = mean(i.verify_ms_sum.load(RLX), verify_total);
-        write_counter(&mut out, "interlink_verify_total",
-            "On-chain verification calls", verify_total);
-        write_gauge(&mut out, "interlink_verify_ms_mean",
-            "Mean on-chain verification latency ms", verify_mean);
-        write_gauge(&mut out, "interlink_verify_ms_max",
-            "Max on-chain verification latency ms", i.verify_ms_max.load(RLX));
-        write_counter(&mut out, "interlink_verify_alert_total",
-            "Verifications exceeding 500ms alert threshold", i.verify_alerts.load(RLX));
+        write_counter(
+            &mut out,
+            "interlink_verify_total",
+            "On-chain verification calls",
+            verify_total,
+        );
+        write_gauge(
+            &mut out,
+            "interlink_verify_ms_mean",
+            "Mean on-chain verification latency ms",
+            verify_mean,
+        );
+        write_gauge(
+            &mut out,
+            "interlink_verify_ms_max",
+            "Max on-chain verification latency ms",
+            i.verify_ms_max.load(RLX),
+        );
+        write_counter(
+            &mut out,
+            "interlink_verify_alert_total",
+            "Verifications exceeding 500ms alert threshold",
+            i.verify_alerts.load(RLX),
+        );
 
         // ── chain health ─────────────────────────────────────────────────────
         {
@@ -365,10 +446,18 @@ impl Metrics {
         }
 
         // ── user metrics ─────────────────────────────────────────────────────
-        write_gauge(&mut out, "interlink_daily_transfers",
-            "Transfers in the current UTC day", i.daily_transfers.load(RLX));
-        write_gauge(&mut out, "interlink_unique_users_total",
-            "Distinct sender addresses seen (lifetime)", i.unique_users.load(RLX));
+        write_gauge(
+            &mut out,
+            "interlink_daily_transfers",
+            "Transfers in the current UTC day",
+            i.daily_transfers.load(RLX),
+        );
+        write_gauge(
+            &mut out,
+            "interlink_unique_users_total",
+            "Distinct sender addresses seen (lifetime)",
+            i.unique_users.load(RLX),
+        );
 
         out
     }
@@ -443,7 +532,11 @@ fn atomic_max(cell: &AtomicU64, val: u64) {
 }
 
 fn mean(sum: u64, count: u64) -> u64 {
-    if count == 0 { 0 } else { sum / count }
+    if count == 0 {
+        0
+    } else {
+        sum / count
+    }
 }
 
 fn write_counter(out: &mut String, name: &str, help: &str, val: u64) {
@@ -484,7 +577,7 @@ mod tests {
     #[test]
     fn test_proof_alert_threshold() {
         let m = Metrics::new();
-        m.record_proof_success(500);   // under 1s → no alert
+        m.record_proof_success(500); // under 1s → no alert
         m.record_proof_success(1_001); // over 1s → alert
         assert_eq!(m.as_json()["proof_gen"]["alerts_over_1s"], 1);
     }
@@ -575,9 +668,9 @@ mod tests {
     #[test]
     fn test_chain_finality_mean() {
         let m = Metrics::new();
-        m.record_chain_finality(1, 2000);    // Ethereum
+        m.record_chain_finality(1, 2000); // Ethereum
         m.record_chain_finality(1, 4000);
-        m.record_chain_finality(10, 500);   // Optimism
+        m.record_chain_finality(10, 500); // Optimism
         assert_eq!(m.chain_finality_mean_ms(1), 3000);
         assert_eq!(m.chain_finality_mean_ms(10), 500);
         assert_eq!(m.chain_finality_mean_ms(999), 0); // unknown chain
@@ -595,9 +688,9 @@ mod tests {
     #[test]
     fn test_user_metrics_daily_transfers() {
         let m = Metrics::new();
-        m.record_transfer(1, 900);   // ETH → SOL
+        m.record_transfer(1, 900); // ETH → SOL
         m.record_transfer(1, 900);
-        m.record_transfer(10, 900);  // OP → SOL
+        m.record_transfer(10, 900); // OP → SOL
         let j = m.as_json();
         assert_eq!(j["user"]["daily_transfers"], 3);
     }
@@ -605,9 +698,13 @@ mod tests {
     #[test]
     fn test_top_corridors() {
         let m = Metrics::new();
-        for _ in 0..5 { m.record_transfer(1, 900); }  // ETH→SOL ×5
-        for _ in 0..3 { m.record_transfer(10, 900); } // OP→SOL ×3
-        m.record_transfer(137, 900);                   // MATIC→SOL ×1
+        for _ in 0..5 {
+            m.record_transfer(1, 900);
+        } // ETH→SOL ×5
+        for _ in 0..3 {
+            m.record_transfer(10, 900);
+        } // OP→SOL ×3
+        m.record_transfer(137, 900); // MATIC→SOL ×1
 
         let top = m.top_corridors(2);
         assert_eq!(top[0].0, "1:900");

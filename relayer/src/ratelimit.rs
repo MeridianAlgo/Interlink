@@ -8,7 +8,6 @@
 ///   - LiFi:     free 100 rps, pro ~1000 rps (undocumented)
 ///   - Socket:   free 50 rps, pro 500 rps
 ///   - InterLink: free 100/min, pro 1000/min, enterprise unlimited
-
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
@@ -140,9 +139,12 @@ impl RateLimiter {
 
     /// Check and consume 1 request for `key`. Returns an `Err` with retry hint if limited.
     pub fn check(&mut self, key: &str) -> Result<RateOk, RateLimitError> {
-        let bucket = self.buckets.get_mut(key).ok_or(RateLimitError::UnknownKey {
-            key: key.to_string(),
-        })?;
+        let bucket = self
+            .buckets
+            .get_mut(key)
+            .ok_or(RateLimitError::UnknownKey {
+                key: key.to_string(),
+            })?;
         if bucket.try_consume(1) {
             Ok(RateOk {
                 remaining: bucket.remaining(),
@@ -339,7 +341,7 @@ mod tests {
         let mut rl = RateLimiter::new();
         rl.register("k", Tier::Free);
         rl.check("k").unwrap(); // consumed 1
-        // Re-register should be no-op
+                                // Re-register should be no-op
         rl.register("k", Tier::Pro);
         // bucket still free, still has 99 remaining
         let s = rl.stats("k").unwrap();

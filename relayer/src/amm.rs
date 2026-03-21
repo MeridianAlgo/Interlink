@@ -63,17 +63,17 @@ pub struct PoolId {
 
 impl PoolId {
     /// Create a pool ID, canonically ordering tokens (lower address first).
-    pub fn new(
-        mut token_a: [u8; 20],
-        chain_a: u64,
-        mut token_b: [u8; 20],
-        chain_b: u64,
-    ) -> Self {
+    pub fn new(mut token_a: [u8; 20], chain_a: u64, mut token_b: [u8; 20], chain_b: u64) -> Self {
         // Canonical ordering: token_a < token_b lexicographically
         if (token_a, chain_a) > (token_b, chain_b) {
             std::mem::swap(&mut token_a, &mut token_b);
         }
-        Self { token_a, chain_a, token_b, chain_b }
+        Self {
+            token_a,
+            chain_a,
+            token_b,
+            chain_b,
+        }
     }
 }
 
@@ -94,7 +94,10 @@ impl std::fmt::Display for AmmError {
         match self {
             AmmError::InsufficientLiquidity => write!(f, "pool has insufficient liquidity"),
             AmmError::ZeroAmount => write!(f, "amount must be > 0"),
-            AmmError::SlippageExceeded { actual_bps, max_bps } => {
+            AmmError::SlippageExceeded {
+                actual_bps,
+                max_bps,
+            } => {
                 write!(f, "slippage {actual_bps} bps exceeds max {max_bps} bps")
             }
             AmmError::PriceImpactTooHigh { impact_bps } => {
@@ -285,17 +288,17 @@ impl Pool {
         }
 
         // Price impact: (amount_b_out / reserve_b) × 10000
-        let price_impact_bps =
-            (amount_b_out.saturating_mul(10_000) / self.reserve_b) as u32;
+        let price_impact_bps = (amount_b_out.saturating_mul(10_000) / self.reserve_b) as u32;
         if price_impact_bps > MAX_PRICE_IMPACT_BPS {
-            return Err(AmmError::PriceImpactTooHigh { impact_bps: price_impact_bps });
+            return Err(AmmError::PriceImpactTooHigh {
+                impact_bps: price_impact_bps,
+            });
         }
 
         // Slippage check
         if amount_b_out < min_amount_b_out {
-            let actual_slippage =
-                ((min_amount_b_out - amount_b_out).saturating_mul(10_000) / min_amount_b_out)
-                    as u32;
+            let actual_slippage = ((min_amount_b_out - amount_b_out).saturating_mul(10_000)
+                / min_amount_b_out) as u32;
             return Err(AmmError::SlippageExceeded {
                 actual_bps: actual_slippage,
                 max_bps: 0, // caller provides min_amount_b_out
@@ -344,16 +347,16 @@ impl Pool {
             return Err(AmmError::InsufficientLiquidity);
         }
 
-        let price_impact_bps =
-            (amount_a_out.saturating_mul(10_000) / self.reserve_a) as u32;
+        let price_impact_bps = (amount_a_out.saturating_mul(10_000) / self.reserve_a) as u32;
         if price_impact_bps > MAX_PRICE_IMPACT_BPS {
-            return Err(AmmError::PriceImpactTooHigh { impact_bps: price_impact_bps });
+            return Err(AmmError::PriceImpactTooHigh {
+                impact_bps: price_impact_bps,
+            });
         }
 
         if amount_a_out < min_amount_a_out {
-            let actual_slippage =
-                ((min_amount_a_out - amount_a_out).saturating_mul(10_000) / min_amount_a_out)
-                    as u32;
+            let actual_slippage = ((min_amount_a_out - amount_a_out).saturating_mul(10_000)
+                / min_amount_a_out) as u32;
             return Err(AmmError::SlippageExceeded {
                 actual_bps: actual_slippage,
                 max_bps: 0,
@@ -385,9 +388,7 @@ impl Pool {
         let protocol_fee = amount_a_in.saturating_mul(PROTOCOL_SHARE_BPS as u128) / 10_000;
         let lp_fee = amount_a_in.saturating_mul(LP_SHARE_BPS as u128) / 10_000;
         let amount_a_net = amount_a_in - protocol_fee - lp_fee;
-        self.reserve_b
-            .saturating_mul(amount_a_net)
-            / (self.reserve_a + amount_a_net)
+        self.reserve_b.saturating_mul(amount_a_net) / (self.reserve_a + amount_a_net)
     }
 
     /// Annual yield for LPs based on fee income vs TVL.
@@ -409,9 +410,7 @@ impl Pool {
             return 10_000;
         }
         let out = self.quote_a_for_b(amount_a_in);
-        let ideal = amount_a_in
-            .saturating_mul(self.reserve_b)
-            / self.reserve_a;
+        let ideal = amount_a_in.saturating_mul(self.reserve_b) / self.reserve_a;
         if ideal == 0 {
             return 0;
         }
@@ -444,7 +443,9 @@ impl AmmRegistry {
     }
 
     pub fn get_or_create(&mut self, id: PoolId) -> &mut Pool {
-        self.pools.entry(id.clone()).or_insert_with(|| Pool::new(id))
+        self.pools
+            .entry(id.clone())
+            .or_insert_with(|| Pool::new(id))
     }
 
     pub fn get(&self, id: &PoolId) -> Option<&Pool> {
@@ -495,10 +496,12 @@ mod tests {
     #[test]
     fn test_add_initial_liquidity() {
         let mut pool = eth_usdc_pool();
-        let shares = pool.add_initial_liquidity(
-            1_000_000_000_000_000_000u128, // 1 ETH
-            3_000_000_000u128,              // 3000 USDC (6 decimals)
-        ).unwrap();
+        let shares = pool
+            .add_initial_liquidity(
+                1_000_000_000_000_000_000u128, // 1 ETH
+                3_000_000_000u128,             // 3000 USDC (6 decimals)
+            )
+            .unwrap();
         assert!(shares > 0);
         assert_eq!(pool.reserve_a, 1_000_000_000_000_000_000u128);
         assert_eq!(pool.reserve_b, 3_000_000_000u128);
@@ -507,7 +510,8 @@ mod tests {
     #[test]
     fn test_constant_product_invariant() {
         let mut pool = eth_usdc_pool();
-        pool.add_initial_liquidity(1_000_000u128, 3_000_000u128).unwrap();
+        pool.add_initial_liquidity(1_000_000u128, 3_000_000u128)
+            .unwrap();
         let k_before = pool.k();
 
         // After a swap, k should be approximately preserved (with LP fee making it slightly larger)
@@ -521,7 +525,8 @@ mod tests {
     #[test]
     fn test_swap_reduces_output_reserve() {
         let mut pool = eth_usdc_pool();
-        pool.add_initial_liquidity(1_000_000u128, 3_000_000u128).unwrap();
+        pool.add_initial_liquidity(1_000_000u128, 3_000_000u128)
+            .unwrap();
 
         let b_before = pool.reserve_b;
         let result = pool.swap_a_for_b(1_000, 0).unwrap();
@@ -532,7 +537,8 @@ mod tests {
     #[test]
     fn test_swap_zero_amount_rejected() {
         let mut pool = eth_usdc_pool();
-        pool.add_initial_liquidity(1_000_000u128, 3_000_000u128).unwrap();
+        pool.add_initial_liquidity(1_000_000u128, 3_000_000u128)
+            .unwrap();
         assert!(matches!(pool.swap_a_for_b(0, 0), Err(AmmError::ZeroAmount)));
     }
 
@@ -540,10 +546,11 @@ mod tests {
     fn test_slippage_increases_with_trade_size() {
         let id = PoolId::new([0xAA; 20], 1, [0xBB; 20], 1);
         let mut pool = Pool::new(id);
-        pool.add_initial_liquidity(1_000_000u128, 3_000_000u128).unwrap();
+        pool.add_initial_liquidity(1_000_000u128, 3_000_000u128)
+            .unwrap();
 
-        let small_slippage = pool.slippage_bps(1_000);     // 0.1% of pool
-        let large_slippage = pool.slippage_bps(100_000);   // 10% of pool
+        let small_slippage = pool.slippage_bps(1_000); // 0.1% of pool
+        let large_slippage = pool.slippage_bps(100_000); // 10% of pool
         assert!(
             large_slippage > small_slippage,
             "larger swaps have more slippage: small={small_slippage} bps, large={large_slippage} bps"
@@ -553,7 +560,8 @@ mod tests {
     #[test]
     fn test_price_impact_too_high_rejected() {
         let mut pool = eth_usdc_pool();
-        pool.add_initial_liquidity(100_000u128, 300_000u128).unwrap();
+        pool.add_initial_liquidity(100_000u128, 300_000u128)
+            .unwrap();
         // Swap 10% of pool → >5% price impact
         let err = pool.swap_a_for_b(50_000, 0).unwrap_err();
         assert!(matches!(err, AmmError::PriceImpactTooHigh { .. }));
@@ -562,7 +570,9 @@ mod tests {
     #[test]
     fn test_add_and_remove_liquidity_roundtrip() {
         let mut pool = eth_usdc_pool();
-        let shares = pool.add_initial_liquidity(1_000_000u128, 3_000_000u128).unwrap();
+        let shares = pool
+            .add_initial_liquidity(1_000_000u128, 3_000_000u128)
+            .unwrap();
 
         // Remove all user shares (not MINIMUM_LIQUIDITY)
         let (a_out, b_out) = pool.remove_liquidity(shares).unwrap();
@@ -575,7 +585,8 @@ mod tests {
     #[test]
     fn test_lp_fee_goes_to_protocol() {
         let mut pool = eth_usdc_pool();
-        pool.add_initial_liquidity(1_000_000u128, 3_000_000u128).unwrap();
+        pool.add_initial_liquidity(1_000_000u128, 3_000_000u128)
+            .unwrap();
 
         let result = pool.swap_a_for_b(10_000, 0).unwrap();
         assert!(result.protocol_fee > 0);
@@ -588,14 +599,16 @@ mod tests {
     #[test]
     fn test_quote_matches_swap() {
         let mut pool = eth_usdc_pool();
-        pool.add_initial_liquidity(1_000_000u128, 3_000_000u128).unwrap();
+        pool.add_initial_liquidity(1_000_000u128, 3_000_000u128)
+            .unwrap();
 
         let quoted = pool.quote_a_for_b(1_000);
         let result = pool.swap_a_for_b(1_000, 0).unwrap();
         // Quote and swap should be within 1 unit (rounding)
         assert!(
             (quoted as i128 - result.amount_out as i128).abs() <= 1,
-            "quote={quoted} swap={}", result.amount_out
+            "quote={quoted} swap={}",
+            result.amount_out
         );
     }
 
@@ -623,7 +636,8 @@ mod tests {
     fn test_spot_price() {
         let mut pool = eth_usdc_pool();
         // 1 ETH = 3000 USDC: price = 3000/1 = 3000 (scaled × 1e6 = 3_000_000_000)
-        pool.add_initial_liquidity(1_000_000u128, 3_000_000_000u128).unwrap();
+        pool.add_initial_liquidity(1_000_000u128, 3_000_000_000u128)
+            .unwrap();
         let price = pool.spot_price_a_in_b_e6();
         // 3_000_000_000 * 1_000_000 / 1_000_000 = 3_000_000_000
         assert_eq!(price, 3_000_000_000u128);

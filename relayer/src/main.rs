@@ -140,7 +140,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // This directly beats Wormhole (1-20 per VAA) and Stargate (sequential settlement).
     let pipeline_metrics = metrics.clone();
     let processing_handle = tokio::spawn(async move {
-        let mut collector = BatchCollector::new(BATCH_MAX_SIZE, Duration::from_secs(BATCH_FLUSH_SECS));
+        let mut collector =
+            BatchCollector::new(BATCH_MAX_SIZE, Duration::from_secs(BATCH_FLUSH_SECS));
         let mut flush_tick = tokio::time::interval(Duration::from_secs(BATCH_FLUSH_SECS));
         flush_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         // Consume the immediate first tick so we don't flush an empty batch at t=0
@@ -173,7 +174,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             if let Some(batch) = batch_opt {
                 let batch_id = batch.batch_id;
                 let batch_size = batch.len();
-                info!(batch_id, batch_size, "dispatching batch to concurrent pipeline");
+                info!(
+                    batch_id,
+                    batch_size, "dispatching batch to concurrent pipeline"
+                );
 
                 // Record batch metrics (Phase 10)
                 pipeline_metrics.record_batch_flushed(batch_size);
@@ -182,7 +186,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // Spawn a task per event in the batch — all run concurrently.
                 // Semaphore ensures we don't over-saturate CPU with provers.
                 for event in batch.events {
-                    let permit = semaphore.clone().acquire_owned().await
+                    let permit = semaphore
+                        .clone()
+                        .acquire_owned()
+                        .await
                         .expect("semaphore closed");
                     let prover = prover.clone();
                     let submitter = submitter.clone();
@@ -198,16 +205,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         // Log fee tier for this transfer
                         let fee_desc = fee::FeeTier::from_usd_cents(
                             // Without oracle we can't know USD value, log at Standard tier boundary
-                            100_000 // placeholder: treat as $1k for logging
-                        ).describe();
+                            100_000, // placeholder: treat as $1k for logging
+                        )
+                        .describe();
                         info!(batch_id, sequence, fee_tier = fee_desc, "processing event");
 
                         // Phase 1: Wait for finality via WebSocket (beats Wormhole 2-15min)
-                        let finality_result = if ws_url.starts_with("ws://") || ws_url.starts_with("wss://") {
-                            wait_for_finality_ws(chain_id, event.block_number(), &ws_url).await
-                        } else {
-                            wait_for_finality(chain_id, event.block_number(), &http_url).await
-                        };
+                        let finality_result =
+                            if ws_url.starts_with("ws://") || ws_url.starts_with("wss://") {
+                                wait_for_finality_ws(chain_id, event.block_number(), &ws_url).await
+                            } else {
+                                wait_for_finality(chain_id, event.block_number(), &http_url).await
+                            };
 
                         match finality_result {
                             Ok(()) => info!(batch_id, sequence, "finality confirmed"),
@@ -251,7 +260,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 match submitter.submit(&package).await {
                                     Ok(sig) => {
                                         let settlement_ms = settlement_start.elapsed().as_millis();
-                                        event_metrics.record_settlement_success(settlement_ms as u64);
+                                        event_metrics
+                                            .record_settlement_success(settlement_ms as u64);
 
                                         // Alerting threshold: total settlement > 60s (Phase 10)
                                         if settlement_ms > SETTLEMENT_ALERT_MS {

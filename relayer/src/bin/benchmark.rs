@@ -16,18 +16,18 @@ use std::time::{Duration, Instant};
 
 struct CompetitorBenchmark {
     name: &'static str,
-    proof_or_vaa_ms: Option<u64>,      // proof/VAA generation time (None if N/A)
+    proof_or_vaa_ms: Option<u64>, // proof/VAA generation time (None if N/A)
     settlement_min_secs: u64,
     settlement_max_secs: u64,
     fee_model: &'static str,
-    throughput_tps: Option<u64>,       // published max TPS
+    throughput_tps: Option<u64>, // published max TPS
     validator_count: u64,
 }
 
 const COMPETITORS: &[CompetitorBenchmark] = &[
     CompetitorBenchmark {
         name: "Wormhole",
-        proof_or_vaa_ms: Some(300),   // VAA aggregation ~300-500ms
+        proof_or_vaa_ms: Some(300), // VAA aggregation ~300-500ms
         settlement_min_secs: 120,
         settlement_max_secs: 900,
         fee_model: "$1-20 per VAA",
@@ -36,16 +36,16 @@ const COMPETITORS: &[CompetitorBenchmark] = &[
     },
     CompetitorBenchmark {
         name: "Stargate v2",
-        proof_or_vaa_ms: None,        // No ZK proofs; uses UltraLightClient
+        proof_or_vaa_ms: None, // No ZK proofs; uses UltraLightClient
         settlement_min_secs: 60,
         settlement_max_secs: 120,
         fee_model: "0.5-5% per tx",
         throughput_tps: Some(500),
-        validator_count: 0,           // permissioned oracle set
+        validator_count: 0, // permissioned oracle set
     },
     CompetitorBenchmark {
         name: "Across Protocol",
-        proof_or_vaa_ms: None,        // Optimistic, no proofs
+        proof_or_vaa_ms: None, // Optimistic, no proofs
         settlement_min_secs: 300,
         settlement_max_secs: 3_600,
         fee_model: "0.25-1% per tx",
@@ -156,7 +156,10 @@ async fn main() {
         .await
         .expect("prover initialization failed");
     let setup_ms = setup_start.elapsed().as_millis();
-    println!("  Setup time: {}ms (one-time cost, amortised over all transfers)\n", setup_ms);
+    println!(
+        "  Setup time: {}ms (one-time cost, amortised over all transfers)\n",
+        setup_ms
+    );
 
     // ─── Phase 2: Sequential proof generation benchmark ───────────────────────
     println!("▶ Sequential proof generation ({} proofs)...", count);
@@ -192,7 +195,11 @@ async fn main() {
     let seq_result = BenchmarkResult::from_samples(sequential_samples);
 
     // ─── Phase 3: Parallel proof generation benchmark ─────────────────────────
-    println!("\n▶ Parallel proof generation ({} proofs, {} cores)...", count, num_cores());
+    println!(
+        "\n▶ Parallel proof generation ({} proofs, {} cores)...",
+        count,
+        num_cores()
+    );
     let parallel_start = Instant::now();
     let mut handles = Vec::new();
 
@@ -217,17 +224,42 @@ async fn main() {
     println!("║                    BENCHMARK RESULTS                                ║");
     println!("╠══════════════════════════════════════════════════════════════════════╣");
     println!("║ PROOF GENERATION (sequential)                                        ║");
-    println!("║   Samples:      {:>6}                                               ║", seq_result.count);
-    println!("║   Min:          {:>6}ms                                             ║", seq_result.min_ms);
-    println!("║   P50 (median): {:>6}ms                                             ║", seq_result.p50_ms);
-    println!("║   P95:          {:>6}ms                                             ║", seq_result.p95_ms);
-    println!("║   P99:          {:>6}ms                                             ║", seq_result.p99_ms);
-    println!("║   Max:          {:>6}ms                                             ║", seq_result.max_ms);
-    println!("║   Throughput:   {:>6.1} proofs/sec (single core)                    ║", seq_result.throughput_per_sec);
+    println!(
+        "║   Samples:      {:>6}                                               ║",
+        seq_result.count
+    );
+    println!(
+        "║   Min:          {:>6}ms                                             ║",
+        seq_result.min_ms
+    );
+    println!(
+        "║   P50 (median): {:>6}ms                                             ║",
+        seq_result.p50_ms
+    );
+    println!(
+        "║   P95:          {:>6}ms                                             ║",
+        seq_result.p95_ms
+    );
+    println!(
+        "║   P99:          {:>6}ms                                             ║",
+        seq_result.p99_ms
+    );
+    println!(
+        "║   Max:          {:>6}ms                                             ║",
+        seq_result.max_ms
+    );
+    println!(
+        "║   Throughput:   {:>6.1} proofs/sec (single core)                    ║",
+        seq_result.throughput_per_sec
+    );
     println!("║                                                                      ║");
     println!("║ PARALLEL PROOF GENERATION ({} cores)", num_cores());
-    println!("║   Total time:   {:>6}ms for {} proofs                               ║", parallel_total_ms, count);
-    println!("║   Throughput:   {:>6.1} proofs/sec ({:.1}x speedup)                  ║",
+    println!(
+        "║   Total time:   {:>6}ms for {} proofs                               ║",
+        parallel_total_ms, count
+    );
+    println!(
+        "║   Throughput:   {:>6.1} proofs/sec ({:.1}x speedup)                  ║",
         parallel_tps,
         parallel_tps / seq_result.throughput_per_sec
     );
@@ -240,23 +272,39 @@ async fn main() {
     // InterLink row
     let our_proof = seq_result.p50_ms;
     let our_tps = parallel_tps;
-    println!("║ InterLink ★    │ {:>6}ms ✓  │ <30s target  │ 0% (tier1)  │ {:.0}+ ✓    ║",
-        our_proof, our_tps);
+    println!(
+        "║ InterLink ★    │ {:>6}ms ✓  │ <30s target  │ 0% (tier1)  │ {:.0}+ ✓    ║",
+        our_proof, our_tps
+    );
 
     for c in COMPETITORS {
         let proof_str = match c.proof_or_vaa_ms {
             Some(ms) => {
-                if ms as u128 > our_proof { format!("{:>6}ms ✗", ms) }
-                else { format!("{:>6}ms ✓", ms) }
+                if ms as u128 > our_proof {
+                    format!("{:>6}ms ✗", ms)
+                } else {
+                    format!("{:>6}ms ✓", ms)
+                }
             }
             None => "    N/A   ".to_string(),
         };
-        let speed_marker = if c.settlement_min_secs > 30 { "✗" } else { "~" };
+        let speed_marker = if c.settlement_min_secs > 30 {
+            "✗"
+        } else {
+            "~"
+        };
         let tps_str = match c.throughput_tps {
-            Some(t) => if t < our_tps as u64 { format!("{:>4} ✗", t) } else { format!("{:>4} ✓", t) },
+            Some(t) => {
+                if t < our_tps as u64 {
+                    format!("{:>4} ✗", t)
+                } else {
+                    format!("{:>4} ✓", t)
+                }
+            }
             None => "  ?   ".to_string(),
         };
-        println!("║ {:15}│ {:11} │ {}s–{}s {}    │ {:11} │ {} ║",
+        println!(
+            "║ {:15}│ {:11} │ {}s–{}s {}    │ {:11} │ {} ║",
             c.name,
             proof_str,
             c.settlement_min_secs,
@@ -283,19 +331,32 @@ async fn main() {
 
     let proof_beats_wormhole = our_proof < 300;
     let speed_beats_all = true; // 30s < all competitor minimums
-    let fee_beats_all = true;   // 0% tier 1 beats everyone
+    let fee_beats_all = true; // 0% tier 1 beats everyone
 
     let wins = [proof_beats_wormhole, speed_beats_all, fee_beats_all];
     let win_count = wins.iter().filter(|&&w| w).count();
 
-    println!("║  Proof speed vs Wormhole VAA:   {} ({}ms vs 300ms+)",
-        if proof_beats_wormhole { "WIN ✓" } else { "LOSS ✗" }, our_proof);
+    println!(
+        "║  Proof speed vs Wormhole VAA:   {} ({}ms vs 300ms+)",
+        if proof_beats_wormhole {
+            "WIN ✓"
+        } else {
+            "LOSS ✗"
+        },
+        our_proof
+    );
     println!("║  Settlement speed vs all:        WIN ✓ (<30s vs 1min+ for all)");
     println!("║  Fee (tier 1, <$1k):             WIN ✓ (0% vs $1-20 Wormhole)");
     println!("║  Fee (tier 2, $1k-$100k):        WIN ✓ (0.05% vs 0.25-5%)");
-    println!("║  Parallel throughput:            WIN ✓ ({:.0} TPS vs 500-1000)", our_tps);
+    println!(
+        "║  Parallel throughput:            WIN ✓ ({:.0} TPS vs 500-1000)",
+        our_tps
+    );
     println!("║                                                                      ║");
-    println!("║  Overall: {}/3 categories won vs competitors                         ║", win_count);
+    println!(
+        "║  Overall: {}/3 categories won vs competitors                         ║",
+        win_count
+    );
     println!("╚══════════════════════════════════════════════════════════════════════╝");
 
     if win_count == wins.len() {

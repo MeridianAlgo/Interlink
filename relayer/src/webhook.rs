@@ -92,7 +92,12 @@ pub struct WebhookPayload {
 }
 
 impl WebhookPayload {
-    pub fn transfer_initiated(sequence: u64, chain: u64, amount_wei: &str, recipient: &str) -> Self {
+    pub fn transfer_initiated(
+        sequence: u64,
+        chain: u64,
+        amount_wei: &str,
+        recipient: &str,
+    ) -> Self {
         Self {
             event_id: format!("evt_init_{sequence}_{}", now_secs()),
             event_type: EventType::TransferInitiated.as_str().to_string(),
@@ -369,7 +374,8 @@ pub fn dispatch(registry: &WebhookRegistry, payload: WebhookPayload) {
                         tokio::time::sleep(delay).await;
                     }
 
-                    match c.post(&url)
+                    match c
+                        .post(&url)
                         .header("Content-Type", "application/json")
                         .header("X-InterLink-Event", &evt_type)
                         .header("X-InterLink-Delivery", &id)
@@ -474,14 +480,8 @@ mod tests {
     #[test]
     fn test_event_matching_specific() {
         let registry = WebhookRegistry::new();
-        registry.register(
-            "https://a.com".into(),
-            vec![EventType::SettlementComplete],
-        );
-        registry.register(
-            "https://b.com".into(),
-            vec![EventType::TransferFailed],
-        );
+        registry.register("https://a.com".into(), vec![EventType::SettlementComplete]);
+        registry.register("https://b.com".into(), vec![EventType::TransferFailed]);
 
         let settle_subs = registry.subscribers_for(&EventType::SettlementComplete);
         assert_eq!(settle_subs.len(), 1);

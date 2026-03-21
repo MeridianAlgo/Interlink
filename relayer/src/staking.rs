@@ -110,9 +110,9 @@ impl StakingTier {
     pub fn voting_weight_multiplier_bps(&self) -> u32 {
         match self {
             StakingTier::None => 0,
-            StakingTier::Bronze => 5_000,   // 0.5x voting power per token
-            StakingTier::Silver => 10_000,  // 1x (linear)
-            StakingTier::Gold => 12_500,    // 1.25x (small validator bonus)
+            StakingTier::Bronze => 5_000, // 0.5x voting power per token
+            StakingTier::Silver => 10_000, // 1x (linear)
+            StakingTier::Gold => 12_500,  // 1.25x (small validator bonus)
             StakingTier::Platinum => 15_000, // 1.5x (large validator bonus, capped later)
         }
     }
@@ -223,22 +223,19 @@ pub fn calculate_position(
     let apy_bps = current_apy_bps(months_since_launch);
 
     // Voting power: stake × multiplier, anti-whale capped at 5% of total supply
-    let raw_voting_power = staked_amount
-        .saturating_mul(tier.voting_weight_multiplier_bps() as u128)
-        / 10_000;
+    let raw_voting_power =
+        staked_amount.saturating_mul(tier.voting_weight_multiplier_bps() as u128) / 10_000;
     let whale_cap = TOTAL_SUPPLY / 20; // 5% of supply
     let voting_power = raw_voting_power.min(whale_cap);
 
     // Annual reward = staked × APY%
-    let estimated_annual_reward = staked_amount
-        .saturating_mul(apy_bps as u128)
-        / 10_000;
+    let estimated_annual_reward = staked_amount.saturating_mul(apy_bps as u128) / 10_000;
     let estimated_daily_reward = estimated_annual_reward / 365;
 
     // Tier-specific APY bonus: Gold/Platinum get +1-2% for validator duties
     let tier_bonus_bps: u32 = match tier {
-        StakingTier::Gold => 100,      // +1%
-        StakingTier::Platinum => 200,  // +2%
+        StakingTier::Gold => 100,     // +1%
+        StakingTier::Platinum => 200, // +2%
         _ => 0,
     };
     let effective_apy = apy_bps + tier_bonus_bps;
@@ -310,8 +307,8 @@ pub fn protocol_stats(
             CompetitorApy {
                 name: "Stargate",
                 token: "STG",
-                apy_min_bps: 800,   // 8%
-                apy_max_bps: 1200,  // 12%
+                apy_min_bps: 800,  // 8%
+                apy_max_bps: 1200, // 12%
                 lockup_months: 12,
             },
             CompetitorApy {
@@ -324,8 +321,8 @@ pub fn protocol_stats(
             CompetitorApy {
                 name: "Across",
                 token: "UMA",
-                apy_min_bps: 300,  // 3%
-                apy_max_bps: 800,  // 8%
+                apy_min_bps: 300, // 3%
+                apy_max_bps: 800, // 8%
                 lockup_months: 0,
             },
             CompetitorApy {
@@ -412,7 +409,10 @@ mod tests {
         // Gold tier: EARLY_APY + 1% bonus
         assert_eq!(pos.current_apy_bps, EARLY_APY_BPS + 100);
         // Daily = annual / 365
-        assert_eq!(pos.estimated_daily_reward, pos.estimated_annual_reward / 365);
+        assert_eq!(
+            pos.estimated_daily_reward,
+            pos.estimated_annual_reward / 365
+        );
     }
 
     #[test]

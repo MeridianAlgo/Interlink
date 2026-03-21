@@ -51,8 +51,8 @@ pub const MEV_CAPTURE_BPS: u32 = 1;
 pub const LP_ANNUAL_YIELD_BPS: u32 = 300; // 3% APY
 
 /// Competitor LP APY benchmarks (basis points per annum).
-pub const ACROSS_LP_APY_MIN_BPS: u32 = 300;  // 3%
-pub const ACROSS_LP_APY_MAX_BPS: u32 = 800;  // 8%
+pub const ACROSS_LP_APY_MIN_BPS: u32 = 300; // 3%
+pub const ACROSS_LP_APY_MAX_BPS: u32 = 800; // 8%
 pub const STARGATE_LP_APY_MIN_BPS: u32 = 400; // 4%
 pub const STARGATE_LP_APY_MAX_BPS: u32 = 1000; // 10%
 
@@ -137,8 +137,7 @@ pub fn estimate_daily_revenue(
     let mev_revenue_cents = (swap_volume as u128 * MEV_CAPTURE_BPS as u128 / 10_000) as u64;
 
     // LP yield: daily portion of annual yield on locked collateral.
-    let lp_yield_revenue_cents = (avg_locked_collateral_cents as u128
-        * LP_ANNUAL_YIELD_BPS as u128
+    let lp_yield_revenue_cents = (avg_locked_collateral_cents as u128 * LP_ANNUAL_YIELD_BPS as u128
         / 10_000
         / TRADING_DAYS_PER_YEAR as u128) as u64;
 
@@ -334,12 +333,15 @@ mod tests {
     fn test_mev_revenue_positive_for_swaps() {
         // Any non-zero volume should generate MEV capture
         let rev = estimate_daily_revenue(10_000_000, 1_000_000); // $100k/day
-        assert!(rev.mev_revenue_cents > 0, "MEV should be positive for non-zero volume");
+        assert!(
+            rev.mev_revenue_cents > 0,
+            "MEV should be positive for non-zero volume"
+        );
     }
 
     #[test]
     fn test_lp_yield_grows_with_collateral() {
-        let rev_low = estimate_daily_revenue(100_000_000, 1_000_000);   // $10k collateral
+        let rev_low = estimate_daily_revenue(100_000_000, 1_000_000); // $10k collateral
         let rev_high = estimate_daily_revenue(100_000_000, 100_000_000); // $1M collateral
         assert!(
             rev_high.lp_yield_revenue_cents > rev_low.lp_yield_revenue_cents,
@@ -351,7 +353,11 @@ mod tests {
     fn test_competitor_breakevens_populated() {
         let analysis = calculate_breakeven();
         assert_eq!(analysis.competitor_breakevens.len(), 3);
-        let names: Vec<&str> = analysis.competitor_breakevens.iter().map(|c| c.name).collect();
+        let names: Vec<&str> = analysis
+            .competitor_breakevens
+            .iter()
+            .map(|c| c.name)
+            .collect();
         assert!(names.contains(&"Wormhole"));
         assert!(names.contains(&"Across"));
         assert!(names.contains(&"Stargate v2"));

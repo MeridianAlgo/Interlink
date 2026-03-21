@@ -73,7 +73,12 @@ struct Stats {
 impl Stats {
     fn from_samples(mut samples: Vec<u128>, errors: usize, total: usize, wall_ms: u128) -> Self {
         samples.sort_unstable();
-        Self { samples, errors, total, wall_ms }
+        Self {
+            samples,
+            errors,
+            total,
+            wall_ms,
+        }
     }
 
     fn count(&self) -> usize {
@@ -89,17 +94,23 @@ impl Stats {
     }
 
     fn mean(&self) -> u128 {
-        if self.samples.is_empty() { return 0; }
+        if self.samples.is_empty() {
+            return 0;
+        }
         self.samples.iter().sum::<u128>() / self.count() as u128
     }
 
     fn throughput(&self) -> f64 {
-        if self.wall_ms == 0 { return 0.0; }
+        if self.wall_ms == 0 {
+            return 0.0;
+        }
         self.count() as f64 * 1_000.0 / self.wall_ms as f64
     }
 
     fn error_rate_pct(&self) -> f64 {
-        if self.total == 0 { return 0.0; }
+        if self.total == 0 {
+            return 0.0;
+        }
         self.errors as f64 * 100.0 / self.total as f64
     }
 }
@@ -113,7 +124,8 @@ async fn run_load(
     metrics: &Metrics,
 ) -> Stats {
     let sem = Arc::new(Semaphore::new(concurrency));
-    let times: Arc<tokio::sync::Mutex<Vec<u128>>> = Arc::new(tokio::sync::Mutex::new(Vec::with_capacity(total)));
+    let times: Arc<tokio::sync::Mutex<Vec<u128>>> =
+        Arc::new(tokio::sync::Mutex::new(Vec::with_capacity(total)));
     let errors = Arc::new(std::sync::atomic::AtomicUsize::new(0));
 
     let wall_start = Instant::now();
@@ -185,21 +197,34 @@ fn make_event(seq: u64) -> GatewayEvent {
 
 fn print_header(title: &str) {
     println!();
-    println!("┌─ {title} {fill}┐", fill = "─".repeat(70usize.saturating_sub(title.len() + 4)));
+    println!(
+        "┌─ {title} {fill}┐",
+        fill = "─".repeat(70usize.saturating_sub(title.len() + 4))
+    );
 }
 
 fn print_stats(label: &str, stats: &Stats, target_tps: f64) {
     let tps = stats.throughput();
-    let win = if tps >= target_tps { "✓ PASS" } else { "✗ FAIL" };
-    println!("│ {:20} │ {:>8} proofs │ P50:{:>5}ms │ P95:{:>5}ms │ P99:{:>5}ms │",
+    let win = if tps >= target_tps {
+        "✓ PASS"
+    } else {
+        "✗ FAIL"
+    };
+    println!(
+        "│ {:20} │ {:>8} proofs │ P50:{:>5}ms │ P95:{:>5}ms │ P99:{:>5}ms │",
         label,
         stats.count(),
         stats.p(50),
         stats.p(95),
         stats.p(99),
     );
-    println!("│  Throughput: {:>6.1} proofs/sec  Target: {:>6.1}  {}  Errors: {:.2}%   │",
-        tps, target_tps, win, stats.error_rate_pct());
+    println!(
+        "│  Throughput: {:>6.1} proofs/sec  Target: {:>6.1}  {}  Errors: {:.2}%   │",
+        tps,
+        target_tps,
+        win,
+        stats.error_rate_pct()
+    );
 }
 
 fn print_competitor_table(our_stats: &[(&str, &Stats)]) {
@@ -208,8 +233,12 @@ fn print_competitor_table(our_stats: &[(&str, &Stats)]) {
     println!("│ Bridge          │ TPS          │ Notes                               │");
     println!("│─────────────────│──────────────│─────────────────────────────────────│");
     for (label, s) in our_stats {
-        println!("│ InterLink ({:>4}) │ {:>8.1}/s  │ {:<37} │",
-            label, s.throughput(), format!("p99={}ms", s.p(99)));
+        println!(
+            "│ InterLink ({:>4}) │ {:>8.1}/s  │ {:<37} │",
+            label,
+            s.throughput(),
+            format!("p99={}ms", s.p(99))
+        );
     }
     println!("│ Wormhole        │ ~1 000/s     │ VAA aggregation, 300-500ms each     │");
     println!("│ Stargate v2     │ ~500/s       │ No ZK proofs, UltraLightClient      │");
@@ -248,14 +277,20 @@ async fn main() {
     println!(" done.");
 
     // ── Configured concurrency ────────────────────────────────────────────────
-    println!("▶ Load run: {} proofs, concurrency={}...", cfg.total, cfg.concurrency);
+    println!(
+        "▶ Load run: {} proofs, concurrency={}...",
+        cfg.total, cfg.concurrency
+    );
     let load = run_load(&engine, cfg.concurrency, cfg.total, &metrics).await;
     println!(" done.");
 
     // ── High-concurrency stress (double the concurrency) ──────────────────────
     let stress_concurrency = cfg.concurrency * 2;
     let stress_count = cfg.total.min(100);
-    println!("▶ Stress run: {} proofs, concurrency={}...", stress_count, stress_concurrency);
+    println!(
+        "▶ Stress run: {} proofs, concurrency={}...",
+        stress_count, stress_concurrency
+    );
     let stress = run_load(&engine, stress_concurrency, stress_count, &metrics).await;
     println!(" done.");
 
@@ -283,12 +318,22 @@ async fn main() {
 
     println!();
     println!("┌─ Parallelism analysis ─────────────────────────────────────────────────┐");
-    println!("│  Baseline single-core: {:>6.1} proofs/sec  (mean {:>5}ms/proof)        │",
-        1_000.0 / baseline.mean().max(1) as f64, baseline.mean());
-    println!("│  Parallel ({}x):      {:>6.1} proofs/sec  ({:.1}x speedup)              │",
-        cfg.concurrency, load.throughput(), speedup);
-    println!("│  Stress ({}x):        {:>6.1} proofs/sec                               │",
-        stress_concurrency, stress.throughput());
+    println!(
+        "│  Baseline single-core: {:>6.1} proofs/sec  (mean {:>5}ms/proof)        │",
+        1_000.0 / baseline.mean().max(1) as f64,
+        baseline.mean()
+    );
+    println!(
+        "│  Parallel ({}x):      {:>6.1} proofs/sec  ({:.1}x speedup)              │",
+        cfg.concurrency,
+        load.throughput(),
+        speedup
+    );
+    println!(
+        "│  Stress ({}x):        {:>6.1} proofs/sec                               │",
+        stress_concurrency,
+        stress.throughput()
+    );
 
     print_competitor_table(&[
         ("1x", &baseline),
@@ -300,12 +345,15 @@ async fn main() {
     println!();
     println!("┌─ Metrics snapshot (Phase 10) ──────────────────────────────────────────┐");
     let j = metrics.as_json();
-    println!("│  proof_gen total:     {}",   j["proof_gen"]["total"]);
-    println!("│  proof_gen success:   {}",   j["proof_gen"]["success"]);
-    println!("│  proof_gen failure:   {}",   j["proof_gen"]["failure"]);
-    println!("│  proof mean ms:       {}",   j["proof_gen"]["mean_ms"]);
-    println!("│  proof max ms:        {}",   j["proof_gen"]["max_ms"]);
-    println!("│  alerts (>1s):        {}",   j["proof_gen"]["alerts_over_1s"]);
+    println!("│  proof_gen total:     {}", j["proof_gen"]["total"]);
+    println!("│  proof_gen success:   {}", j["proof_gen"]["success"]);
+    println!("│  proof_gen failure:   {}", j["proof_gen"]["failure"]);
+    println!("│  proof mean ms:       {}", j["proof_gen"]["mean_ms"]);
+    println!("│  proof max ms:        {}", j["proof_gen"]["max_ms"]);
+    println!(
+        "│  alerts (>1s):        {}",
+        j["proof_gen"]["alerts_over_1s"]
+    );
     println!("└────────────────────────────────────────────────────────────────────────┘");
 
     // ── Pass/fail summary ─────────────────────────────────────────────────────
@@ -317,8 +365,12 @@ async fn main() {
     if all_zero_errors {
         println!("  ✓ Error rate: 0% across all load levels — PASS");
     } else {
-        println!("  ✗ Error rate: baseline={:.2}% load={:.2}% stress={:.2}% — FAIL",
-            baseline.error_rate_pct(), load.error_rate_pct(), stress.error_rate_pct());
+        println!(
+            "  ✗ Error rate: baseline={:.2}% load={:.2}% stress={:.2}% — FAIL",
+            baseline.error_rate_pct(),
+            load.error_rate_pct(),
+            stress.error_rate_pct()
+        );
     }
 
     // Export JSON results

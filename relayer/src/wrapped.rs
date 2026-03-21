@@ -9,7 +9,6 @@
 ///   - Stargate: native OFT wrapper per-chain, manual address management
 ///   - Wormhole: attested tokens per source chain, separate attestation tx required
 ///   - InterLink: deterministic canonical registry, automatic unwrap on destination
-
 use std::collections::HashMap;
 
 /// Chain identifier (matches ChainId in the SDK / fee.rs)
@@ -127,12 +126,12 @@ impl WrappedRegistry {
             .ok_or_else(|| WrappedError::NoMapping {
                 asset: canonical.clone(),
             })?;
-        let wrapped = by_dest.get(&dest_chain).ok_or_else(|| {
-            WrappedError::NoDestinationChain {
+        let wrapped = by_dest
+            .get(&dest_chain)
+            .ok_or_else(|| WrappedError::NoDestinationChain {
                 asset: canonical.clone(),
                 dest: dest_chain,
-            }
-        })?;
+            })?;
         Ok(Some(wrapped))
     }
 
@@ -155,11 +154,11 @@ impl WrappedRegistry {
         let eth_meta = AssetMeta::new("ETH", 18, "Ether");
 
         let weth_optimism = AssetId::new(OPTIMISM, "0x4200000000000000000000000000000000000006");
-        let weth_arbitrum = AssetId::new(ARBITRUM_ONE, "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1");
+        let weth_arbitrum =
+            AssetId::new(ARBITRUM_ONE, "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1");
         let weth_base = AssetId::new(BASE, "0x4200000000000000000000000000000000000006");
         let weth_polygon = AssetId::new(POLYGON, "0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619");
-        let weth_solana =
-            AssetId::new(SOLANA, "7vfCXTUXx5WJV5JADk17DUJ4ksgau7utNKj4b963voxs");
+        let weth_solana = AssetId::new(SOLANA, "7vfCXTUXx5WJV5JADk17DUJ4ksgau7utNKj4b963voxs");
 
         for (dest, weth) in [
             (OPTIMISM, weth_optimism),
@@ -183,7 +182,8 @@ impl WrappedRegistry {
 
         let wsol_ethereum = AssetId::new(ETHEREUM, "0xD31a59c85aE9D8edEFeC411D448f90841571b89c");
         let wsol_polygon = AssetId::new(POLYGON, "0x7DfF46370823dDGf2Eac3DeD2e");
-        let wsol_arbitrum = AssetId::new(ARBITRUM_ONE, "0x2bcC6D6CdBbDC0a4071e48bb3B969b06B3330c07");
+        let wsol_arbitrum =
+            AssetId::new(ARBITRUM_ONE, "0x2bcC6D6CdBbDC0a4071e48bb3B969b06B3330c07");
 
         for (dest, wsol) in [
             (ETHEREUM, wsol_ethereum),
@@ -207,10 +207,7 @@ impl WrappedRegistry {
         let wmatic_arbitrum =
             AssetId::new(ARBITRUM_ONE, "0x561877b6b3DD7651313794e5F2894B2F18bE0766");
 
-        for (dest, wmatic) in [
-            (ETHEREUM, wmatic_ethereum),
-            (ARBITRUM_ONE, wmatic_arbitrum),
-        ] {
+        for (dest, wmatic) in [(ETHEREUM, wmatic_ethereum), (ARBITRUM_ONE, wmatic_arbitrum)] {
             self.register(
                 matic.clone(),
                 matic_meta.clone(),

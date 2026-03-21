@@ -41,12 +41,20 @@ impl EventBatch {
 
     /// Minimum block number across all events in the batch (for finality waiting).
     pub fn min_block(&self) -> u64 {
-        self.events.iter().map(|e| e.block_number()).min().unwrap_or(0)
+        self.events
+            .iter()
+            .map(|e| e.block_number())
+            .min()
+            .unwrap_or(0)
     }
 
     /// Maximum block number across all events in the batch.
     pub fn max_block(&self) -> u64 {
-        self.events.iter().map(|e| e.block_number()).max().unwrap_or(0)
+        self.events
+            .iter()
+            .map(|e| e.block_number())
+            .max()
+            .unwrap_or(0)
     }
 }
 

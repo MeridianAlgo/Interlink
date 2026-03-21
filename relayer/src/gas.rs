@@ -33,27 +33,27 @@ pub const SOLANA_CU_PRICE_MICRO_LAMPORTS: u64 = 1;
 // ─── Competitor benchmarks (from public documentation / on-chain measurements) ─
 
 /// Wormhole VAA fee range in USD cents.
-pub const WORMHOLE_FEE_MIN_CENTS: u64 = 100;  // $1.00 minimum
+pub const WORMHOLE_FEE_MIN_CENTS: u64 = 100; // $1.00 minimum
 pub const WORMHOLE_FEE_MAX_CENTS: u64 = 2_000; // $20.00 maximum
 
 /// Stargate fee in basis points (min / max observed).
-pub const STARGATE_FEE_MIN_BPS: u32 = 50;   // 0.5%
-pub const STARGATE_FEE_MAX_BPS: u32 = 500;  // 5%
+pub const STARGATE_FEE_MIN_BPS: u32 = 50; // 0.5%
+pub const STARGATE_FEE_MAX_BPS: u32 = 500; // 5%
 
 /// Across fee in basis points (min / max).
-pub const ACROSS_FEE_MIN_BPS: u32 = 25;  // 0.25%
+pub const ACROSS_FEE_MIN_BPS: u32 = 25; // 0.25%
 pub const ACROSS_FEE_MAX_BPS: u32 = 100; // 1%
 
 /// Across settlement time in seconds (from their docs).
-pub const ACROSS_SETTLEMENT_MIN_SECS: u64 = 300;  // 5 min
+pub const ACROSS_SETTLEMENT_MIN_SECS: u64 = 300; // 5 min
 pub const ACROSS_SETTLEMENT_MAX_SECS: u64 = 3_600; // 60 min
 
 /// Wormhole settlement time in seconds.
-pub const WORMHOLE_SETTLEMENT_MIN_SECS: u64 = 120;  // 2 min
-pub const WORMHOLE_SETTLEMENT_MAX_SECS: u64 = 900;  // 15 min
+pub const WORMHOLE_SETTLEMENT_MIN_SECS: u64 = 120; // 2 min
+pub const WORMHOLE_SETTLEMENT_MAX_SECS: u64 = 900; // 15 min
 
 /// Stargate settlement time in seconds.
-pub const STARGATE_SETTLEMENT_MIN_SECS: u64 = 60;  // 1 min
+pub const STARGATE_SETTLEMENT_MIN_SECS: u64 = 60; // 1 min
 pub const STARGATE_SETTLEMENT_MAX_SECS: u64 = 120; // 2 min
 
 /// InterLink target settlement time in seconds.
@@ -141,7 +141,11 @@ pub struct InterLinkSummary {
 impl CostComparison {
     /// Cheapest competitor fee in USD cents.
     pub fn cheapest_competitor_cents(&self) -> u64 {
-        self.competitors.iter().map(|c| c.fee_usd_cents).min().unwrap_or(0)
+        self.competitors
+            .iter()
+            .map(|c| c.fee_usd_cents)
+            .min()
+            .unwrap_or(0)
     }
 
     /// Savings vs cheapest competitor, in USD cents. Positive means InterLink is cheaper.
@@ -287,7 +291,10 @@ pub fn format_comparison_table(usd_cents: u64) -> String {
     let amount_str = format!("${:.2}", usd_cents as f64 / 100.0);
 
     let mut out = String::new();
-    out.push_str(&format!("\n┌─ InterLink Cost Comparison — Transfer: {} ────────────────────────────┐\n", amount_str));
+    out.push_str(&format!(
+        "\n┌─ InterLink Cost Comparison — Transfer: {} ────────────────────────────┐\n",
+        amount_str
+    ));
     out.push_str("│ Bridge       │ Fee        │ Fee (USD)   │ Settlement time          │\n");
     out.push_str("│──────────────│────────────│─────────────│──────────────────────────│\n");
 
@@ -326,8 +333,16 @@ pub fn format_comparison_table(usd_cents: u64) -> String {
     }
     out.push_str(&format!(
         "│ ✓ Fee win: {}  │ ✓ Speed win: {}                              │\n",
-        if cmp.interlink_wins_on_fee() { "YES" } else { "NO " },
-        if cmp.interlink_wins_on_speed() { "YES" } else { "NO " },
+        if cmp.interlink_wins_on_fee() {
+            "YES"
+        } else {
+            "NO "
+        },
+        if cmp.interlink_wins_on_speed() {
+            "YES"
+        } else {
+            "NO "
+        },
     ));
     out.push_str("└──────────────────────────────────────────────────────────────────────┘\n");
     out
@@ -378,7 +393,11 @@ mod tests {
         assert_eq!(cmp.interlink.fee_bps, 1, "Should be Institutional (1 bps)");
 
         let interlink_fee = cmp.interlink.fee_usd_cents;
-        let stargate = cmp.competitors.iter().find(|c| c.name == "Stargate v2").unwrap();
+        let stargate = cmp
+            .competitors
+            .iter()
+            .find(|c| c.name == "Stargate v2")
+            .unwrap();
         let across = cmp.competitors.iter().find(|c| c.name == "Across").unwrap();
 
         assert!(
@@ -408,10 +427,10 @@ mod tests {
     fn test_gas_estimate_structure() {
         let est = estimate(
             1_000_000_000_000_000_000u128, // 1 ETH
-            300_000,                        // $3,000
-            30,                             // 30 gwei
-            100,                            // batch of 100
-            3_000,                          // ETH = $3,000
+            300_000,                       // $3,000
+            30,                            // 30 gwei
+            100,                           // batch of 100
+            3_000,                         // ETH = $3,000
         );
         assert_eq!(est.source_gas_units, EVM_GATEWAY_GAS);
         assert_eq!(est.source_gas_price_gwei, 30);
@@ -443,6 +462,10 @@ mod tests {
         assert!(table.contains("Wormhole"));
         assert!(table.contains("Stargate"));
         assert!(table.contains("Across"));
-        assert!(table.contains("InterLink wins") || table.contains("Fee win: YES") || table.contains("saves"));
+        assert!(
+            table.contains("InterLink wins")
+                || table.contains("Fee win: YES")
+                || table.contains("saves")
+        );
     }
 }

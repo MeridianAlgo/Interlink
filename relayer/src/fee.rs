@@ -29,8 +29,8 @@ impl FeeTier {
     pub fn bps(&self) -> u32 {
         match self {
             FeeTier::Zero => 0,
-            FeeTier::Standard => 5,        // 0.05%
-            FeeTier::Institutional => 1,   // 0.01%
+            FeeTier::Standard => 5,      // 0.05%
+            FeeTier::Institutional => 1, // 0.01%
             FeeTier::OTC => 0,
         }
     }
@@ -87,8 +87,8 @@ mod tests {
     #[test]
     fn test_tier_classification() {
         assert_eq!(FeeTier::from_usd_cents(0), FeeTier::Zero);
-        assert_eq!(FeeTier::from_usd_cents(99_999), FeeTier::Zero);       // $999.99
-        assert_eq!(FeeTier::from_usd_cents(100_000), FeeTier::Standard);  // $1,000.00
+        assert_eq!(FeeTier::from_usd_cents(99_999), FeeTier::Zero); // $999.99
+        assert_eq!(FeeTier::from_usd_cents(100_000), FeeTier::Standard); // $1,000.00
         assert_eq!(FeeTier::from_usd_cents(9_999_999), FeeTier::Standard); // $99,999.99
         assert_eq!(FeeTier::from_usd_cents(10_000_000), FeeTier::Institutional); // $100k
         assert_eq!(FeeTier::from_usd_cents(999_999_999), FeeTier::Institutional); // $9.99M

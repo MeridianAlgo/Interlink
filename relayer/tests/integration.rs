@@ -81,15 +81,26 @@ async fn test_full_deposit_proof_lifecycle() {
         .expect("proof generation failed");
 
     // Proof format: A (64 bytes G1) + B (128 bytes G2) + C (64 bytes G1) = 256 bytes
-    assert_eq!(package.proof_bytes.len(), 256, "proof must be exactly 256 bytes");
+    assert_eq!(
+        package.proof_bytes.len(),
+        256,
+        "proof must be exactly 256 bytes"
+    );
     assert_eq!(package.sequence, 42);
     // Commitment public input must be 32 bytes
-    assert_eq!(package.public_inputs.len(), 32, "public input must be 32 bytes");
+    assert_eq!(
+        package.public_inputs.len(),
+        32,
+        "public input must be 32 bytes"
+    );
     // Payload hash must match what the deposit() helper encodes:
     // bytes [0..8] = seq(42) as little-endian, rest = 0xAB
     let mut expected_hash = [0xAB; 32];
     expected_hash[..8].copy_from_slice(&42u64.to_le_bytes());
-    assert_eq!(package.payload_hash, expected_hash, "payload hash must match event");
+    assert_eq!(
+        package.payload_hash, expected_hash,
+        "payload hash must match event"
+    );
 }
 
 #[tokio::test]
@@ -108,8 +119,17 @@ async fn test_proof_for_all_event_types() {
             .await
             .unwrap_or_else(|e| panic!("{} proof failed: {}", name, e));
 
-        assert_eq!(package.proof_bytes.len(), 256, "{}: proof must be 256 bytes", name);
-        assert!(!package.proof_bytes.iter().all(|&b| b == 0), "{}: proof must not be all zeros", name);
+        assert_eq!(
+            package.proof_bytes.len(),
+            256,
+            "{}: proof must be 256 bytes",
+            name
+        );
+        assert!(
+            !package.proof_bytes.iter().all(|&b| b == 0),
+            "{}: proof must not be all zeros",
+            name
+        );
     }
 }
 
@@ -125,7 +145,10 @@ async fn test_proofs_are_deterministic_for_same_event() {
     let p1 = engine.generate_proof(&event).await.expect("proof 1 failed");
     let p2 = engine.generate_proof(&event).await.expect("proof 2 failed");
 
-    assert_eq!(p1.public_inputs, p2.public_inputs, "commitment must be deterministic");
+    assert_eq!(
+        p1.public_inputs, p2.public_inputs,
+        "commitment must be deterministic"
+    );
     assert_eq!(p1.payload_hash, p2.payload_hash);
     assert_eq!(p1.sequence, p2.sequence);
 }
@@ -135,8 +158,14 @@ async fn test_different_events_produce_different_commitments() {
     let engine = ProverEngine::new(6);
     engine.initialize().await.expect("prover init failed");
 
-    let p1 = engine.generate_proof(&deposit(1)).await.expect("proof 1 failed");
-    let p2 = engine.generate_proof(&deposit(2)).await.expect("proof 2 failed");
+    let p1 = engine
+        .generate_proof(&deposit(1))
+        .await
+        .expect("proof 1 failed");
+    let p2 = engine
+        .generate_proof(&deposit(2))
+        .await
+        .expect("proof 2 failed");
 
     // Different sequence numbers must produce different commitments
     assert_ne!(
@@ -155,9 +184,7 @@ async fn test_concurrent_proof_generation() {
     for i in 0..10 {
         let e = engine.clone();
         let event = deposit(i as u64 + 100);
-        handles.push(tokio::spawn(async move {
-            e.generate_proof(&event).await
-        }));
+        handles.push(tokio::spawn(async move { e.generate_proof(&event).await }));
     }
 
     let results: Vec<_> = futures::future::join_all(handles).await;
@@ -165,7 +192,12 @@ async fn test_concurrent_proof_generation() {
         let package = result
             .expect("task panicked")
             .unwrap_or_else(|e| panic!("proof {} failed: {}", i, e));
-        assert_eq!(package.proof_bytes.len(), 256, "proof {} must be 256 bytes", i);
+        assert_eq!(
+            package.proof_bytes.len(),
+            256,
+            "proof {} must be 256 bytes",
+            i
+        );
     }
 }
 
@@ -176,11 +208,16 @@ fn test_batch_collects_and_flushes_on_size() {
     let mut collector = BatchCollector::new(5, Duration::from_secs(60));
 
     for i in 0..4 {
-        assert!(collector.push(deposit(i)).is_none(), "batch should not flush before size");
+        assert!(
+            collector.push(deposit(i)).is_none(),
+            "batch should not flush before size"
+        );
     }
 
     // 5th event triggers flush
-    let batch = collector.push(deposit(4)).expect("batch should flush at max_size");
+    let batch = collector
+        .push(deposit(4))
+        .expect("batch should flush at max_size");
     assert_eq!(batch.len(), 5);
     assert_eq!(batch.batch_id, 0);
     assert_eq!(collector.pending_count(), 0);
@@ -205,11 +242,21 @@ fn test_multiple_batches_have_sequential_ids() {
     let mut collector = BatchCollector::new(2, Duration::from_secs(60));
 
     // max_size=2: first push doesn't flush, second does
-    assert!(collector.push(deposit(0)).is_none(), "1 event < max_size, no flush");
-    let b0 = collector.push(deposit(1)).expect("2nd event should flush batch 0");
+    assert!(
+        collector.push(deposit(0)).is_none(),
+        "1 event < max_size, no flush"
+    );
+    let b0 = collector
+        .push(deposit(1))
+        .expect("2nd event should flush batch 0");
     // New batch: same pattern
-    assert!(collector.push(deposit(2)).is_none(), "1 event < max_size, no flush");
-    let b1 = collector.push(deposit(3)).expect("2nd event should flush batch 1");
+    assert!(
+        collector.push(deposit(2)).is_none(),
+        "1 event < max_size, no flush"
+    );
+    let b1 = collector
+        .push(deposit(3))
+        .expect("2nd event should flush batch 1");
 
     assert_eq!(b0.batch_id, 0);
     assert_eq!(b1.batch_id, 1);
@@ -221,18 +268,21 @@ fn test_multiple_batches_have_sequential_ids() {
 fn test_fee_tiers_cover_all_ranges() {
     let cases = [
         (0, FeeTier::Zero),
-        (9_999, FeeTier::Zero),          // $99.99
-        (100_000, FeeTier::Standard),    // $1,000.00
-        (9_999_999, FeeTier::Standard),  // $99,999.99
-        (10_000_000, FeeTier::Institutional), // $100,000
+        (9_999, FeeTier::Zero),                // $99.99
+        (100_000, FeeTier::Standard),          // $1,000.00
+        (9_999_999, FeeTier::Standard),        // $99,999.99
+        (10_000_000, FeeTier::Institutional),  // $100,000
         (999_999_999, FeeTier::Institutional), // $9,999,999.99
-        (1_000_000_000, FeeTier::OTC),   // $10M
+        (1_000_000_000, FeeTier::OTC),         // $10M
         (u64::MAX, FeeTier::OTC),
     ];
     for (cents, expected) in cases {
         assert_eq!(
-            FeeTier::from_usd_cents(cents), expected,
-            "cents={} should be {:?}", cents, expected
+            FeeTier::from_usd_cents(cents),
+            expected,
+            "cents={} should be {:?}",
+            cents,
+            expected
         );
     }
 }
@@ -241,7 +291,12 @@ fn test_fee_tiers_cover_all_ranges() {
 fn test_fee_zero_for_tier1_regardless_of_amount() {
     // No matter how large the token amount, Tier 1 is always free
     for amount in [1u128, 1_000_000, u64::MAX as u128, u128::MAX / 10_000] {
-        assert_eq!(fee::calculate_fee(amount, 99_999), 0, "Tier 1 must be free, amount={}", amount);
+        assert_eq!(
+            fee::calculate_fee(amount, 99_999),
+            0,
+            "Tier 1 must be free, amount={}",
+            amount
+        );
     }
 }
 
@@ -260,7 +315,10 @@ fn test_amount_after_fee_never_overflows() {
     // Should never return more than the input amount
     for amount in [0u128, 1, 1_000_000, u128::MAX / 2] {
         let after = fee::amount_after_fee(amount, 100_000);
-        assert!(after <= amount, "recipient can't receive more than was sent");
+        assert!(
+            after <= amount,
+            "recipient can't receive more than was sent"
+        );
     }
 }
 
@@ -275,7 +333,11 @@ fn test_gas_estimate_interlink_cheapest_vs_percentage_bridges() {
         let cmp = gas::compare(usd_cents);
         let interlink = cmp.interlink.fee_usd_cents;
 
-        let stargate = cmp.competitors.iter().find(|c| c.name == "Stargate v2").unwrap();
+        let stargate = cmp
+            .competitors
+            .iter()
+            .find(|c| c.name == "Stargate v2")
+            .unwrap();
         let across = cmp.competitors.iter().find(|c| c.name == "Across").unwrap();
 
         assert!(

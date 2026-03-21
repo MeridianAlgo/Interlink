@@ -43,7 +43,9 @@ mod hex_commitment {
     pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<[u8; 32], D::Error> {
         let hex = String::deserialize(d)?;
         if hex.len() != 64 {
-            return Err(serde::de::Error::custom("expected 64-char hex string for 32-byte commitment"));
+            return Err(serde::de::Error::custom(
+                "expected 64-char hex string for 32-byte commitment",
+            ));
         }
         let mut out = [0u8; 32];
         for i in 0..32 {
@@ -66,7 +68,9 @@ mod hex_sig {
     pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<[u8; 64], D::Error> {
         let hex = String::deserialize(d)?;
         if hex.len() != 128 {
-            return Err(serde::de::Error::custom("expected 128-char hex string for 64-byte signature"));
+            return Err(serde::de::Error::custom(
+                "expected 128-char hex string for 64-byte signature",
+            ));
         }
         let mut out = [0u8; 64];
         for i in 0..64 {
@@ -184,7 +188,10 @@ impl ValidatorSet {
             return Err(MultiSigError::EmptyValidatorSet);
         }
         if n > MAX_VALIDATORS {
-            return Err(MultiSigError::TooManyValidators { count: n, max: MAX_VALIDATORS });
+            return Err(MultiSigError::TooManyValidators {
+                count: n,
+                max: MAX_VALIDATORS,
+            });
         }
         if threshold == 0 {
             return Err(MultiSigError::InvalidThreshold { threshold, n });
@@ -266,7 +273,10 @@ impl std::fmt::Display for MultiSigError {
             MultiSigError::InvalidThreshold { threshold, n } => {
                 write!(f, "invalid threshold {threshold} for {n} validators")
             }
-            MultiSigError::ThresholdTooLow { threshold_bps, min_bps } => {
+            MultiSigError::ThresholdTooLow {
+                threshold_bps,
+                min_bps,
+            } => {
                 write!(
                     f,
                     "threshold {threshold_bps} bps below minimum {min_bps} bps (must be >50%)"
@@ -344,7 +354,9 @@ pub fn add_signature(
 ) -> Result<(), MultiSigError> {
     // Validate validator index is in set
     if validator_index >= validator_set.n() {
-        return Err(MultiSigError::UnknownValidator { index: validator_index });
+        return Err(MultiSigError::UnknownValidator {
+            index: validator_index,
+        });
     }
 
     // Check for duplicate
@@ -353,7 +365,9 @@ pub fn add_signature(
         .iter()
         .any(|s| s.validator_index == validator_index)
     {
-        return Err(MultiSigError::DuplicateValidator { index: validator_index });
+        return Err(MultiSigError::DuplicateValidator {
+            index: validator_index,
+        });
     }
 
     bundle.signatures.push(ValidatorSignature {
@@ -440,7 +454,9 @@ pub fn deserialize_bundle(
         let offset = 34 + i * 65;
         let validator_index = bytes[offset] as usize;
         if validator_index >= validator_count {
-            return Err(MultiSigError::UnknownValidator { index: validator_index });
+            return Err(MultiSigError::UnknownValidator {
+                index: validator_index,
+            });
         }
         let mut sig = [0u8; 64];
         sig.copy_from_slice(&bytes[offset + 1..offset + 65]);
@@ -533,7 +549,10 @@ mod tests {
 
         add_signature(&mut bundle, 0, dummy_sig(1), &set, 0).unwrap();
         let err = add_signature(&mut bundle, 0, dummy_sig(2), &set, 0).unwrap_err();
-        assert!(matches!(err, MultiSigError::DuplicateValidator { index: 0 }));
+        assert!(matches!(
+            err,
+            MultiSigError::DuplicateValidator { index: 0 }
+        ));
     }
 
     #[test]
@@ -626,6 +645,9 @@ mod tests {
         assert_eq!(wormhole_tolerance, 6);
 
         // At launch, InterLink has lower fault tolerance but is still BFT for small validator sets
-        assert!(set.fault_tolerance() > 0, "must tolerate at least 1 failure");
+        assert!(
+            set.fault_tolerance() > 0,
+            "must tolerate at least 1 failure"
+        );
     }
 }

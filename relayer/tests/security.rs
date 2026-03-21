@@ -26,7 +26,10 @@ mod sequence_binding {
         let payload = b"transfer:1ETH:alice->bob";
         let c1 = compute_commitment(payload, 1, 1, &PROGRAM_ID);
         let c2 = compute_commitment(payload, 2, 1, &PROGRAM_ID);
-        assert_ne!(c1, c2, "different sequences must yield different commitments");
+        assert_ne!(
+            c1, c2,
+            "different sequences must yield different commitments"
+        );
     }
 
     /// Same inputs must yield the same commitment (determinism required for all signers).
@@ -42,7 +45,7 @@ mod sequence_binding {
     #[test]
     fn different_source_chains_produce_different_commitments() {
         let payload = b"data";
-        let c_eth = compute_commitment(payload, 1, 1, &PROGRAM_ID);   // Ethereum
+        let c_eth = compute_commitment(payload, 1, 1, &PROGRAM_ID); // Ethereum
         let c_sol = compute_commitment(payload, 1, 900, &PROGRAM_ID); // Solana
         assert_ne!(c_eth, c_sol);
     }
@@ -52,8 +55,7 @@ mod sequence_binding {
 
 mod byzantine {
     use relayer::multisig::{
-        add_signature, create_bundle, verify_bundle, ValidatorId, ValidatorSet,
-        MultiSigError,
+        add_signature, create_bundle, verify_bundle, MultiSigError, ValidatorId, ValidatorSet,
     };
 
     const PROGRAM_ID: [u8; 32] = [0xAB; 32];
@@ -112,10 +114,7 @@ mod byzantine {
 
         add_signature(&mut bundle, 0, [1u8; 64], &vs, 0).unwrap();
         let err = add_signature(&mut bundle, 0, [2u8; 64], &vs, 0).unwrap_err();
-        assert_eq!(
-            err,
-            MultiSigError::DuplicateValidator { index: 0 },
-        );
+        assert_eq!(err, MultiSigError::DuplicateValidator { index: 0 },);
     }
 
     /// 3-of-5 with exactly 3 signatures must verify successfully.
@@ -160,8 +159,10 @@ mod byzantine {
         let b1 = create_bundle(payload, 100, 1, &PROGRAM_ID, &vs);
         let b2 = create_bundle(payload, 101, 1, &PROGRAM_ID, &vs);
 
-        assert_ne!(b1.commitment, b2.commitment,
-            "bundle commitments for different sequences must differ");
+        assert_ne!(
+            b1.commitment, b2.commitment,
+            "bundle commitments for different sequences must differ"
+        );
     }
 }
 
@@ -169,7 +170,7 @@ mod byzantine {
 
 mod malformed_input {
     use relayer::amm::{Pool, PoolId};
-    use relayer::fee::{FeeTier};
+    use relayer::fee::FeeTier;
 
     fn make_pool() -> Pool {
         let id = PoolId {
@@ -197,7 +198,10 @@ mod malformed_input {
         let mut pool = make_pool();
         // Swap 10% of the reserve — well above 5% MAX_PRICE_IMPACT_BPS
         let err = pool.swap_a_for_b(100_001, 0);
-        assert!(err.is_err(), "price-impact guard must reject oversized swap");
+        assert!(
+            err.is_err(),
+            "price-impact guard must reject oversized swap"
+        );
     }
 
     /// Fee classifier must handle maximum value without panic.
@@ -217,7 +221,12 @@ mod malformed_input {
     /// Initial liquidity with zero amount must be rejected.
     #[test]
     fn amm_initial_liquidity_zero_rejected() {
-        let id = PoolId { token_a: [0u8; 20], token_b: [1u8; 20], chain_a: 1, chain_b: 2 };
+        let id = PoolId {
+            token_a: [0u8; 20],
+            token_b: [1u8; 20],
+            chain_a: 1,
+            chain_b: 2,
+        };
         let mut pool = Pool::new(id);
         assert!(pool.add_initial_liquidity(0, 1000).is_err());
         assert!(pool.add_initial_liquidity(1000, 0).is_err());
@@ -260,7 +269,10 @@ mod amm_manipulation {
         let k_before = pool.k();
         pool.swap_a_for_b(100, 0).unwrap(); // small swap
         let k_after = pool.k();
-        assert!(k_after >= k_before, "k must not decrease after swap (LP fee stays in pool)");
+        assert!(
+            k_after >= k_before,
+            "k must not decrease after swap (LP fee stays in pool)"
+        );
     }
 
     /// Slippage must increase monotonically with trade size.
@@ -281,8 +293,10 @@ mod amm_manipulation {
         let mut pool = pool_with_liquidity(500_000, 500_000);
         let quoted = pool.quote_a_for_b(500);
         let result = pool.swap_a_for_b(500, 0).unwrap();
-        assert_eq!(quoted, result.amount_out,
-            "quote must exactly match actual swap output");
+        assert_eq!(
+            quoted, result.amount_out,
+            "quote must exactly match actual swap output"
+        );
     }
 }
 
@@ -290,33 +304,55 @@ mod amm_manipulation {
 
 mod governance_attack {
     use relayer::governance::{
-        Governance, GovernanceError, ProposalKind, VoteChoice,
-        VOTING_PERIOD_SECS, TIMELOCK_DELAY_SECS, PROPOSAL_THRESHOLD,
+        Governance, GovernanceError, ProposalKind, VoteChoice, PROPOSAL_THRESHOLD,
+        TIMELOCK_DELAY_SECS, VOTING_PERIOD_SECS,
     };
 
-    fn gov() -> Governance { Governance::new() }
+    fn gov() -> Governance {
+        Governance::new()
+    }
 
     /// An attacker with fewer than PROPOSAL_THRESHOLD tokens cannot create proposals.
     #[test]
     fn low_token_holder_cannot_propose() {
         let mut g = gov();
-        let err = g.propose(
-            ProposalKind::UpdateFees, "drain treasury", "send all funds to attacker",
-            "attacker", PROPOSAL_THRESHOLD - 1, 0,
-        ).unwrap_err();
-        assert_eq!(err, GovernanceError::BelowProposalThreshold {
-            have: PROPOSAL_THRESHOLD - 1, need: PROPOSAL_THRESHOLD,
-        });
+        let err = g
+            .propose(
+                ProposalKind::UpdateFees,
+                "drain treasury",
+                "send all funds to attacker",
+                "attacker",
+                PROPOSAL_THRESHOLD - 1,
+                0,
+            )
+            .unwrap_err();
+        assert_eq!(
+            err,
+            GovernanceError::BelowProposalThreshold {
+                have: PROPOSAL_THRESHOLD - 1,
+                need: PROPOSAL_THRESHOLD,
+            }
+        );
     }
 
     /// The same address cannot vote twice on the same proposal.
     #[test]
     fn vote_stuffing_prevented() {
         let mut g = gov();
-        let id = g.propose(ProposalKind::Text, "t", "d", "x", 200_000, 0).unwrap();
-        g.vote(id, "attacker", 1_000_000, VoteChoice::For, 1).unwrap();
-        let err = g.vote(id, "attacker", 1_000_000, VoteChoice::For, 2).unwrap_err();
-        assert_eq!(err, GovernanceError::AlreadyVoted { voter: "attacker".into() });
+        let id = g
+            .propose(ProposalKind::Text, "t", "d", "x", 200_000, 0)
+            .unwrap();
+        g.vote(id, "attacker", 1_000_000, VoteChoice::For, 1)
+            .unwrap();
+        let err = g
+            .vote(id, "attacker", 1_000_000, VoteChoice::For, 2)
+            .unwrap_err();
+        assert_eq!(
+            err,
+            GovernanceError::AlreadyVoted {
+                voter: "attacker".into()
+            }
+        );
     }
 
     /// Cannot execute a proposal before the timelock expires.
@@ -324,7 +360,9 @@ mod governance_attack {
     fn timelock_prevents_early_execution() {
         let mut g = gov();
         let now = 0u64;
-        let id = g.propose(ProposalKind::UpdateFees, "t", "d", "x", 200_000, now).unwrap();
+        let id = g
+            .propose(ProposalKind::UpdateFees, "t", "d", "x", 200_000, now)
+            .unwrap();
         g.vote(id, "a", 25_000_000, VoteChoice::For, 1).unwrap();
         g.vote(id, "b", 20_000_000, VoteChoice::For, 2).unwrap();
         g.finalize(id, now + VOTING_PERIOD_SECS + 1).unwrap();
@@ -340,9 +378,18 @@ mod governance_attack {
     #[test]
     fn vote_after_period_rejected() {
         let mut g = gov();
-        let id = g.propose(ProposalKind::Text, "t", "d", "x", 200_000, 0).unwrap();
-        let err = g.vote(id, "late_voter", 1_000_000, VoteChoice::For,
-                         VOTING_PERIOD_SECS + 1).unwrap_err();
+        let id = g
+            .propose(ProposalKind::Text, "t", "d", "x", 200_000, 0)
+            .unwrap();
+        let err = g
+            .vote(
+                id,
+                "late_voter",
+                1_000_000,
+                VoteChoice::For,
+                VOTING_PERIOD_SECS + 1,
+            )
+            .unwrap_err();
         assert_eq!(err, GovernanceError::VotingNotActive { id });
     }
 
@@ -351,10 +398,17 @@ mod governance_attack {
     fn treasury_over_disburse_rejected() {
         let mut g = gov();
         let initial = g.treasury.balance_tokens;
-        let err = g.treasury.disburse("thief", initial + 1, "steal").unwrap_err();
-        assert_eq!(err, GovernanceError::InsufficientTreasuryBalance {
-            requested: initial + 1, available: initial,
-        });
+        let err = g
+            .treasury
+            .disburse("thief", initial + 1, "steal")
+            .unwrap_err();
+        assert_eq!(
+            err,
+            GovernanceError::InsufficientTreasuryBalance {
+                requested: initial + 1,
+                available: initial,
+            }
+        );
     }
 }
 
@@ -374,7 +428,7 @@ mod rate_limit {
         let mut rejected = 0u32;
         for _ in 0..(FREE_RPM * 2) {
             match rl.check("attacker") {
-                Ok(_)  => ok += 1,
+                Ok(_) => ok += 1,
                 Err(_) => rejected += 1,
             }
         }
@@ -390,7 +444,9 @@ mod rate_limit {
 
         let mut ok = 0u32;
         for _ in 0..PRO_RPM {
-            if rl.check("pro").is_ok() { ok += 1; }
+            if rl.check("pro").is_ok() {
+                ok += 1;
+            }
         }
         assert_eq!(ok, PRO_RPM);
         assert!(rl.check("pro").is_err(), "PRO_RPM+1 must be rejected");
@@ -419,7 +475,7 @@ mod rate_limit {
 // ─── Webhook DoS ──────────────────────────────────────────────────────────────
 
 mod webhook_dos {
-    use relayer::webhook::{WebhookRegistry, EventType};
+    use relayer::webhook::{EventType, WebhookRegistry};
 
     /// After 10 consecutive delivery failures the webhook is auto-disabled,
     /// so it never appears in active subscribers.
@@ -437,7 +493,10 @@ mod webhook_dos {
         }
 
         let updated = reg.get(&registration.id).unwrap();
-        assert!(!updated.active, "webhook must be disabled after 10 consecutive failures");
+        assert!(
+            !updated.active,
+            "webhook must be disabled after 10 consecutive failures"
+        );
         assert_eq!(reg.active_count(), 0);
     }
 
@@ -445,10 +504,8 @@ mod webhook_dos {
     #[test]
     fn success_resets_failure_counter() {
         let reg = WebhookRegistry::new();
-        let registration = reg.register(
-            "https://example.com/hook".to_string(),
-            vec![EventType::All],
-        );
+        let registration =
+            reg.register("https://example.com/hook".to_string(), vec![EventType::All]);
 
         // 9 failures (not yet disabled)
         for _ in 0..9 {
@@ -466,10 +523,8 @@ mod webhook_dos {
     #[test]
     fn deregistered_webhook_not_dispatched() {
         let reg = WebhookRegistry::new();
-        let registration = reg.register(
-            "https://example.com/hook".to_string(),
-            vec![EventType::All],
-        );
+        let registration =
+            reg.register("https://example.com/hook".to_string(), vec![EventType::All]);
         reg.deregister(&registration.id);
         let subs = reg.subscribers_for(&EventType::All);
         assert!(subs.is_empty(), "deregistered webhook must not be returned");

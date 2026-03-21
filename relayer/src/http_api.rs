@@ -81,7 +81,11 @@ pub async fn serve_with_webhooks(addr: &str, metrics: Metrics, registry: Webhook
 
 // ─── Connection handler ───────────────────────────────────────────────────────
 
-async fn handle_connection(mut stream: TcpStream, metrics: Metrics, registry: WebhookRegistry) -> Result<(), String> {
+async fn handle_connection(
+    mut stream: TcpStream,
+    metrics: Metrics,
+    registry: WebhookRegistry,
+) -> Result<(), String> {
     let mut buf = [0u8; 8192]; // generous for any query string
     let n = stream
         .read(&mut buf)
@@ -302,7 +306,11 @@ fn webhooks_register(registry: &WebhookRegistry, body: &str) -> (u16, &'static s
         .unwrap_or_default();
 
     let reg = registry.register(url, events);
-    (201, "application/json", serde_json::to_string(&reg).unwrap_or_default())
+    (
+        201,
+        "application/json",
+        serde_json::to_string(&reg).unwrap_or_default(),
+    )
 }
 
 /// DELETE /webhooks/{id} — deregister a webhook.
@@ -319,7 +327,11 @@ fn webhooks_deregister(registry: &WebhookRegistry, id: &str) -> (u16, &'static s
 /// GET /webhooks/{id} — fetch a single webhook by ID.
 fn webhooks_get(registry: &WebhookRegistry, id: &str) -> (u16, &'static str, String) {
     match registry.get(id) {
-        Some(reg) => (200, "application/json", serde_json::to_string(&reg).unwrap_or_default()),
+        Some(reg) => (
+            200,
+            "application/json",
+            serde_json::to_string(&reg).unwrap_or_default(),
+        ),
         None => {
             let body = serde_json::json!({ "error": "webhook not found", "id": id });
             (404, "application/json", body.to_string())
@@ -347,9 +359,7 @@ fn not_found() -> (u16, &'static str, String) {
 // ─── HTTP helpers ─────────────────────────────────────────────────────────────
 
 /// Parse an HTTP request into (method, path, query_params, body).
-fn parse_request<'a>(
-    request: &'a str,
-) -> (&'a str, &'a str, HashMap<String, String>, String) {
+fn parse_request<'a>(request: &'a str) -> (&'a str, &'a str, HashMap<String, String>, String) {
     let first_line = request.lines().next().unwrap_or("");
     let parts: Vec<&str> = first_line.splitn(3, ' ').collect();
     if parts.len() < 2 {
@@ -441,7 +451,7 @@ mod tests {
     #[test]
     fn test_quote_with_explicit_params() {
         let q = make_query(&[
-            ("usd_cents", "1000000"),  // $10 000
+            ("usd_cents", "1000000"), // $10 000
             ("gas_gwei", "50"),
             ("batch_size", "200"),
         ]);
