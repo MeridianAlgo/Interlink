@@ -75,6 +75,18 @@ struct Inner {
     unique_users: AtomicU64,
     /// corridor key ("src_chain:dst_chain") → transfer count
     corridor_counts: Mutex<HashMap<String, u64>>,
+
+    // ── TVL & Volume (Phase 10 competitive tracking) ────────────────────────
+    /// Total value locked in bridge vaults (USD cents)
+    tvl_usd_cents: AtomicU64,
+    /// Daily transfer volume (USD cents, reset at UTC midnight)
+    daily_volume_usd_cents: AtomicU64,
+    /// All-time cumulative volume (USD cents)
+    cumulative_volume_usd_cents: AtomicU64,
+    /// Validator uptime observations: total heartbeats received
+    validator_heartbeats_total: AtomicU64,
+    /// Validator uptime observations: total expected heartbeats
+    validator_heartbeats_expected: AtomicU64,
 }
 
 impl Default for Inner {
@@ -107,6 +119,11 @@ impl Default for Inner {
             daily_transfers: AtomicU64::new(0),
             unique_users: AtomicU64::new(0),
             corridor_counts: Mutex::new(HashMap::new()),
+            tvl_usd_cents: AtomicU64::new(0),
+            daily_volume_usd_cents: AtomicU64::new(0),
+            cumulative_volume_usd_cents: AtomicU64::new(0),
+            validator_heartbeats_total: AtomicU64::new(0),
+            validator_heartbeats_expected: AtomicU64::new(0),
         }
     }
 }
@@ -251,7 +268,51 @@ impl Metrics {
     /// Reset daily counters (call at UTC midnight).
     pub fn reset_daily(&self) {
         self.0.daily_transfers.store(0, RLX);
+        self.0.daily_volume_usd_cents.store(0, RLX);
         self.0.corridor_counts.lock().unwrap().clear();
+    }
+
+    // ── TVL & Volume (Phase 10) ─────────────────────────────────────────────
+
+    /// Update the current total value locked (absolute value in USD cents).
+    pub fn set_tvl_usd_cents(&self, cents: u64) {
+        self.0.tvl_usd_cents.store(cents, RLX);
+    }
+
+    /// Record a transfer volume (adds to daily + cumulative).
+    pub fn record_volume_usd_cents(&self, cents: u64) {
+        self.0.daily_volume_usd_cents.fetch_add(cents, RLX);
+        self.0.cumulative_volume_usd_cents.fetch_add(cents, RLX);
+    }
+
+    /// Current TVL in USD cents.
+    pub fn tvl_usd_cents(&self) -> u64 {
+        self.0.tvl_usd_cents.load(RLX)
+    }
+
+    /// Daily volume in USD cents.
+    pub fn daily_volume_usd_cents(&self) -> u64 {
+        self.0.daily_volume_usd_cents.load(RLX)
+    }
+
+    /// Cumulative all-time volume in USD cents.
+    pub fn cumulative_volume_usd_cents(&self) -> u64 {
+        self.0.cumulative_volume_usd_cents.load(RLX)
+    }
+
+    // ── Validator uptime tracking (Phase 10) ────────────────────────────────
+
+    /// Record validator heartbeat observations.
+    pub fn record_validator_heartbeats(&self, received: u64, expected: u64) {
+        self.0.validator_heartbeats_total.fetch_add(received, RLX);
+        self.0.validator_heartbeats_expected.fetch_add(expected, RLX);
+    }
+
+    /// Validator uptime percentage (0.0 - 100.0).
+    pub fn validator_uptime_pct(&self) -> f64 {
+        let total = self.0.validator_heartbeats_total.load(RLX);
+        let expected = self.0.validator_heartbeats_expected.load(RLX);
+        if expected == 0 { 100.0 } else { total as f64 / expected as f64 * 100.0 }
     }
 
     /// Top corridors by transfer count, sorted descending. Returns up to `n` entries.
@@ -459,6 +520,20 @@ impl Metrics {
             i.unique_users.load(RLX),
         );
 
+        // ── tvl & volume ────────────────────────────────────────────────────
+        write_gauge(&mut out, "interlink_tvl_usd_cents",
+            "Total value locked in bridge vaults (USD cents)", i.tvl_usd_cents.load(RLX));
+        write_gauge(&mut out, "interlink_daily_volume_usd_cents",
+            "Daily transfer volume (USD cents)", i.daily_volume_usd_cents.load(RLX));
+        write_counter(&mut out, "interlink_cumulative_volume_usd_cents",
+            "All-time cumulative transfer volume (USD cents)", i.cumulative_volume_usd_cents.load(RLX));
+
+        // ── validator uptime ────────────────────────────────────────────────
+        write_counter(&mut out, "interlink_validator_heartbeats_total",
+            "Validator heartbeats received", i.validator_heartbeats_total.load(RLX));
+        write_counter(&mut out, "interlink_validator_heartbeats_expected",
+            "Validator heartbeats expected", i.validator_heartbeats_expected.load(RLX));
+
         out
     }
 
@@ -514,6 +589,16 @@ impl Metrics {
                 "daily_transfers": i.daily_transfers.load(RLX),
                 "unique_users":    i.unique_users.load(RLX),
                 "top_corridors":   self.top_corridors(5),
+            },
+            "tvl": {
+                "usd_cents": i.tvl_usd_cents.load(RLX),
+                "daily_volume_usd_cents": i.daily_volume_usd_cents.load(RLX),
+                "cumulative_volume_usd_cents": i.cumulative_volume_usd_cents.load(RLX),
+            },
+            "validators": {
+                "heartbeats_received": i.validator_heartbeats_total.load(RLX),
+                "heartbeats_expected": i.validator_heartbeats_expected.load(RLX),
+                "uptime_pct": self.validator_uptime_pct(),
             },
         })
     }
@@ -731,5 +816,76 @@ mod tests {
         m.record_unique_user();
         m.record_unique_user();
         assert_eq!(m.as_json()["user"]["unique_users"], 2);
+    }
+
+    // ── TVL & Volume tests (Phase 10) ───────────────────────────────────────
+
+    #[test]
+    fn test_tvl_tracking() {
+        let m = Metrics::new();
+        m.set_tvl_usd_cents(100_000_000_00); // $100M
+        assert_eq!(m.tvl_usd_cents(), 100_000_000_00);
+        let j = m.as_json();
+        assert_eq!(j["tvl"]["usd_cents"], 100_000_000_00u64);
+    }
+
+    #[test]
+    fn test_daily_volume_tracking() {
+        let m = Metrics::new();
+        m.record_volume_usd_cents(500_000_00); // $500k
+        m.record_volume_usd_cents(300_000_00); // $300k
+        assert_eq!(m.daily_volume_usd_cents(), 800_000_00); // $800k
+        assert_eq!(m.cumulative_volume_usd_cents(), 800_000_00);
+    }
+
+    #[test]
+    fn test_volume_reset_daily() {
+        let m = Metrics::new();
+        m.record_volume_usd_cents(100_00);
+        m.reset_daily();
+        assert_eq!(m.daily_volume_usd_cents(), 0);
+        // Cumulative should NOT reset
+        assert_eq!(m.cumulative_volume_usd_cents(), 100_00);
+    }
+
+    #[test]
+    fn test_tvl_prometheus_export() {
+        let m = Metrics::new();
+        m.set_tvl_usd_cents(50_000_00);
+        let text = m.prometheus_text();
+        assert!(text.contains("interlink_tvl_usd_cents"));
+        assert!(text.contains("interlink_daily_volume_usd_cents"));
+    }
+
+    // ── Validator uptime tests (Phase 10) ───────────────────────────────────
+
+    #[test]
+    fn test_validator_uptime_tracking() {
+        let m = Metrics::new();
+        m.record_validator_heartbeats(950, 1000); // 95% uptime
+        let uptime = m.validator_uptime_pct();
+        assert!((uptime - 95.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn test_validator_uptime_perfect() {
+        let m = Metrics::new();
+        m.record_validator_heartbeats(1000, 1000); // 100%
+        assert!((m.validator_uptime_pct() - 100.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_validator_uptime_no_data() {
+        let m = Metrics::new();
+        assert_eq!(m.validator_uptime_pct(), 100.0); // default
+    }
+
+    #[test]
+    fn test_validator_uptime_json() {
+        let m = Metrics::new();
+        m.record_validator_heartbeats(9995, 10000);
+        let j = m.as_json();
+        assert_eq!(j["validators"]["heartbeats_received"], 9995);
+        assert_eq!(j["validators"]["heartbeats_expected"], 10000);
     }
 }

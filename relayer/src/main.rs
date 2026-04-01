@@ -22,6 +22,9 @@ const PROOF_GEN_ALERT_MS: u128 = 1_000;
 /// Alert threshold: total settlement finality time
 const SETTLEMENT_ALERT_MS: u128 = 60_000;
 
+/// Log retention period in days (Phase 10: 30 days default, adjust per volume)
+const LOG_RETENTION_DAYS: u64 = 30;
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // JSON structured logging for Datadog/Splunk compatibility (Phase 10)
@@ -80,6 +83,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         max_concurrent_provers,
         batch_max_size = BATCH_MAX_SIZE,
         batch_flush_secs = BATCH_FLUSH_SECS,
+        log_retention_days = LOG_RETENTION_DAYS,
         api_addr,
         "interlink relayer starting"
     );

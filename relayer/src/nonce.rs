@@ -290,4 +290,79 @@ mod tests {
         let pool = DurableNoncePool::new(32);
         assert_eq!(pool.capacity(), 32);
     }
+
+    // ── Phase 2: Finality consistency across nonces ────────────────────────
+
+    #[tokio::test]
+    async fn test_all_nonces_unique_pubkeys() {
+        let pool = DurableNoncePool::new(10);
+        pool.populate_dev_nonces(10).await;
+
+        let mut pubkeys = Vec::new();
+        let mut permits = Vec::new();
+        for _ in 0..10 {
+            let permit = pool.acquire().await.unwrap();
+            pubkeys.push(permit.pubkey().to_string());
+            permits.push(permit);
+        }
+
+        // All nonce pubkeys must be unique (no double-use)
+        pubkeys.sort();
+        pubkeys.dedup();
+        assert_eq!(pubkeys.len(), 10, "all nonces must have unique pubkeys");
+    }
+
+    #[tokio::test]
+    async fn test_concurrent_nonce_consistency() {
+        // Simulate parallel submissions using all nonces, ensure no overlap
+        let pool = Arc::new(DurableNoncePool::new(16));
+        pool.populate_dev_nonces(16).await;
+
+        let used_pubkeys = Arc::new(Mutex::new(Vec::new()));
+        let mut handles = vec![];
+
+        for _ in 0..16 {
+            let p = Arc::clone(&pool);
+            let keys = Arc::clone(&used_pubkeys);
+            handles.push(tokio::spawn(async move {
+                let permit = p.acquire().await.expect("must get permit");
+                let pk = permit.pubkey().to_string();
+                keys.lock().await.push(pk.clone());
+                // Simulate proof submission latency
+                tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+                drop(permit);
+                pk
+            }));
+        }
+
+        let mut results = Vec::new();
+        for h in handles {
+            results.push(h.await.unwrap());
+        }
+
+        // Every concurrent task got a unique nonce
+        results.sort();
+        results.dedup();
+        assert_eq!(results.len(), 16, "all concurrent nonces must be unique");
+
+        // All nonces returned to pool
+        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+        assert_eq!(pool.available().await, 16);
+    }
+
+    #[tokio::test]
+    async fn test_nonce_reuse_after_return() {
+        // After returning a nonce, the same pubkey can be re-acquired
+        let pool = DurableNoncePool::new(1);
+        pool.populate_dev_nonces(1).await;
+
+        let permit1 = pool.acquire().await.unwrap();
+        let pk1 = permit1.pubkey().to_string();
+        drop(permit1);
+        tokio::time::sleep(tokio::time::Duration::from_millis(20)).await;
+
+        let permit2 = pool.acquire().await.unwrap();
+        let pk2 = permit2.pubkey().to_string();
+        assert_eq!(pk1, pk2, "nonce should be reusable after return");
+    }
 }

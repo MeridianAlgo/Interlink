@@ -208,4 +208,88 @@ mod tests {
         assert!(!collector.is_timer_ready());
         assert!(collector.flush_timer().is_none());
     }
+
+    // ── Phase 1: Batch size scaling tests (100, 500, 1000 tx batches) ──────
+
+    #[test]
+    fn test_batch_100_events() {
+        let mut collector = BatchCollector::new(100, Duration::from_secs(60));
+        for i in 0..99 {
+            assert!(collector.push(make_deposit(i, 1000 + i)).is_none());
+        }
+        let batch = collector.push(make_deposit(99, 1099)).expect("100th should flush");
+        assert_eq!(batch.len(), 100);
+        assert_eq!(batch.min_block(), 1000);
+        assert_eq!(batch.max_block(), 1099);
+    }
+
+    #[test]
+    fn test_batch_500_events() {
+        let mut collector = BatchCollector::new(500, Duration::from_secs(60));
+        for i in 0..499 {
+            assert!(collector.push(make_deposit(i, 2000 + i)).is_none());
+        }
+        let batch = collector.push(make_deposit(499, 2499)).expect("500th should flush");
+        assert_eq!(batch.len(), 500);
+        assert_eq!(batch.min_block(), 2000);
+        assert_eq!(batch.max_block(), 2499);
+    }
+
+    #[test]
+    fn test_batch_1000_events() {
+        let mut collector = BatchCollector::new(1000, Duration::from_secs(60));
+        for i in 0..999 {
+            assert!(collector.push(make_deposit(i, 3000 + i)).is_none());
+        }
+        let batch = collector.push(make_deposit(999, 3999)).expect("1000th should flush");
+        assert_eq!(batch.len(), 1000);
+        assert_eq!(batch.min_block(), 3000);
+        assert_eq!(batch.max_block(), 3999);
+    }
+
+    // ── Phase 1: Batch overhead comparison (batch vs per-tx) ───────────────
+
+    #[test]
+    fn test_batch_overhead_vs_per_tx() {
+        // Simulate per-tx settlement: 100 individual flushes (batch_size=1)
+        let mut per_tx = BatchCollector::new(1, Duration::from_secs(60));
+        let mut per_tx_batches = 0u64;
+        for i in 0..100 {
+            if per_tx.push(make_deposit(i, 5000 + i)).is_some() {
+                per_tx_batches += 1;
+            }
+        }
+        assert_eq!(per_tx_batches, 100, "per-tx: each event = 1 flush");
+
+        // Simulate batch settlement: 1 flush for 100 events
+        let mut batched = BatchCollector::new(100, Duration::from_secs(60));
+        let mut batch_flushes = 0u64;
+        for i in 0..100 {
+            if batched.push(make_deposit(i, 5000 + i)).is_some() {
+                batch_flushes += 1;
+            }
+        }
+        assert_eq!(batch_flushes, 1, "batched: 100 events = 1 flush");
+
+        // Overhead comparison: batching reduces flushes by 100x
+        // Each flush = 1 Solana tx + 1 proof setup → batching amortises both
+        assert!(
+            per_tx_batches >= batch_flushes * 50,
+            "batch mode should reduce flush overhead by at least 50x"
+        );
+    }
+
+    #[test]
+    fn test_multiple_batch_sizes_sequential() {
+        // Verify collector handles sequential batches of varying sizes
+        let sizes = [100, 500, 1000];
+        for &size in &sizes {
+            let mut collector = BatchCollector::new(size, Duration::from_secs(60));
+            for i in 0..(size as u64) {
+                let _ = collector.push(make_deposit(i, i));
+            }
+            // All events should have flushed
+            assert_eq!(collector.pending_count(), 0);
+        }
+    }
 }
