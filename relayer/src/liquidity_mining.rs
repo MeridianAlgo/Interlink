@@ -16,7 +16,6 @@
 ///   Across:    ACX rewards, weekly distribution, no boost
 ///   Uniswap:   UNI mining ended, was purely proportional
 ///   InterLink: epoch-based with boost + vesting + anti-gaming (more sustainable)
-
 use std::collections::HashMap;
 
 // ─── Constants ──────────────────────────────────────────────────────────────
@@ -147,15 +146,18 @@ impl LiquidityMiningProgram {
     /// Deposit liquidity. Returns the LP position.
     pub fn deposit(&mut self, lp_id: impl Into<String>, liquidity: u128, now: u64) -> &LpPosition {
         let id = lp_id.into();
-        let pos = self.positions.entry(id.clone()).or_insert_with(|| LpPosition {
-            lp_id: id,
-            liquidity: 0,
-            deposit_timestamp: now,
-            consecutive_epochs: 0,
-            total_rewards_earned: 0,
-            rewards_released: 0,
-            rewards_vesting: Vec::new(),
-        });
+        let pos = self
+            .positions
+            .entry(id.clone())
+            .or_insert_with(|| LpPosition {
+                lp_id: id,
+                liquidity: 0,
+                deposit_timestamp: now,
+                consecutive_epochs: 0,
+                total_rewards_earned: 0,
+                rewards_released: 0,
+                rewards_vesting: Vec::new(),
+            });
         pos.liquidity += liquidity;
         // Reset deposit timestamp if adding to existing position
         if pos.liquidity == liquidity {
@@ -166,7 +168,10 @@ impl LiquidityMiningProgram {
 
     /// Withdraw liquidity. Returns remaining amount.
     pub fn withdraw(&mut self, lp_id: &str, amount: u128) -> Result<u128, MiningError> {
-        let pos = self.positions.get_mut(lp_id).ok_or(MiningError::LpNotFound)?;
+        let pos = self
+            .positions
+            .get_mut(lp_id)
+            .ok_or(MiningError::LpNotFound)?;
         if amount > pos.liquidity {
             return Err(MiningError::InsufficientLiquidity);
         }
@@ -238,7 +243,8 @@ impl LiquidityMiningProgram {
             };
 
             // Split into immediate + vesting
-            let immediate = (final_reward as u128 * IMMEDIATE_VEST_BPS as u128 / BPS as u128) as u64;
+            let immediate =
+                (final_reward as u128 * IMMEDIATE_VEST_BPS as u128 / BPS as u128) as u64;
             let vesting_amount = final_reward.saturating_sub(immediate);
 
             per_lp.push(LpReward {
@@ -284,7 +290,10 @@ impl LiquidityMiningProgram {
 
     /// Claim vested rewards for an LP. Returns amount claimed.
     pub fn claim_vested(&mut self, lp_id: &str, now: u64) -> Result<u64, MiningError> {
-        let pos = self.positions.get_mut(lp_id).ok_or(MiningError::LpNotFound)?;
+        let pos = self
+            .positions
+            .get_mut(lp_id)
+            .ok_or(MiningError::LpNotFound)?;
         let mut total_claimed: u64 = 0;
         for schedule in &mut pos.rewards_vesting {
             let claimable = schedule.claimable_at(now);
@@ -416,7 +425,10 @@ mod tests {
     fn test_withdraw_insufficient() {
         let mut prog = LiquidityMiningProgram::new(START);
         prog.deposit("alice", 100, START);
-        assert_eq!(prog.withdraw("alice", 200), Err(MiningError::InsufficientLiquidity));
+        assert_eq!(
+            prog.withdraw("alice", 200),
+            Err(MiningError::InsufficientLiquidity)
+        );
     }
 
     #[test]
@@ -495,7 +507,10 @@ mod tests {
         let expected_immediate = reward.final_reward * IMMEDIATE_VEST_BPS as u64 / BPS;
         assert_eq!(reward.immediate_release, expected_immediate);
         // 75% vesting
-        assert_eq!(reward.vesting_amount, reward.final_reward - expected_immediate);
+        assert_eq!(
+            reward.vesting_amount,
+            reward.final_reward - expected_immediate
+        );
     }
 
     #[test]

@@ -13,7 +13,6 @@
 ///   Across:   no formal SLA
 ///   LiFi:     ~200ms API latency target (undocumented)
 ///   InterLink: published SLA with automatic breach detection + reporting
-
 use std::collections::VecDeque;
 
 // ─── SLA Targets ─────────────────────────────────────────────────────────────
@@ -266,7 +265,10 @@ mod tests {
             m.record_settlement(i * 500); // 0ms to 49500ms
         }
         let p99 = m.settlement_p99_ms();
-        assert!(p99 <= SETTLEMENT_P99_TARGET_MS, "p99={p99} should be ≤ {SETTLEMENT_P99_TARGET_MS}");
+        assert!(
+            p99 <= SETTLEMENT_P99_TARGET_MS,
+            "p99={p99} should be ≤ {SETTLEMENT_P99_TARGET_MS}"
+        );
     }
 
     #[test]
@@ -311,8 +313,12 @@ mod tests {
     fn test_overall_compliant_all_pass() {
         let mut m = SlaMonitor::new();
         m.record_uptime(99_990, 10); // 99.99%
-        for _ in 0..100 { m.record_settlement(5_000); } // 5s each
-        for _ in 0..100 { m.record_api_response(100); } // 100ms each
+        for _ in 0..100 {
+            m.record_settlement(5_000);
+        } // 5s each
+        for _ in 0..100 {
+            m.record_api_response(100);
+        } // 100ms each
         let report = m.evaluate(400);
         assert!(report.overall_compliant);
         assert!(report.breaches.is_empty());

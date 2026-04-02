@@ -23,7 +23,6 @@
 ///   Across:    optimistic — relayer fronts, repaid later (can dispute)
 ///   HTLC:      hash time-locked contracts (Bitcoin Lightning style)
 ///   InterLink: ZK-verified two-phase commit with automatic rollback
-
 use std::collections::HashMap;
 
 // ─── Constants ──────────────────────────────────────────────────────────────
@@ -129,13 +128,11 @@ impl AtomicSettlementEngine {
     }
 
     /// Phase 1: Create escrow (PREPARE).
-    pub fn prepare(
-        &mut self,
-        params: SettlementParams,
-        now: u64,
-    ) -> Result<String, AtomicError> {
+    pub fn prepare(&mut self, params: SettlementParams, now: u64) -> Result<String, AtomicError> {
         // Validate timeout
-        let timeout = params.timeout_secs.clamp(MIN_ESCROW_TIMEOUT_SECS, MAX_ESCROW_TIMEOUT_SECS);
+        let timeout = params
+            .timeout_secs
+            .clamp(MIN_ESCROW_TIMEOUT_SECS, MAX_ESCROW_TIMEOUT_SECS);
 
         if params.amount == 0 {
             return Err(AtomicError::ZeroAmount);
@@ -181,7 +178,10 @@ impl AtomicSettlementEngine {
         source_tx: impl Into<String>,
         now: u64,
     ) -> Result<(), AtomicError> {
-        let s = self.settlements.get_mut(settlement_id).ok_or(AtomicError::NotFound)?;
+        let s = self
+            .settlements
+            .get_mut(settlement_id)
+            .ok_or(AtomicError::NotFound)?;
         if s.state != SettlementState::Prepared {
             return Err(AtomicError::InvalidTransition {
                 from: format!("{:?}", s.state),
@@ -208,7 +208,10 @@ impl AtomicSettlementEngine {
         dest_tx: impl Into<String>,
         now: u64,
     ) -> Result<(), AtomicError> {
-        let s = self.settlements.get_mut(settlement_id).ok_or(AtomicError::NotFound)?;
+        let s = self
+            .settlements
+            .get_mut(settlement_id)
+            .ok_or(AtomicError::NotFound)?;
         if s.state != SettlementState::ProofReady {
             return Err(AtomicError::InvalidTransition {
                 from: format!("{:?}", s.state),
@@ -230,7 +233,10 @@ impl AtomicSettlementEngine {
 
     /// Finalize a committed settlement (both chains confirmed).
     pub fn finalize(&mut self, settlement_id: &str, now: u64) -> Result<(), AtomicError> {
-        let s = self.settlements.get_mut(settlement_id).ok_or(AtomicError::NotFound)?;
+        let s = self
+            .settlements
+            .get_mut(settlement_id)
+            .ok_or(AtomicError::NotFound)?;
         if s.state != SettlementState::Committed {
             return Err(AtomicError::InvalidTransition {
                 from: format!("{:?}", s.state),
@@ -249,7 +255,10 @@ impl AtomicSettlementEngine {
         reason: impl Into<String>,
         now: u64,
     ) -> Result<(), AtomicError> {
-        let s = self.settlements.get_mut(settlement_id).ok_or(AtomicError::NotFound)?;
+        let s = self
+            .settlements
+            .get_mut(settlement_id)
+            .ok_or(AtomicError::NotFound)?;
         match &s.state {
             SettlementState::Prepared | SettlementState::ProofReady => {
                 s.state = SettlementState::RolledBack;
@@ -277,8 +286,10 @@ impl AtomicSettlementEngine {
             .settlements
             .iter()
             .filter(|(_, s)| {
-                matches!(s.state, SettlementState::Prepared | SettlementState::ProofReady)
-                    && now > s.deadline + ROLLBACK_GRACE_SECS
+                matches!(
+                    s.state,
+                    SettlementState::Prepared | SettlementState::ProofReady
+                ) && now > s.deadline + ROLLBACK_GRACE_SECS
             })
             .map(|(id, _)| id.clone())
             .collect();
@@ -303,7 +314,11 @@ impl AtomicSettlementEngine {
     pub fn get_by_sender(&self, sender: &str) -> Vec<&AtomicSettlement> {
         self.by_sender
             .get(sender)
-            .map(|ids| ids.iter().filter_map(|id| self.settlements.get(id)).collect())
+            .map(|ids| {
+                ids.iter()
+                    .filter_map(|id| self.settlements.get(id))
+                    .collect()
+            })
             .unwrap_or_default()
     }
 
@@ -311,7 +326,14 @@ impl AtomicSettlementEngine {
     pub fn active_count(&self) -> usize {
         self.settlements
             .values()
-            .filter(|s| matches!(s.state, SettlementState::Prepared | SettlementState::ProofReady | SettlementState::Committed))
+            .filter(|s| {
+                matches!(
+                    s.state,
+                    SettlementState::Prepared
+                        | SettlementState::ProofReady
+                        | SettlementState::Committed
+                )
+            })
             .count()
     }
 
@@ -393,7 +415,9 @@ mod tests {
         let mut engine = AtomicSettlementEngine::new();
         let id = engine.prepare(sample_params(), 1000).unwrap();
 
-        engine.attach_proof(&id, "proof_abc", "0xSourceTx", 1010).unwrap();
+        engine
+            .attach_proof(&id, "proof_abc", "0xSourceTx", 1010)
+            .unwrap();
         assert_eq!(engine.get(&id).unwrap().state, SettlementState::ProofReady);
 
         engine.commit(&id, "SolDestTx", 1020).unwrap();
@@ -528,7 +552,9 @@ mod tests {
     fn test_proof_commitment_stored() {
         let mut engine = AtomicSettlementEngine::new();
         let id = engine.prepare(sample_params(), 1000).unwrap();
-        engine.attach_proof(&id, "0xProofHash", "0xLockTx", 1010).unwrap();
+        engine
+            .attach_proof(&id, "0xProofHash", "0xLockTx", 1010)
+            .unwrap();
         let s = engine.get(&id).unwrap();
         assert_eq!(s.proof_commitment.as_deref(), Some("0xProofHash"));
         assert_eq!(s.source_tx.as_deref(), Some("0xLockTx"));

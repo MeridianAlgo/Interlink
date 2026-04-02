@@ -8,7 +8,6 @@
 ///   High:     $10k  - $100k (e.g., validator bypass, replay)
 ///   Medium:   $1k   - $10k  (e.g., DoS, incorrect fee calculation)
 ///   Low:      $100  - $1k   (e.g., cosmetic, documentation)
-
 use std::collections::HashMap;
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -161,11 +160,7 @@ impl BountyRegistry {
     }
 
     /// Confirm a vulnerability and set a reward amount.
-    pub fn confirm(
-        &mut self,
-        id: u64,
-        reward_amount: u64,
-    ) -> Result<(), BountyError> {
+    pub fn confirm(&mut self, id: u64, reward_amount: u64) -> Result<(), BountyError> {
         let sub = self.get_mut(id)?;
         if sub.status != SubmissionStatus::Triaging {
             return Err(BountyError::InvalidTransition {
@@ -182,7 +177,9 @@ impl BountyRegistry {
             });
         }
         sub.status = SubmissionStatus::Confirmed;
-        sub.status = SubmissionStatus::RewardPending { amount: reward_amount };
+        sub.status = SubmissionStatus::RewardPending {
+            amount: reward_amount,
+        };
         Ok(())
     }
 
@@ -212,7 +209,9 @@ impl BountyRegistry {
         now: u64,
     ) -> Result<(), BountyError> {
         let sub = self.get_mut(id)?;
-        sub.status = SubmissionStatus::Rejected { reason: reason.into() };
+        sub.status = SubmissionStatus::Rejected {
+            reason: reason.into(),
+        };
         sub.resolved_at = Some(now);
         Ok(())
     }
@@ -361,7 +360,10 @@ mod tests {
         assert_eq!(paid, 50_000);
         assert_eq!(reg.total_paid, 50_000);
         let sub = reg.get(id).unwrap();
-        assert!(matches!(sub.status, SubmissionStatus::Paid { amount: 50_000 }));
+        assert!(matches!(
+            sub.status,
+            SubmissionStatus::Paid { amount: 50_000 }
+        ));
         assert_eq!(sub.resolved_at, Some(2000));
     }
 
@@ -373,7 +375,11 @@ mod tests {
         let err = reg.confirm(id, 500_000).unwrap_err();
         assert_eq!(
             err,
-            BountyError::RewardOutOfRange { amount: 500_000, min: HIGH_MIN, max: HIGH_MAX }
+            BountyError::RewardOutOfRange {
+                amount: 500_000,
+                min: HIGH_MIN,
+                max: HIGH_MAX
+            }
         );
     }
 
@@ -388,7 +394,8 @@ mod tests {
     #[test]
     fn test_reject_submission() {
         let (mut reg, id) = registry_with_submission();
-        reg.reject(id, "Not a vulnerability — expected behavior", 1500).unwrap();
+        reg.reject(id, "Not a vulnerability — expected behavior", 1500)
+            .unwrap();
         let sub = reg.get(id).unwrap();
         assert!(matches!(sub.status, SubmissionStatus::Rejected { .. }));
     }

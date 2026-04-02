@@ -217,7 +217,9 @@ mod tests {
         for i in 0..99 {
             assert!(collector.push(make_deposit(i, 1000 + i)).is_none());
         }
-        let batch = collector.push(make_deposit(99, 1099)).expect("100th should flush");
+        let batch = collector
+            .push(make_deposit(99, 1099))
+            .expect("100th should flush");
         assert_eq!(batch.len(), 100);
         assert_eq!(batch.min_block(), 1000);
         assert_eq!(batch.max_block(), 1099);
@@ -229,7 +231,9 @@ mod tests {
         for i in 0..499 {
             assert!(collector.push(make_deposit(i, 2000 + i)).is_none());
         }
-        let batch = collector.push(make_deposit(499, 2499)).expect("500th should flush");
+        let batch = collector
+            .push(make_deposit(499, 2499))
+            .expect("500th should flush");
         assert_eq!(batch.len(), 500);
         assert_eq!(batch.min_block(), 2000);
         assert_eq!(batch.max_block(), 2499);
@@ -241,7 +245,9 @@ mod tests {
         for i in 0..999 {
             assert!(collector.push(make_deposit(i, 3000 + i)).is_none());
         }
-        let batch = collector.push(make_deposit(999, 3999)).expect("1000th should flush");
+        let batch = collector
+            .push(make_deposit(999, 3999))
+            .expect("1000th should flush");
         assert_eq!(batch.len(), 1000);
         assert_eq!(batch.min_block(), 3000);
         assert_eq!(batch.max_block(), 3999);

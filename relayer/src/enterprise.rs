@@ -15,7 +15,6 @@
 ///   Across:    no enterprise features
 ///   Fireblocks: full enterprise wallet, but proprietary + expensive
 ///   InterLink: built-in enterprise controls, no 3rd party dependency
-
 use std::collections::{HashMap, HashSet};
 
 // ─── Constants ──────────────────────────────────────────────────────────────
@@ -166,7 +165,9 @@ impl EnterpriseManager {
         if config.approvers.len() > MAX_APPROVERS {
             return Err(EnterpriseError::TooManyApprovers);
         }
-        if config.required_approvals as usize > config.approvers.len() && !config.approvers.is_empty() {
+        if config.required_approvals as usize > config.approvers.len()
+            && !config.approvers.is_empty()
+        {
             return Err(EnterpriseError::InvalidApprovalThreshold);
         }
         self.spend.entry(config.org_id.clone()).or_default();
@@ -175,15 +176,29 @@ impl EnterpriseManager {
     }
 
     /// Add an address to an org's whitelist.
-    pub fn add_to_whitelist(&mut self, org_id: &str, address: impl Into<String>) -> Result<(), EnterpriseError> {
-        let org = self.orgs.get_mut(org_id).ok_or(EnterpriseError::OrgNotFound)?;
+    pub fn add_to_whitelist(
+        &mut self,
+        org_id: &str,
+        address: impl Into<String>,
+    ) -> Result<(), EnterpriseError> {
+        let org = self
+            .orgs
+            .get_mut(org_id)
+            .ok_or(EnterpriseError::OrgNotFound)?;
         org.whitelist.insert(address.into());
         Ok(())
     }
 
     /// Remove an address from an org's whitelist.
-    pub fn remove_from_whitelist(&mut self, org_id: &str, address: &str) -> Result<(), EnterpriseError> {
-        let org = self.orgs.get_mut(org_id).ok_or(EnterpriseError::OrgNotFound)?;
+    pub fn remove_from_whitelist(
+        &mut self,
+        org_id: &str,
+        address: &str,
+    ) -> Result<(), EnterpriseError> {
+        let org = self
+            .orgs
+            .get_mut(org_id)
+            .ok_or(EnterpriseError::OrgNotFound)?;
         org.whitelist.remove(address);
         Ok(())
     }
@@ -196,23 +211,33 @@ impl EnterpriseManager {
         amount_cents: u64,
         now: u64,
     ) -> Result<(String, ValidationResult), EnterpriseError> {
-        let org = self.orgs.get(org_id).ok_or(EnterpriseError::OrgNotFound)?.clone();
+        let org = self
+            .orgs
+            .get(org_id)
+            .ok_or(EnterpriseError::OrgNotFound)?
+            .clone();
 
         // 1. Whitelist check
         if org.whitelist_enabled && !org.whitelist.contains(destination) {
-            return Ok((String::new(), ValidationResult::Rejected {
-                reason: format!("destination {destination} not in whitelist"),
-            }));
+            return Ok((
+                String::new(),
+                ValidationResult::Rejected {
+                    reason: format!("destination {destination} not in whitelist"),
+                },
+            ));
         }
 
         // 2. Per-tx limit check
         if amount_cents > org.per_tx_limit_cents {
-            return Ok((String::new(), ValidationResult::Rejected {
-                reason: format!(
-                    "amount {}c exceeds per-tx limit {}c",
-                    amount_cents, org.per_tx_limit_cents
-                ),
-            }));
+            return Ok((
+                String::new(),
+                ValidationResult::Rejected {
+                    reason: format!(
+                        "amount {}c exceeds per-tx limit {}c",
+                        amount_cents, org.per_tx_limit_cents
+                    ),
+                },
+            ));
         }
 
         // 3. Daily/monthly limit check (with auto-reset)
@@ -220,18 +245,26 @@ impl EnterpriseManager {
         reset_spend_if_needed(spend, now);
 
         if spend.daily_spent_cents + amount_cents > org.daily_limit_cents {
-            return Ok((String::new(), ValidationResult::Rejected {
-                reason: format!(
-                    "daily limit exceeded: {}c spent + {}c = {}c > {}c limit",
-                    spend.daily_spent_cents, amount_cents,
-                    spend.daily_spent_cents + amount_cents, org.daily_limit_cents
-                ),
-            }));
+            return Ok((
+                String::new(),
+                ValidationResult::Rejected {
+                    reason: format!(
+                        "daily limit exceeded: {}c spent + {}c = {}c > {}c limit",
+                        spend.daily_spent_cents,
+                        amount_cents,
+                        spend.daily_spent_cents + amount_cents,
+                        org.daily_limit_cents
+                    ),
+                },
+            ));
         }
         if spend.monthly_spent_cents + amount_cents > org.monthly_limit_cents {
-            return Ok((String::new(), ValidationResult::Rejected {
-                reason: "monthly limit exceeded".into(),
-            }));
+            return Ok((
+                String::new(),
+                ValidationResult::Rejected {
+                    reason: "monthly limit exceeded".into(),
+                },
+            ));
         }
 
         // 4. Create pending transfer
@@ -258,7 +291,11 @@ impl EnterpriseManager {
             destination: destination.to_string(),
             amount_cents,
             approvals: HashSet::new(),
-            required_approvals: if needs_approval { org.required_approvals } else { 0 },
+            required_approvals: if needs_approval {
+                org.required_approvals
+            } else {
+                0
+            },
             approved: !needs_approval,
             release_at,
             created_at: now,
@@ -291,13 +328,19 @@ impl EnterpriseManager {
         transfer_id: &str,
         approver: &str,
     ) -> Result<ValidationResult, EnterpriseError> {
-        let transfer = self.pending.get_mut(transfer_id).ok_or(EnterpriseError::TransferNotFound)?;
+        let transfer = self
+            .pending
+            .get_mut(transfer_id)
+            .ok_or(EnterpriseError::TransferNotFound)?;
         if transfer.status != TransferApprovalStatus::PendingApproval {
             return Err(EnterpriseError::NotPendingApproval);
         }
 
         // Verify approver is authorized
-        let org = self.orgs.get(&transfer.org_id).ok_or(EnterpriseError::OrgNotFound)?;
+        let org = self
+            .orgs
+            .get(&transfer.org_id)
+            .ok_or(EnterpriseError::OrgNotFound)?;
         if !org.approvers.contains(&approver.to_string()) {
             return Err(EnterpriseError::UnauthorizedApprover);
         }
@@ -325,13 +368,19 @@ impl EnterpriseManager {
 
     /// Check if a transfer is ready to settle.
     pub fn check_ready(&self, transfer_id: &str, now: u64) -> Result<bool, EnterpriseError> {
-        let transfer = self.pending.get(transfer_id).ok_or(EnterpriseError::TransferNotFound)?;
+        let transfer = self
+            .pending
+            .get(transfer_id)
+            .ok_or(EnterpriseError::TransferNotFound)?;
         Ok(transfer.approved && now >= transfer.release_at)
     }
 
     /// Mark a transfer as settled.
     pub fn mark_settled(&mut self, transfer_id: &str) -> Result<(), EnterpriseError> {
-        let transfer = self.pending.get_mut(transfer_id).ok_or(EnterpriseError::TransferNotFound)?;
+        let transfer = self
+            .pending
+            .get_mut(transfer_id)
+            .ok_or(EnterpriseError::TransferNotFound)?;
         if !transfer.approved {
             return Err(EnterpriseError::NotApproved);
         }
@@ -351,8 +400,13 @@ impl EnterpriseManager {
 
     /// Stats as JSON.
     pub fn stats_json(&self) -> serde_json::Value {
-        let pending_count = self.pending.values()
-            .filter(|t| t.status != TransferApprovalStatus::Settled && t.status != TransferApprovalStatus::Rejected)
+        let pending_count = self
+            .pending
+            .values()
+            .filter(|t| {
+                t.status != TransferApprovalStatus::Settled
+                    && t.status != TransferApprovalStatus::Rejected
+            })
             .count();
         serde_json::json!({
             "total_orgs": self.orgs.len(),
@@ -427,19 +481,30 @@ mod tests {
     fn test_whitelist_enforcement() {
         let (mut mgr, org_id) = setup_org();
         // Allowed destination
-        let (id, result) = mgr.initiate_transfer(&org_id, "0xTreasury", 1_000_000, 1000).unwrap();
+        let (id, result) = mgr
+            .initiate_transfer(&org_id, "0xTreasury", 1_000_000, 1000)
+            .unwrap();
         assert!(!id.is_empty());
-        assert_ne!(result, ValidationResult::Rejected { reason: String::new() });
+        assert_ne!(
+            result,
+            ValidationResult::Rejected {
+                reason: String::new()
+            }
+        );
 
         // Blocked destination
-        let (_, result) = mgr.initiate_transfer(&org_id, "0xUnknown", 1_000_000, 1001).unwrap();
+        let (_, result) = mgr
+            .initiate_transfer(&org_id, "0xUnknown", 1_000_000, 1001)
+            .unwrap();
         assert!(matches!(result, ValidationResult::Rejected { .. }));
     }
 
     #[test]
     fn test_per_tx_limit() {
         let (mut mgr, org_id) = setup_org();
-        let (_, result) = mgr.initiate_transfer(&org_id, "0xTreasury", DEFAULT_PER_TX_LIMIT_CENTS + 1, 1000).unwrap();
+        let (_, result) = mgr
+            .initiate_transfer(&org_id, "0xTreasury", DEFAULT_PER_TX_LIMIT_CENTS + 1, 1000)
+            .unwrap();
         assert!(matches!(result, ValidationResult::Rejected { .. }));
     }
 
@@ -450,12 +515,15 @@ mod tests {
         let per_tx = DEFAULT_PER_TX_LIMIT_CENTS;
         let mut spent = 0u64;
         while spent + per_tx <= DEFAULT_DAILY_LIMIT_CENTS {
-            mgr.initiate_transfer(&org_id, "0xTreasury", per_tx, 1000).unwrap();
+            mgr.initiate_transfer(&org_id, "0xTreasury", per_tx, 1000)
+                .unwrap();
             spent += per_tx;
         }
         // Remaining space is less than per_tx, try to exceed
         let remaining = DEFAULT_DAILY_LIMIT_CENTS - spent;
-        let (_, result) = mgr.initiate_transfer(&org_id, "0xTreasury", remaining + 1, 1001).unwrap();
+        let (_, result) = mgr
+            .initiate_transfer(&org_id, "0xTreasury", remaining + 1, 1001)
+            .unwrap();
         assert!(matches!(result, ValidationResult::Rejected { .. }));
     }
 
@@ -463,26 +531,44 @@ mod tests {
     fn test_small_transfer_no_approval_needed() {
         let (mut mgr, org_id) = setup_org();
         // Below large transfer threshold → no approval needed, just hold period
-        let (_, result) = mgr.initiate_transfer(&org_id, "0xTreasury", 1_000_000, 1000).unwrap();
+        let (_, result) = mgr
+            .initiate_transfer(&org_id, "0xTreasury", 1_000_000, 1000)
+            .unwrap();
         assert!(matches!(result, ValidationResult::InHoldPeriod { .. }));
     }
 
     #[test]
     fn test_large_transfer_needs_approval() {
         let (mut mgr, org_id) = setup_org();
-        let (id, result) = mgr.initiate_transfer(&org_id, "0xTreasury", LARGE_TRANSFER_THRESHOLD_CENTS, 1000).unwrap();
-        assert!(matches!(result, ValidationResult::NeedsApproval { required: 2, current: 0 }));
+        let (id, result) = mgr
+            .initiate_transfer(&org_id, "0xTreasury", LARGE_TRANSFER_THRESHOLD_CENTS, 1000)
+            .unwrap();
+        assert!(matches!(
+            result,
+            ValidationResult::NeedsApproval {
+                required: 2,
+                current: 0
+            }
+        ));
         assert!(!mgr.check_ready(&id, 5000).unwrap());
     }
 
     #[test]
     fn test_multi_approval_workflow() {
         let (mut mgr, org_id) = setup_org();
-        let (id, _) = mgr.initiate_transfer(&org_id, "0xTreasury", LARGE_TRANSFER_THRESHOLD_CENTS, 1000).unwrap();
+        let (id, _) = mgr
+            .initiate_transfer(&org_id, "0xTreasury", LARGE_TRANSFER_THRESHOLD_CENTS, 1000)
+            .unwrap();
 
         // First approval
         let result = mgr.approve_transfer(&id, "admin1").unwrap();
-        assert!(matches!(result, ValidationResult::NeedsApproval { required: 2, current: 1 }));
+        assert!(matches!(
+            result,
+            ValidationResult::NeedsApproval {
+                required: 2,
+                current: 1
+            }
+        ));
 
         // Second approval → moves to hold period
         let result = mgr.approve_transfer(&id, "admin2").unwrap();
@@ -497,7 +583,9 @@ mod tests {
     #[test]
     fn test_unauthorized_approver() {
         let (mut mgr, org_id) = setup_org();
-        let (id, _) = mgr.initiate_transfer(&org_id, "0xTreasury", LARGE_TRANSFER_THRESHOLD_CENTS, 1000).unwrap();
+        let (id, _) = mgr
+            .initiate_transfer(&org_id, "0xTreasury", LARGE_TRANSFER_THRESHOLD_CENTS, 1000)
+            .unwrap();
         let result = mgr.approve_transfer(&id, "unknown_admin");
         assert_eq!(result.unwrap_err(), EnterpriseError::UnauthorizedApprover);
     }
@@ -512,10 +600,15 @@ mod tests {
         drop(config);
         mgr.orgs.insert(org_id.clone(), config_clone);
 
-        let (id, result) = mgr.initiate_transfer(&org_id, "0xTreasury", 1_000_000, 1000).unwrap();
+        let (id, result) = mgr
+            .initiate_transfer(&org_id, "0xTreasury", 1_000_000, 1000)
+            .unwrap();
         assert_eq!(result, ValidationResult::Approved);
         mgr.mark_settled(&id).unwrap();
-        assert_eq!(mgr.get_pending(&id).unwrap().status, TransferApprovalStatus::Settled);
+        assert_eq!(
+            mgr.get_pending(&id).unwrap().status,
+            TransferApprovalStatus::Settled
+        );
     }
 
     #[test]
@@ -534,8 +627,13 @@ mod tests {
     fn test_too_many_approvers() {
         let mut mgr = EnterpriseManager::new();
         let mut config = OrgConfig::new("big", "BigCo");
-        config.approvers = (0..MAX_APPROVERS + 1).map(|i| format!("admin{i}")).collect();
-        assert_eq!(mgr.register_org(config), Err(EnterpriseError::TooManyApprovers));
+        config.approvers = (0..MAX_APPROVERS + 1)
+            .map(|i| format!("admin{i}"))
+            .collect();
+        assert_eq!(
+            mgr.register_org(config),
+            Err(EnterpriseError::TooManyApprovers)
+        );
     }
 
     #[test]
@@ -544,7 +642,10 @@ mod tests {
         let mut config = OrgConfig::new("bad", "BadCo");
         config.approvers = vec!["a".into(), "b".into()];
         config.required_approvals = 5; // more than approvers
-        assert_eq!(mgr.register_org(config), Err(EnterpriseError::InvalidApprovalThreshold));
+        assert_eq!(
+            mgr.register_org(config),
+            Err(EnterpriseError::InvalidApprovalThreshold)
+        );
     }
 
     #[test]
@@ -559,9 +660,12 @@ mod tests {
         let (mut mgr, org_id) = setup_org();
         // Spend a chunk (under per-tx limit)
         let chunk = DEFAULT_PER_TX_LIMIT_CENTS;
-        mgr.initiate_transfer(&org_id, "0xTreasury", chunk, 1000).unwrap();
+        mgr.initiate_transfer(&org_id, "0xTreasury", chunk, 1000)
+            .unwrap();
         // Next day: should reset, same amount should work again
-        let (_, result) = mgr.initiate_transfer(&org_id, "0xTreasury", chunk, 1000 + 86_401).unwrap();
+        let (_, result) = mgr
+            .initiate_transfer(&org_id, "0xTreasury", chunk, 1000 + 86_401)
+            .unwrap();
         assert!(!matches!(result, ValidationResult::Rejected { .. }));
     }
 }

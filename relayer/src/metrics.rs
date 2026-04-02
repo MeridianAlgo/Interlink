@@ -305,14 +305,20 @@ impl Metrics {
     /// Record validator heartbeat observations.
     pub fn record_validator_heartbeats(&self, received: u64, expected: u64) {
         self.0.validator_heartbeats_total.fetch_add(received, RLX);
-        self.0.validator_heartbeats_expected.fetch_add(expected, RLX);
+        self.0
+            .validator_heartbeats_expected
+            .fetch_add(expected, RLX);
     }
 
     /// Validator uptime percentage (0.0 - 100.0).
     pub fn validator_uptime_pct(&self) -> f64 {
         let total = self.0.validator_heartbeats_total.load(RLX);
         let expected = self.0.validator_heartbeats_expected.load(RLX);
-        if expected == 0 { 100.0 } else { total as f64 / expected as f64 * 100.0 }
+        if expected == 0 {
+            100.0
+        } else {
+            total as f64 / expected as f64 * 100.0
+        }
     }
 
     /// Top corridors by transfer count, sorted descending. Returns up to `n` entries.
@@ -521,18 +527,38 @@ impl Metrics {
         );
 
         // ── tvl & volume ────────────────────────────────────────────────────
-        write_gauge(&mut out, "interlink_tvl_usd_cents",
-            "Total value locked in bridge vaults (USD cents)", i.tvl_usd_cents.load(RLX));
-        write_gauge(&mut out, "interlink_daily_volume_usd_cents",
-            "Daily transfer volume (USD cents)", i.daily_volume_usd_cents.load(RLX));
-        write_counter(&mut out, "interlink_cumulative_volume_usd_cents",
-            "All-time cumulative transfer volume (USD cents)", i.cumulative_volume_usd_cents.load(RLX));
+        write_gauge(
+            &mut out,
+            "interlink_tvl_usd_cents",
+            "Total value locked in bridge vaults (USD cents)",
+            i.tvl_usd_cents.load(RLX),
+        );
+        write_gauge(
+            &mut out,
+            "interlink_daily_volume_usd_cents",
+            "Daily transfer volume (USD cents)",
+            i.daily_volume_usd_cents.load(RLX),
+        );
+        write_counter(
+            &mut out,
+            "interlink_cumulative_volume_usd_cents",
+            "All-time cumulative transfer volume (USD cents)",
+            i.cumulative_volume_usd_cents.load(RLX),
+        );
 
         // ── validator uptime ────────────────────────────────────────────────
-        write_counter(&mut out, "interlink_validator_heartbeats_total",
-            "Validator heartbeats received", i.validator_heartbeats_total.load(RLX));
-        write_counter(&mut out, "interlink_validator_heartbeats_expected",
-            "Validator heartbeats expected", i.validator_heartbeats_expected.load(RLX));
+        write_counter(
+            &mut out,
+            "interlink_validator_heartbeats_total",
+            "Validator heartbeats received",
+            i.validator_heartbeats_total.load(RLX),
+        );
+        write_counter(
+            &mut out,
+            "interlink_validator_heartbeats_expected",
+            "Validator heartbeats expected",
+            i.validator_heartbeats_expected.load(RLX),
+        );
 
         out
     }

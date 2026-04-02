@@ -11,7 +11,6 @@
 ///   Wormhole:  no simulation (you just submit and hope)
 ///   InterLink: full dry-run checking fees, wrapped resolution, AMM liquidity,
 ///              rate limits, circuit breaker status, and estimated time
-
 use std::time::Duration;
 
 // ─── Input ───────────────────────────────────────────────────────────────────
@@ -55,10 +54,18 @@ pub struct SimCheck {
 
 impl SimCheck {
     fn pass(name: impl Into<String>, detail: impl Into<String>) -> Self {
-        SimCheck { name: name.into(), passed: true, detail: detail.into() }
+        SimCheck {
+            name: name.into(),
+            passed: true,
+            detail: detail.into(),
+        }
     }
     fn fail(name: impl Into<String>, detail: impl Into<String>) -> Self {
-        SimCheck { name: name.into(), passed: false, detail: detail.into() }
+        SimCheck {
+            name: name.into(),
+            passed: false,
+            detail: detail.into(),
+        }
     }
 }
 
@@ -84,12 +91,12 @@ impl SimulatorConfig {
     /// Default configuration with common chains.
     pub fn default_config() -> Self {
         let mut finality = std::collections::HashMap::new();
-        finality.insert(1, 900);      // Ethereum: ~15 min (75 blocks)
-        finality.insert(10, 2);       // Optimism
-        finality.insert(137, 128);    // Polygon PoS
-        finality.insert(42161, 2);    // Arbitrum
-        finality.insert(8453, 2);     // Base
-        finality.insert(900, 1);      // Solana
+        finality.insert(1, 900); // Ethereum: ~15 min (75 blocks)
+        finality.insert(10, 2); // Optimism
+        finality.insert(137, 128); // Polygon PoS
+        finality.insert(42161, 2); // Arbitrum
+        finality.insert(8453, 2); // Base
+        finality.insert(900, 1); // Solana
 
         SimulatorConfig {
             bridge_paused: false,
@@ -110,7 +117,10 @@ pub fn simulate(req: &SimulationRequest, config: &SimulatorConfig) -> Simulation
 
     // ── 1. Circuit breaker ──────────────────────────────────────────────────
     if config.bridge_paused {
-        checks.push(SimCheck::fail("circuit_breaker", "Bridge is currently PAUSED"));
+        checks.push(SimCheck::fail(
+            "circuit_breaker",
+            "Bridge is currently PAUSED",
+        ));
         blockers.push("Bridge is paused — no transfers accepted".into());
     } else {
         checks.push(SimCheck::pass("circuit_breaker", "Bridge is operational"));
@@ -141,7 +151,10 @@ pub fn simulate(req: &SimulationRequest, config: &SimulatorConfig) -> Simulation
             "dest_chain",
             format!("Chain {} is not supported", req.dest_chain),
         ));
-        blockers.push(format!("Destination chain {} not supported", req.dest_chain));
+        blockers.push(format!(
+            "Destination chain {} not supported",
+            req.dest_chain
+        ));
     }
 
     // ── 4. Same chain check ─────────────────────────────────────────────────

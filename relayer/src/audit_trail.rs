@@ -13,7 +13,6 @@
 ///   Wormhole:  on-chain VAA log, but no structured audit trail
 ///   Across:    UMA optimistic oracle records, no compliance export
 ///   InterLink: structured audit trail with hash-chain integrity + CSV export
-
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 
@@ -128,11 +127,7 @@ impl AuditLog {
         proof_commitment: Option<String>,
     ) -> u64 {
         let seq = self.entries.len() as u64;
-        let prev_hash = self
-            .entries
-            .last()
-            .map(|e| e.hash)
-            .unwrap_or([0u8; 32]);
+        let prev_hash = self.entries.last().map(|e| e.hash).unwrap_or([0u8; 32]);
 
         let sender = sender.into();
         let receiver = receiver.into();
@@ -252,9 +247,17 @@ impl AuditLog {
             let tx = e.tx_hash.as_deref().unwrap_or("");
             out.push_str(&format!(
                 "{},{},{},{},{},{},{},{},{},{},{}\n",
-                e.seq, e.timestamp, e.source_chain, e.dest_chain,
-                e.sender, e.receiver, e.amount, e.token, e.fee,
-                e.status.as_str(), tx,
+                e.seq,
+                e.timestamp,
+                e.source_chain,
+                e.dest_chain,
+                e.sender,
+                e.receiver,
+                e.amount,
+                e.token,
+                e.fee,
+                e.status.as_str(),
+                tx,
             ));
         }
         out
@@ -314,19 +317,43 @@ mod tests {
     fn sample_log() -> AuditLog {
         let mut log = AuditLog::new();
         log.append(
-            1000, 1, 900, "0xAlice", "SolBob", 1_000_000_000_000_000_000u128,
-            "native", 0, TransferStatus::Settled,
-            Some("0xtx1".into()), Some("0xproof1".into()),
+            1000,
+            1,
+            900,
+            "0xAlice",
+            "SolBob",
+            1_000_000_000_000_000_000u128,
+            "native",
+            0,
+            TransferStatus::Settled,
+            Some("0xtx1".into()),
+            Some("0xproof1".into()),
         );
         log.append(
-            1100, 1, 900, "0xCharlie", "SolBob", 500_000_000_000_000_000u128,
-            "native", 250_000_000_000_000u128, TransferStatus::Settled,
-            Some("0xtx2".into()), None,
+            1100,
+            1,
+            900,
+            "0xCharlie",
+            "SolBob",
+            500_000_000_000_000_000u128,
+            "native",
+            250_000_000_000_000u128,
+            TransferStatus::Settled,
+            Some("0xtx2".into()),
+            None,
         );
         log.append(
-            1200, 137, 1, "0xDave", "0xAlice", 100_000_000u128,
-            "0xUSDC", 50_000u128, TransferStatus::Initiated,
-            None, None,
+            1200,
+            137,
+            1,
+            "0xDave",
+            "0xAlice",
+            100_000_000u128,
+            "0xUSDC",
+            50_000u128,
+            TransferStatus::Initiated,
+            None,
+            None,
         );
         log
     }
@@ -422,9 +449,19 @@ mod tests {
     fn test_failed_transfer_recorded() {
         let mut log = AuditLog::new();
         log.append(
-            500, 1, 900, "0xBad", "SolTarget", 100, "native", 0,
-            TransferStatus::Failed { reason: "proof timeout".into() },
-            None, None,
+            500,
+            1,
+            900,
+            "0xBad",
+            "SolTarget",
+            100,
+            "native",
+            0,
+            TransferStatus::Failed {
+                reason: "proof timeout".into(),
+            },
+            None,
+            None,
         );
         let e = log.get(0).unwrap();
         assert_eq!(e.status.as_str(), "failed");
@@ -440,8 +477,32 @@ mod tests {
     fn test_hash_determinism() {
         let mut log1 = AuditLog::new();
         let mut log2 = AuditLog::new();
-        log1.append(100, 1, 900, "A", "B", 1000, "native", 0, TransferStatus::Settled, None, None);
-        log2.append(100, 1, 900, "A", "B", 1000, "native", 0, TransferStatus::Settled, None, None);
+        log1.append(
+            100,
+            1,
+            900,
+            "A",
+            "B",
+            1000,
+            "native",
+            0,
+            TransferStatus::Settled,
+            None,
+            None,
+        );
+        log2.append(
+            100,
+            1,
+            900,
+            "A",
+            "B",
+            1000,
+            "native",
+            0,
+            TransferStatus::Settled,
+            None,
+            None,
+        );
         assert_eq!(log1.get(0).unwrap().hash, log2.get(0).unwrap().hash);
     }
 }

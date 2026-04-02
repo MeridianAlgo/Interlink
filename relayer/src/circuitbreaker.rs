@@ -14,7 +14,6 @@
 ///   Across:    UMA oracle dispute mechanism + manual pause
 ///   Nomad:     Had NO circuit breaker → lost $190M in 2022
 ///   InterLink: Automatic anomaly detection + guardian pause + TVL drain guard
-
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -47,7 +46,10 @@ pub enum PauseReason {
     /// Guardian manually triggered pause
     GuardianPause { guardian: String, message: String },
     /// TVL drain detected: large outflow in short window
-    TvlDrain { outflow_cents: u64, window_secs: u64 },
+    TvlDrain {
+        outflow_cents: u64,
+        window_secs: u64,
+    },
     /// Validator set compromise detected
     ValidatorCompromise,
 }
@@ -179,7 +181,11 @@ impl CircuitBreaker {
             return Err(CircuitBreakerError::UnauthorizedGuardian);
         }
         drop(guardians);
-        let guardian_hex: String = guardian_key_hash.iter().take(8).map(|b| format!("{b:02x}")).collect();
+        let guardian_hex: String = guardian_key_hash
+            .iter()
+            .take(8)
+            .map(|b| format!("{b:02x}"))
+            .collect();
         self.pause(
             PauseReason::GuardianPause {
                 guardian: guardian_hex,
@@ -205,7 +211,9 @@ impl CircuitBreaker {
             let failures = self.0.consecutive_proof_failures.fetch_add(1, RLX) + 1;
             if failures >= PROOF_FAILURE_THRESHOLD as u64 {
                 self.pause(
-                    PauseReason::ProofFailures { count: failures as u32 },
+                    PauseReason::ProofFailures {
+                        count: failures as u32,
+                    },
                     now,
                 );
             }
@@ -220,7 +228,9 @@ impl CircuitBreaker {
             let failures = self.0.consecutive_settlement_failures.fetch_add(1, RLX) + 1;
             if failures >= SETTLEMENT_FAILURE_THRESHOLD as u64 {
                 self.pause(
-                    PauseReason::SettlementFailures { count: failures as u32 },
+                    PauseReason::SettlementFailures {
+                        count: failures as u32,
+                    },
                     now,
                 );
             }
@@ -232,10 +242,16 @@ impl CircuitBreaker {
     pub fn record_outflow(&self, amount_cents: u64, now: u64) {
         let mut outflows = self.0.outflows.lock().unwrap();
         // Evict stale entries outside the window
-        while outflows.front().map_or(false, |r| now - r.timestamp > DRAIN_WINDOW_SECS) {
+        while outflows
+            .front()
+            .map_or(false, |r| now - r.timestamp > DRAIN_WINDOW_SECS)
+        {
             outflows.pop_front();
         }
-        outflows.push_back(OutflowRecord { amount_cents, timestamp: now });
+        outflows.push_back(OutflowRecord {
+            amount_cents,
+            timestamp: now,
+        });
 
         let total: u64 = outflows.iter().map(|r| r.amount_cents).sum();
         if total > TVL_DRAIN_LIMIT_CENTS {
@@ -343,7 +359,7 @@ mod tests {
         }
         assert!(cb.is_operational()); // not yet at threshold
         cb.record_proof_result(true, 0); // resets
-        // Now need another full run of failures to trigger
+                                         // Now need another full run of failures to trigger
         for _ in 0..(PROOF_FAILURE_THRESHOLD - 1) {
             cb.record_proof_result(false, 0);
         }
@@ -387,7 +403,8 @@ mod tests {
         let cb = CircuitBreaker::new();
         let guardian = [0xAA; 32];
         cb.add_guardian(guardian);
-        cb.guardian_pause(&guardian, "security incident", 100).unwrap();
+        cb.guardian_pause(&guardian, "security incident", 100)
+            .unwrap();
         assert!(cb.is_paused());
 
         // Auto-recovery should NOT work for guardian pauses
@@ -458,7 +475,10 @@ mod tests {
         assert!(cb.is_paused());
 
         let err = cb.resume(false).unwrap_err();
-        assert!(matches!(err, CircuitBreakerError::ManualResumeRequired { .. }));
+        assert!(matches!(
+            err,
+            CircuitBreakerError::ManualResumeRequired { .. }
+        ));
 
         cb.resume(true).unwrap();
         assert!(cb.is_operational());

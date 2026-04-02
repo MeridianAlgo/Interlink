@@ -20,7 +20,6 @@
 ///   Socket:  similar aggregation, smaller coverage
 ///   1inch:   DEX-only, no bridge
 ///   InterLink: bridge-native DEX routing with ZK-verified settlement
-
 use std::collections::HashMap;
 
 // ─── Constants ──────────────────────────────────────────────────────────────
@@ -80,11 +79,7 @@ impl DexSource {
                 DexSource::SushiSwap,
                 DexSource::Curve,
             ],
-            900 => vec![
-                DexSource::Jupiter,
-                DexSource::Raydium,
-                DexSource::Orca,
-            ],
+            900 => vec![DexSource::Jupiter, DexSource::Raydium, DexSource::Orca],
             _ => vec![],
         }
     }
@@ -162,9 +157,7 @@ pub enum SwapExecResult {
         primary_error: String,
     },
     /// All DEX sources failed.
-    Failed {
-        errors: Vec<(String, String)>,
-    },
+    Failed { errors: Vec<(String, String)> },
 }
 
 // ─── Swap Router ────────────────────────────────────────────────────────────
@@ -294,7 +287,13 @@ impl SwapRouter {
     pub fn source_reliability_pct(&self, source: &DexSource) -> f64 {
         self.source_reliability
             .get(source)
-            .map(|(s, a)| if *a > 0 { *s as f64 / *a as f64 * 100.0 } else { 100.0 })
+            .map(|(s, a)| {
+                if *a > 0 {
+                    *s as f64 / *a as f64 * 100.0
+                } else {
+                    100.0
+                }
+            })
             .unwrap_or(100.0) // unknown = assume reliable
     }
 
@@ -414,7 +413,7 @@ mod tests {
         let router = SwapRouter::new();
         let quotes = vec![
             mock_quote(DexSource::UniswapV3, 2_900_000_000, 200), // 2% > 0.5% max
-            mock_quote(DexSource::OneInch, 2_800_000_000, 30),     // OK
+            mock_quote(DexSource::OneInch, 2_800_000_000, 30),    // OK
         ];
         let route = router.find_best_route(&sample_request(), quotes).unwrap();
         assert_eq!(route.all_quotes.len(), 1);
@@ -429,7 +428,10 @@ mod tests {
             mock_quote(DexSource::OneInch, 2_800_000_000, 300),
         ];
         let result = router.find_best_route(&sample_request(), quotes);
-        assert_eq!(result.unwrap_err(), SwapRoutingError::AllQuotesExceedSlippage);
+        assert_eq!(
+            result.unwrap_err(),
+            SwapRoutingError::AllQuotesExceedSlippage
+        );
     }
 
     #[test]
@@ -508,8 +510,14 @@ mod tests {
         assert!(ranked.len() >= 2);
         // SushiSwap and 0x have no history → 100% default, so they may rank first
         // But Uniswap should be at 100% too
-        let uni_rank = ranked.iter().find(|(s, _)| *s == DexSource::UniswapV3).unwrap();
-        let inch_rank = ranked.iter().find(|(s, _)| *s == DexSource::OneInch).unwrap();
+        let uni_rank = ranked
+            .iter()
+            .find(|(s, _)| *s == DexSource::UniswapV3)
+            .unwrap();
+        let inch_rank = ranked
+            .iter()
+            .find(|(s, _)| *s == DexSource::OneInch)
+            .unwrap();
         assert!(uni_rank.1 > inch_rank.1);
     }
 

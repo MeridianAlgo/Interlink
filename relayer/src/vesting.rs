@@ -14,7 +14,6 @@
 ///   Stargate:  STG 3yr vesting for team, similar cliff
 ///   Across:    UMA-based, simpler vesting
 ///   InterLink: granular per-beneficiary with revocation + DAO governance
-
 use std::collections::HashMap;
 
 // ─── Constants ──────────────────────────────────────────────────────────────
@@ -253,7 +252,12 @@ impl VestingRegistry {
     pub fn get_by_beneficiary(&self, beneficiary: &str) -> Vec<&VestingSchedule> {
         self.by_beneficiary
             .get(beneficiary)
-            .map(|indices| indices.iter().filter_map(|&i| self.schedules.get(i)).collect())
+            .map(|indices| {
+                indices
+                    .iter()
+                    .filter_map(|&i| self.schedules.get(i))
+                    .collect()
+            })
             .unwrap_or_default()
     }
 
@@ -321,7 +325,14 @@ mod tests {
 
     #[test]
     fn test_team_schedule_cliff() {
-        let s = VestingSchedule::new("alice", VestingCategory::Team, 1_000_000, START, TEAM_CLIFF_SECS, TEAM_VEST_DURATION_SECS);
+        let s = VestingSchedule::new(
+            "alice",
+            VestingCategory::Team,
+            1_000_000,
+            START,
+            TEAM_CLIFF_SECS,
+            TEAM_VEST_DURATION_SECS,
+        );
         // Before cliff: 0 vested
         assert_eq!(s.vested_at(START + MONTH), 0);
         assert_eq!(s.vested_at(START + 6 * MONTH), 0);
@@ -330,29 +341,63 @@ mod tests {
 
     #[test]
     fn test_team_schedule_after_cliff() {
-        let s = VestingSchedule::new("alice", VestingCategory::Team, 1_000_000, START, TEAM_CLIFF_SECS, TEAM_VEST_DURATION_SECS);
+        let s = VestingSchedule::new(
+            "alice",
+            VestingCategory::Team,
+            1_000_000,
+            START,
+            TEAM_CLIFF_SECS,
+            TEAM_VEST_DURATION_SECS,
+        );
         // Just after cliff (1 year): ~25% vested
         let vested = s.vested_at(START + YEAR);
-        assert!(vested > 240_000 && vested < 260_000, "vested={vested} should be ~250k");
+        assert!(
+            vested > 240_000 && vested < 260_000,
+            "vested={vested} should be ~250k"
+        );
     }
 
     #[test]
     fn test_team_schedule_fully_vested() {
-        let s = VestingSchedule::new("alice", VestingCategory::Team, 1_000_000, START, TEAM_CLIFF_SECS, TEAM_VEST_DURATION_SECS);
+        let s = VestingSchedule::new(
+            "alice",
+            VestingCategory::Team,
+            1_000_000,
+            START,
+            TEAM_CLIFF_SECS,
+            TEAM_VEST_DURATION_SECS,
+        );
         assert_eq!(s.vested_at(START + TEAM_VEST_DURATION_SECS), 1_000_000);
-        assert_eq!(s.vested_at(START + TEAM_VEST_DURATION_SECS + YEAR), 1_000_000);
+        assert_eq!(
+            s.vested_at(START + TEAM_VEST_DURATION_SECS + YEAR),
+            1_000_000
+        );
     }
 
     #[test]
     fn test_advisor_schedule_cliff() {
-        let s = VestingSchedule::new("bob", VestingCategory::Advisor, 500_000, START, ADVISOR_CLIFF_SECS, ADVISOR_VEST_DURATION_SECS);
+        let s = VestingSchedule::new(
+            "bob",
+            VestingCategory::Advisor,
+            500_000,
+            START,
+            ADVISOR_CLIFF_SECS,
+            ADVISOR_VEST_DURATION_SECS,
+        );
         assert_eq!(s.vested_at(START + ADVISOR_CLIFF_SECS - 1), 0);
         assert!(s.vested_at(START + ADVISOR_CLIFF_SECS) > 0);
     }
 
     #[test]
     fn test_treasury_no_cliff() {
-        let s = VestingSchedule::new("treasury", VestingCategory::Treasury, 300_000_000, START, 0, TREASURY_VEST_DURATION_SECS);
+        let s = VestingSchedule::new(
+            "treasury",
+            VestingCategory::Treasury,
+            300_000_000,
+            START,
+            0,
+            TREASURY_VEST_DURATION_SECS,
+        );
         // Immediately some tokens vest
         assert!(s.vested_at(START + MONTH) > 0);
     }
@@ -372,7 +417,10 @@ mod tests {
     #[test]
     fn test_claim_unknown_beneficiary() {
         let mut reg = VestingRegistry::new();
-        assert_eq!(reg.claim("nobody", START), Err(VestingError::BeneficiaryNotFound));
+        assert_eq!(
+            reg.claim("nobody", START),
+            Err(VestingError::BeneficiaryNotFound)
+        );
     }
 
     #[test]
@@ -381,9 +429,15 @@ mod tests {
         let idx = reg.add_team_schedule("alice", 1_000_000, START);
         // Revoke after 2 years: ~50% vested → ~500k returned
         let returned = reg.revoke(idx, START + 2 * YEAR).unwrap();
-        assert!(returned > 400_000 && returned < 600_000, "returned={returned}");
+        assert!(
+            returned > 400_000 && returned < 600_000,
+            "returned={returned}"
+        );
         // Schedule is now revoked
-        assert!(matches!(reg.get_schedule(idx).unwrap().status, ScheduleStatus::Revoked { .. }));
+        assert!(matches!(
+            reg.get_schedule(idx).unwrap().status,
+            ScheduleStatus::Revoked { .. }
+        ));
     }
 
     #[test]
@@ -399,7 +453,10 @@ mod tests {
         let mut reg = VestingRegistry::new();
         let idx = reg.add_team_schedule("alice", 1_000_000, START);
         reg.revoke(idx, START + 2 * YEAR).unwrap();
-        assert_eq!(reg.revoke(idx, START + 3 * YEAR), Err(VestingError::AlreadyRevoked));
+        assert_eq!(
+            reg.revoke(idx, START + 3 * YEAR),
+            Err(VestingError::AlreadyRevoked)
+        );
     }
 
     #[test]

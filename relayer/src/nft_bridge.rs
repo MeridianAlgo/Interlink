@@ -20,7 +20,6 @@
 ///   NFTBridge:  lock-mint on 5 chains, no metadata preservation guarantee
 ///   Wormhole:   NFT portal (deprecated), limited metadata
 ///   InterLink:  ZK-verified lock-mint with full metadata + royalty preservation
-
 use std::collections::HashMap;
 
 // ─── Constants ──────────────────────────────────────────────────────────────
@@ -48,7 +47,11 @@ pub struct NftId {
 }
 
 impl NftId {
-    pub fn new(origin_chain: u32, contract: impl Into<String>, token_id: impl Into<String>) -> Self {
+    pub fn new(
+        origin_chain: u32,
+        contract: impl Into<String>,
+        token_id: impl Into<String>,
+    ) -> Self {
         NftId {
             origin_chain,
             contract_address: contract.into(),
@@ -58,7 +61,10 @@ impl NftId {
 
     /// Canonical string key for indexing.
     pub fn canonical_key(&self) -> String {
-        format!("{}:{}:{}", self.origin_chain, self.contract_address, self.token_id)
+        format!(
+            "{}:{}:{}",
+            self.origin_chain, self.contract_address, self.token_id
+        )
     }
 }
 
@@ -238,7 +244,10 @@ impl NftBridgeRegistry {
         };
 
         self.by_nft.insert(key, transfer_id.clone());
-        self.by_sender.entry(sender).or_default().push(transfer_id.clone());
+        self.by_sender
+            .entry(sender)
+            .or_default()
+            .push(transfer_id.clone());
         self.transfers.insert(transfer_id.clone(), transfer);
 
         Ok(transfer_id)
@@ -246,7 +255,10 @@ impl NftBridgeRegistry {
 
     /// Mark proof as generated for a transfer.
     pub fn mark_proof_generated(&mut self, transfer_id: &str) -> Result<(), NftBridgeError> {
-        let transfer = self.transfers.get_mut(transfer_id).ok_or(NftBridgeError::TransferNotFound)?;
+        let transfer = self
+            .transfers
+            .get_mut(transfer_id)
+            .ok_or(NftBridgeError::TransferNotFound)?;
         if transfer.state != BridgeState::Locked {
             return Err(NftBridgeError::InvalidStateTransition);
         }
@@ -261,7 +273,10 @@ impl NftBridgeRegistry {
         wrapped_contract: impl Into<String>,
         wrapped_token_id: impl Into<String>,
     ) -> Result<(), NftBridgeError> {
-        let transfer = self.transfers.get_mut(transfer_id).ok_or(NftBridgeError::TransferNotFound)?;
+        let transfer = self
+            .transfers
+            .get_mut(transfer_id)
+            .ok_or(NftBridgeError::TransferNotFound)?;
         if transfer.state != BridgeState::ProofGenerated {
             return Err(NftBridgeError::InvalidStateTransition);
         }
@@ -273,7 +288,10 @@ impl NftBridgeRegistry {
 
     /// Process a return: burn wrapped, unlock original.
     pub fn process_return(&mut self, transfer_id: &str) -> Result<(), NftBridgeError> {
-        let transfer = self.transfers.get_mut(transfer_id).ok_or(NftBridgeError::TransferNotFound)?;
+        let transfer = self
+            .transfers
+            .get_mut(transfer_id)
+            .ok_or(NftBridgeError::TransferNotFound)?;
         if transfer.state != BridgeState::Complete {
             return Err(NftBridgeError::InvalidStateTransition);
         }
@@ -319,22 +337,27 @@ impl NftBridgeRegistry {
             return Err(NftBridgeError::InvalidMetadata("name is empty".into()));
         }
         if metadata.attributes.len() > MAX_ATTRIBUTES {
-            return Err(NftBridgeError::InvalidMetadata(
-                format!("too many attributes: {} > {MAX_ATTRIBUTES}", metadata.attributes.len()),
-            ));
+            return Err(NftBridgeError::InvalidMetadata(format!(
+                "too many attributes: {} > {MAX_ATTRIBUTES}",
+                metadata.attributes.len()
+            )));
         }
         if let Some(bps) = metadata.royalty_bps {
             if bps > MAX_ROYALTY_BPS {
-                return Err(NftBridgeError::InvalidMetadata(
-                    format!("royalty {bps}bps exceeds max {MAX_ROYALTY_BPS}bps"),
-                ));
+                return Err(NftBridgeError::InvalidMetadata(format!(
+                    "royalty {bps}bps exceeds max {MAX_ROYALTY_BPS}bps"
+                )));
             }
         }
         // Estimate total metadata size
         let estimated_size = metadata.name.len()
             + metadata.description.len()
             + metadata.image_uri.len()
-            + metadata.attributes.iter().map(|a| a.trait_type.len() + a.value.len()).sum::<usize>();
+            + metadata
+                .attributes
+                .iter()
+                .map(|a| a.trait_type.len() + a.value.len())
+                .sum::<usize>();
         if estimated_size > MAX_METADATA_BYTES {
             return Err(NftBridgeError::MetadataTooLarge {
                 size: estimated_size,
@@ -346,10 +369,26 @@ impl NftBridgeRegistry {
 
     /// Stats as JSON.
     pub fn stats_json(&self) -> serde_json::Value {
-        let locked = self.transfers.values().filter(|t| t.state == BridgeState::Locked).count();
-        let complete = self.transfers.values().filter(|t| t.state == BridgeState::Complete).count();
-        let returned = self.transfers.values().filter(|t| t.state == BridgeState::Returned).count();
-        let expired = self.transfers.values().filter(|t| t.state == BridgeState::Expired).count();
+        let locked = self
+            .transfers
+            .values()
+            .filter(|t| t.state == BridgeState::Locked)
+            .count();
+        let complete = self
+            .transfers
+            .values()
+            .filter(|t| t.state == BridgeState::Complete)
+            .count();
+        let returned = self
+            .transfers
+            .values()
+            .filter(|t| t.state == BridgeState::Returned)
+            .count();
+        let expired = self
+            .transfers
+            .values()
+            .filter(|t| t.state == BridgeState::Expired)
+            .count();
 
         serde_json::json!({
             "total_transfers": self.transfers.len(),
@@ -393,8 +432,16 @@ mod tests {
             animation_uri: None,
             external_url: Some("https://cryptopunks.app/1234".into()),
             attributes: vec![
-                NftAttribute { trait_type: "Background".into(), value: "Blue".into(), display_type: None },
-                NftAttribute { trait_type: "Eyes".into(), value: "Laser".into(), display_type: None },
+                NftAttribute {
+                    trait_type: "Background".into(),
+                    value: "Blue".into(),
+                    display_type: None,
+                },
+                NftAttribute {
+                    trait_type: "Eyes".into(),
+                    value: "Laser".into(),
+                    display_type: None,
+                },
             ],
             royalty_recipient: Some("0xCreator".into()),
             royalty_bps: Some(500), // 5%
@@ -408,7 +455,16 @@ mod tests {
     #[test]
     fn test_lock_nft() {
         let mut reg = NftBridgeRegistry::new();
-        let id = reg.lock_nft(sample_nft_id(), sample_metadata(), 900, "0xAlice", "SolBob", 1000).unwrap();
+        let id = reg
+            .lock_nft(
+                sample_nft_id(),
+                sample_metadata(),
+                900,
+                "0xAlice",
+                "SolBob",
+                1000,
+            )
+            .unwrap();
         assert!(id.starts_with("nft_tx_"));
         let transfer = reg.get_transfer(&id).unwrap();
         assert_eq!(transfer.state, BridgeState::Locked);
@@ -419,18 +475,45 @@ mod tests {
     #[test]
     fn test_double_lock_rejected() {
         let mut reg = NftBridgeRegistry::new();
-        reg.lock_nft(sample_nft_id(), sample_metadata(), 900, "0xAlice", "SolBob", 1000).unwrap();
-        let result = reg.lock_nft(sample_nft_id(), sample_metadata(), 900, "0xAlice", "SolBob", 1001);
+        reg.lock_nft(
+            sample_nft_id(),
+            sample_metadata(),
+            900,
+            "0xAlice",
+            "SolBob",
+            1000,
+        )
+        .unwrap();
+        let result = reg.lock_nft(
+            sample_nft_id(),
+            sample_metadata(),
+            900,
+            "0xAlice",
+            "SolBob",
+            1001,
+        );
         assert_eq!(result.unwrap_err(), NftBridgeError::AlreadyLocked);
     }
 
     #[test]
     fn test_full_bridge_lifecycle() {
         let mut reg = NftBridgeRegistry::new();
-        let id = reg.lock_nft(sample_nft_id(), sample_metadata(), 900, "0xAlice", "SolBob", 1000).unwrap();
+        let id = reg
+            .lock_nft(
+                sample_nft_id(),
+                sample_metadata(),
+                900,
+                "0xAlice",
+                "SolBob",
+                1000,
+            )
+            .unwrap();
 
         reg.mark_proof_generated(&id).unwrap();
-        assert_eq!(reg.get_transfer(&id).unwrap().state, BridgeState::ProofGenerated);
+        assert_eq!(
+            reg.get_transfer(&id).unwrap().state,
+            BridgeState::ProofGenerated
+        );
 
         reg.mark_minted(&id, "WrappedPunksSOL", "1234").unwrap();
         let t = reg.get_transfer(&id).unwrap();
@@ -441,7 +524,16 @@ mod tests {
     #[test]
     fn test_return_journey() {
         let mut reg = NftBridgeRegistry::new();
-        let id = reg.lock_nft(sample_nft_id(), sample_metadata(), 900, "0xAlice", "SolBob", 1000).unwrap();
+        let id = reg
+            .lock_nft(
+                sample_nft_id(),
+                sample_metadata(),
+                900,
+                "0xAlice",
+                "SolBob",
+                1000,
+            )
+            .unwrap();
         reg.mark_proof_generated(&id).unwrap();
         reg.mark_minted(&id, "Wrapped", "1234").unwrap();
         reg.process_return(&id).unwrap();
@@ -451,17 +543,41 @@ mod tests {
     #[test]
     fn test_invalid_state_transitions() {
         let mut reg = NftBridgeRegistry::new();
-        let id = reg.lock_nft(sample_nft_id(), sample_metadata(), 900, "0xAlice", "SolBob", 1000).unwrap();
+        let id = reg
+            .lock_nft(
+                sample_nft_id(),
+                sample_metadata(),
+                900,
+                "0xAlice",
+                "SolBob",
+                1000,
+            )
+            .unwrap();
         // Can't mint before proof
-        assert_eq!(reg.mark_minted(&id, "W", "1"), Err(NftBridgeError::InvalidStateTransition));
+        assert_eq!(
+            reg.mark_minted(&id, "W", "1"),
+            Err(NftBridgeError::InvalidStateTransition)
+        );
         // Can't return before complete
-        assert_eq!(reg.process_return(&id), Err(NftBridgeError::InvalidStateTransition));
+        assert_eq!(
+            reg.process_return(&id),
+            Err(NftBridgeError::InvalidStateTransition)
+        );
     }
 
     #[test]
     fn test_expire_stale_locks() {
         let mut reg = NftBridgeRegistry::new();
-        let id = reg.lock_nft(sample_nft_id(), sample_metadata(), 900, "0xAlice", "SolBob", 1000).unwrap();
+        let id = reg
+            .lock_nft(
+                sample_nft_id(),
+                sample_metadata(),
+                900,
+                "0xAlice",
+                "SolBob",
+                1000,
+            )
+            .unwrap();
         // Not expired yet
         let expired = reg.expire_stale_locks(1000 + LOCK_TIMEOUT_SECS - 1);
         assert!(expired.is_empty());
@@ -474,10 +590,27 @@ mod tests {
     #[test]
     fn test_relock_after_expiry() {
         let mut reg = NftBridgeRegistry::new();
-        reg.lock_nft(sample_nft_id(), sample_metadata(), 900, "0xAlice", "SolBob", 1000).unwrap();
+        reg.lock_nft(
+            sample_nft_id(),
+            sample_metadata(),
+            900,
+            "0xAlice",
+            "SolBob",
+            1000,
+        )
+        .unwrap();
         reg.expire_stale_locks(1000 + LOCK_TIMEOUT_SECS);
         // Can re-lock after expiry
-        let id2 = reg.lock_nft(sample_nft_id(), sample_metadata(), 900, "0xAlice", "SolBob", 200_000).unwrap();
+        let id2 = reg
+            .lock_nft(
+                sample_nft_id(),
+                sample_metadata(),
+                900,
+                "0xAlice",
+                "SolBob",
+                200_000,
+            )
+            .unwrap();
         assert_eq!(reg.get_transfer(&id2).unwrap().state, BridgeState::Locked);
     }
 
@@ -485,7 +618,16 @@ mod tests {
     fn test_metadata_preserved() {
         let mut reg = NftBridgeRegistry::new();
         let meta = sample_metadata();
-        let id = reg.lock_nft(sample_nft_id(), meta.clone(), 900, "0xAlice", "SolBob", 1000).unwrap();
+        let id = reg
+            .lock_nft(
+                sample_nft_id(),
+                meta.clone(),
+                900,
+                "0xAlice",
+                "SolBob",
+                1000,
+            )
+            .unwrap();
         let t = reg.get_transfer(&id).unwrap();
         assert_eq!(t.metadata.name, "CryptoPunk #1234");
         assert_eq!(t.metadata.attributes.len(), 2);
@@ -516,7 +658,11 @@ mod tests {
         let mut reg = NftBridgeRegistry::new();
         let mut meta = sample_metadata();
         meta.attributes = (0..MAX_ATTRIBUTES + 1)
-            .map(|i| NftAttribute { trait_type: format!("t{i}"), value: "v".into(), display_type: None })
+            .map(|i| NftAttribute {
+                trait_type: format!("t{i}"),
+                value: "v".into(),
+                display_type: None,
+            })
             .collect();
         let result = reg.lock_nft(sample_nft_id(), meta, 900, "A", "B", 1000);
         assert!(matches!(result, Err(NftBridgeError::InvalidMetadata(_))));
@@ -527,17 +673,47 @@ mod tests {
         let mut reg = NftBridgeRegistry::new();
         reg.register_wrapped_contract(1, "0xPunks", 900, "WrappedPunksSOL");
         reg.register_wrapped_contract(1, "0xPunks", 10, "WrappedPunksOP");
-        assert_eq!(reg.get_wrapped_contract(1, "0xPunks", 900).unwrap(), "WrappedPunksSOL");
-        assert_eq!(reg.get_wrapped_contract(1, "0xPunks", 10).unwrap(), "WrappedPunksOP");
+        assert_eq!(
+            reg.get_wrapped_contract(1, "0xPunks", 900).unwrap(),
+            "WrappedPunksSOL"
+        );
+        assert_eq!(
+            reg.get_wrapped_contract(1, "0xPunks", 10).unwrap(),
+            "WrappedPunksOP"
+        );
         assert!(reg.get_wrapped_contract(1, "0xPunks", 42161).is_none());
     }
 
     #[test]
     fn test_get_by_sender() {
         let mut reg = NftBridgeRegistry::new();
-        reg.lock_nft(NftId::new(1, "0xA", "1"), sample_metadata(), 900, "0xAlice", "B", 1000).unwrap();
-        reg.lock_nft(NftId::new(1, "0xA", "2"), sample_metadata(), 900, "0xAlice", "B", 1001).unwrap();
-        reg.lock_nft(NftId::new(1, "0xB", "1"), sample_metadata(), 900, "0xBob", "C", 1002).unwrap();
+        reg.lock_nft(
+            NftId::new(1, "0xA", "1"),
+            sample_metadata(),
+            900,
+            "0xAlice",
+            "B",
+            1000,
+        )
+        .unwrap();
+        reg.lock_nft(
+            NftId::new(1, "0xA", "2"),
+            sample_metadata(),
+            900,
+            "0xAlice",
+            "B",
+            1001,
+        )
+        .unwrap();
+        reg.lock_nft(
+            NftId::new(1, "0xB", "1"),
+            sample_metadata(),
+            900,
+            "0xBob",
+            "C",
+            1002,
+        )
+        .unwrap();
         assert_eq!(reg.get_by_sender("0xAlice").len(), 2);
         assert_eq!(reg.get_by_sender("0xBob").len(), 1);
     }
@@ -551,7 +727,8 @@ mod tests {
     #[test]
     fn test_stats_json() {
         let mut reg = NftBridgeRegistry::new();
-        reg.lock_nft(sample_nft_id(), sample_metadata(), 900, "A", "B", 1000).unwrap();
+        reg.lock_nft(sample_nft_id(), sample_metadata(), 900, "A", "B", 1000)
+            .unwrap();
         let j = reg.stats_json();
         assert_eq!(j["total_transfers"], 1);
         assert_eq!(j["currently_locked"], 1);

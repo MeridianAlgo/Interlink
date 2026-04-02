@@ -12,7 +12,6 @@
 ///   Stargate:  STG stakers earn from cross-chain fees (~8-12% APY)
 ///   Across:    UMA voters earn from dispute resolution fees
 ///   InterLink: transparent 10% fee-share + uptime-weighted distribution
-
 use std::collections::HashMap;
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -148,10 +147,7 @@ impl RewardDistributor {
     /// Distribute rewards for the epoch based on bridge fees collected.
     ///
     /// Returns an `EpochSummary` showing who got what.
-    pub fn distribute_epoch(
-        &mut self,
-        total_fees_collected: u64,
-    ) -> EpochSummary {
+    pub fn distribute_epoch(&mut self, total_fees_collected: u64) -> EpochSummary {
         let validator_pool =
             (total_fees_collected as u128 * VALIDATOR_SHARE_BPS as u128 / 10_000) as u64;
 
@@ -239,11 +235,17 @@ mod tests {
         rd.register("v2", 300_000);
         rd.set_expected_heartbeats(100);
         // v0: 100% uptime
-        for _ in 0..100 { rd.record_heartbeat("v0"); }
+        for _ in 0..100 {
+            rd.record_heartbeat("v0");
+        }
         // v1: 95% uptime
-        for _ in 0..95 { rd.record_heartbeat("v1"); }
+        for _ in 0..95 {
+            rd.record_heartbeat("v1");
+        }
         // v2: 80% uptime (below MIN_UPTIME_BPS=90%)
-        for _ in 0..80 { rd.record_heartbeat("v2"); }
+        for _ in 0..80 {
+            rd.record_heartbeat("v2");
+        }
         rd
     }
 
@@ -251,8 +253,8 @@ mod tests {
     fn test_uptime_calculation() {
         let rd = setup_3_validators();
         assert_eq!(rd.validators["v0"].uptime_bps(), 10_000); // 100%
-        assert_eq!(rd.validators["v1"].uptime_bps(), 9_500);  // 95%
-        assert_eq!(rd.validators["v2"].uptime_bps(), 8_000);  // 80%
+        assert_eq!(rd.validators["v1"].uptime_bps(), 9_500); // 95%
+        assert_eq!(rd.validators["v2"].uptime_bps(), 8_000); // 80%
     }
 
     #[test]
@@ -299,8 +301,18 @@ mod tests {
     fn test_higher_stake_gets_more() {
         let mut rd = setup_3_validators();
         let summary = rd.distribute_epoch(1_000_000);
-        let reward_v0 = summary.distributions.iter().find(|(id, _)| id == "v0").unwrap().1;
-        let reward_v1 = summary.distributions.iter().find(|(id, _)| id == "v1").unwrap().1;
+        let reward_v0 = summary
+            .distributions
+            .iter()
+            .find(|(id, _)| id == "v0")
+            .unwrap()
+            .1;
+        let reward_v1 = summary
+            .distributions
+            .iter()
+            .find(|(id, _)| id == "v1")
+            .unwrap()
+            .1;
         // v1 has 2× the stake of v0 but 95% vs 100% uptime
         // v0 weight: 105_000, v1 weight: 190_000
         assert!(reward_v1 > reward_v0, "higher stake should earn more");
@@ -332,7 +344,9 @@ mod tests {
         let s1 = rd.distribute_epoch(100);
         assert_eq!(s1.epoch, 0);
         rd.set_expected_heartbeats(50);
-        for _ in 0..50 { rd.record_heartbeat("v0"); }
+        for _ in 0..50 {
+            rd.record_heartbeat("v0");
+        }
         let s2 = rd.distribute_epoch(200);
         assert_eq!(s2.epoch, 1);
     }
@@ -352,12 +366,16 @@ mod tests {
         rd.register("v0", 100_000);
         // Epoch 1
         rd.set_expected_heartbeats(10);
-        for _ in 0..10 { rd.record_heartbeat("v0"); }
+        for _ in 0..10 {
+            rd.record_heartbeat("v0");
+        }
         rd.distribute_epoch(100_000);
         let after_e1 = rd.validators["v0"].total_rewards;
         // Epoch 2
         rd.set_expected_heartbeats(10);
-        for _ in 0..10 { rd.record_heartbeat("v0"); }
+        for _ in 0..10 {
+            rd.record_heartbeat("v0");
+        }
         rd.distribute_epoch(200_000);
         let after_e2 = rd.validators["v0"].total_rewards;
         assert!(after_e2 > after_e1, "cumulative rewards must grow");

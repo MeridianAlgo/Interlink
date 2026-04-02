@@ -14,7 +14,6 @@
 ///   Wormhole:  guardians retry internally, no configurable policy
 ///   Across:    relayer retry is opaque
 ///   InterLink: fully configurable retry with observability + dead-letter
-
 use std::collections::VecDeque;
 
 // ─── Constants ──────────────────────────────────────────────────────────────
@@ -120,12 +119,13 @@ impl RetryPolicy {
     /// Get the chain-appropriate retry policy.
     pub fn for_chain(chain_id: u32) -> Self {
         match chain_id {
-            1 => Self::ethereum(),         // Ethereum mainnet
-            900 => Self::solana(),          // Solana
+            1 => Self::ethereum(),           // Ethereum mainnet
+            900 => Self::solana(),           // Solana
             10 | 42161 | 8453 => Self::l2(), // Optimism, Arbitrum, Base
-            137 => {                        // Polygon PoS
+            137 => {
+                // Polygon PoS
                 let mut p = Self::l2();
-                p.base_delay_ms = 1_000;   // Polygon checkpoints are slower
+                p.base_delay_ms = 1_000; // Polygon checkpoints are slower
                 p.max_retries = 6;
                 p
             }
@@ -332,11 +332,11 @@ mod tests {
             total_timeout_ms: 600_000,
             circuit_breaker_aware: false,
         };
-        assert_eq!(p.delay_for_attempt(0, 0), 100);   // 100 * 2^0
-        assert_eq!(p.delay_for_attempt(1, 0), 200);   // 100 * 2^1
-        assert_eq!(p.delay_for_attempt(2, 0), 400);   // 100 * 2^2
-        assert_eq!(p.delay_for_attempt(3, 0), 800);   // 100 * 2^3
-        assert_eq!(p.delay_for_attempt(4, 0), 1600);  // 100 * 2^4
+        assert_eq!(p.delay_for_attempt(0, 0), 100); // 100 * 2^0
+        assert_eq!(p.delay_for_attempt(1, 0), 200); // 100 * 2^1
+        assert_eq!(p.delay_for_attempt(2, 0), 400); // 100 * 2^2
+        assert_eq!(p.delay_for_attempt(3, 0), 800); // 100 * 2^3
+        assert_eq!(p.delay_for_attempt(4, 0), 1600); // 100 * 2^4
     }
 
     #[test]
@@ -408,7 +408,12 @@ mod tests {
         let mut engine = RetryEngine::new();
         let policy = RetryPolicy::default_policy();
         let outcome = engine.evaluate(&policy, policy.max_retries, 0, false, 0);
-        assert_eq!(outcome, RetryOutcome::Exhausted { attempts: policy.max_retries });
+        assert_eq!(
+            outcome,
+            RetryOutcome::Exhausted {
+                attempts: policy.max_retries
+            }
+        );
     }
 
     #[test]
@@ -425,7 +430,9 @@ mod tests {
         let policy = RetryPolicy::default_policy();
         let outcome = engine.evaluate(&policy, 1, policy.total_timeout_ms, false, 0);
         match outcome {
-            RetryOutcome::TimedOut { elapsed_ms } => assert_eq!(elapsed_ms, policy.total_timeout_ms),
+            RetryOutcome::TimedOut { elapsed_ms } => {
+                assert_eq!(elapsed_ms, policy.total_timeout_ms)
+            }
             _ => panic!("expected TimedOut"),
         }
     }
