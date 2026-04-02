@@ -414,3 +414,53 @@ fn test_payload_hash_differs_per_event_type() {
     // Different event types with same sequence should have different payload hashes
     assert_ne!(d.payload_hash(), n.payload_hash());
 }
+
+// ─── Phase 11: 1 000 concurrent transfers load test ──────────────────────────
+
+/// Validates that the prover can handle 1 000 concurrent proof-generation
+/// tasks without errors — Phase 11 checklist: "load tests: 1000 concurrent
+/// transfers". Uses a semaphore to bound actual parallelism to the number of
+/// logical CPUs so the test finishes quickly in CI.
+#[tokio::test]
+async fn test_1000_concurrent_transfers() {
+    use relayer::prover::ProverEngine;
+    use std::sync::Arc;
+    use tokio::sync::Semaphore;
+
+    const TOTAL: usize = 1_000;
+
+    let engine = ProverEngine::new(6);
+    engine.initialize().await.expect("prover init failed");
+
+    // Cap actual concurrency so CI finishes quickly; the test still validates
+    // that all 1 000 tasks can be submitted and all succeed.
+    let cpus = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(4);
+    let sem = Arc::new(Semaphore::new(cpus * 4));
+
+    let errors = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let mut handles = Vec::with_capacity(TOTAL);
+
+    for i in 0..TOTAL {
+        let engine = engine.clone();
+        let sem = Arc::clone(&sem);
+        let errors = Arc::clone(&errors);
+        handles.push(tokio::spawn(async move {
+            let _permit = sem.acquire_owned().await.expect("semaphore closed");
+            if engine.generate_proof(&deposit(i as u64)).await.is_err() {
+                errors.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            }
+        }));
+    }
+
+    for h in handles {
+        h.await.expect("task panicked");
+    }
+
+    let err_count = errors.load(std::sync::atomic::Ordering::Relaxed);
+    assert_eq!(
+        err_count, 0,
+        "all 1 000 concurrent transfers must succeed (errors={err_count})"
+    );
+}

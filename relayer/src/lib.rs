@@ -12,6 +12,7 @@ pub mod gas;
 pub mod governance;
 pub mod http_api;
 pub mod intent;
+pub mod kyc;
 pub mod liquidity_mining;
 pub mod listener;
 pub mod metrics;

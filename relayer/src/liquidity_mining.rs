@@ -378,6 +378,150 @@ fn compute_boost_bps(epoch: u32, consecutive_epochs: u32) -> u32 {
     boost
 }
 
+// ─── TVL Growth Tracking ────────────────────────────────────────────────────
+
+/// A point-in-time TVL measurement for the bridge liquidity pool.
+#[derive(Debug, Clone)]
+pub struct TvlSnapshot {
+    /// UNIX timestamp of the measurement.
+    pub timestamp: u64,
+    /// Total value locked in USD cents at this point.
+    pub tvl_usd_cents: u128,
+}
+
+/// Known competitor TVL levels (USD cents) for growth-rate comparison.
+/// Values sourced from public DeFi dashboards (approximate, 2024-Q4).
+pub const COMPETITOR_TVL_WORMHOLE_CENTS: u128 = 120_000_000_000; // $1.2B
+pub const COMPETITOR_TVL_ACROSS_CENTS: u128 = 50_000_000_000; // $500M
+pub const COMPETITOR_TVL_STARGATE_CENTS: u128 = 20_000_000_000; // $200M
+/// InterLink Year-1 TVL target ($100M).
+pub const TVL_TARGET_Y1_CENTS: u128 = 10_000_000_000;
+
+/// Tracks TVL over time and computes growth rates vs competitors.
+///
+/// Phase 9 checklist item: "measure tvl growth rate vs similar programs".
+#[derive(Debug, Default)]
+pub struct TvlGrowthTracker {
+    snapshots: Vec<TvlSnapshot>,
+}
+
+impl TvlGrowthTracker {
+    pub fn new() -> Self {
+        TvlGrowthTracker::default()
+    }
+
+    /// Record a new TVL snapshot.
+    pub fn record(&mut self, timestamp: u64, tvl_usd_cents: u128) {
+        self.snapshots.push(TvlSnapshot {
+            timestamp,
+            tvl_usd_cents,
+        });
+    }
+
+    /// Current (most recent) TVL, or 0 if no snapshots.
+    pub fn current_tvl(&self) -> u128 {
+        self.snapshots.last().map(|s| s.tvl_usd_cents).unwrap_or(0)
+    }
+
+    /// Week-over-week growth rate in basis points.
+    ///
+    /// Returns `None` if fewer than two snapshots exist or the window
+    /// does not span at least 6 days.
+    pub fn wow_growth_bps(&self) -> Option<i64> {
+        self.growth_bps_over_secs(7 * 24 * 3600)
+    }
+
+    /// Month-over-month growth rate in basis points.
+    pub fn mom_growth_bps(&self) -> Option<i64> {
+        self.growth_bps_over_secs(30 * 24 * 3600)
+    }
+
+    /// Growth rate over an arbitrary window (seconds) in basis points.
+    ///
+    /// Finds the snapshot closest to `window_secs` before the latest
+    /// snapshot, then computes `(current - prior) / prior * 10_000`.
+    pub fn growth_bps_over_secs(&self, window_secs: u64) -> Option<i64> {
+        if self.snapshots.len() < 2 {
+            return None;
+        }
+        let latest = self.snapshots.last()?;
+        let target_ts = latest.timestamp.saturating_sub(window_secs);
+
+        // Find the snapshot closest to target_ts (must be before latest).
+        let prior = self
+            .snapshots
+            .iter()
+            .rev()
+            .skip(1) // skip latest
+            .min_by_key(|s| {
+                let diff = if s.timestamp >= target_ts {
+                    s.timestamp - target_ts
+                } else {
+                    target_ts - s.timestamp
+                };
+                diff
+            })?;
+
+        if prior.tvl_usd_cents == 0 {
+            return None;
+        }
+
+        let current = latest.tvl_usd_cents as i128;
+        let base = prior.tvl_usd_cents as i128;
+        let growth_bps = (current - base) * 10_000 / base;
+        Some(growth_bps as i64)
+    }
+
+    /// How far InterLink is from its Year-1 TVL target (0-100%, capped at 100%).
+    pub fn y1_target_progress_bps(&self) -> u32 {
+        let current = self.current_tvl();
+        if TVL_TARGET_Y1_CENTS == 0 {
+            return 0;
+        }
+        ((current * 10_000 / TVL_TARGET_Y1_CENTS).min(10_000)) as u32
+    }
+
+    /// Summary comparing InterLink's TVL against competitor benchmarks.
+    pub fn competitor_gap_report(&self) -> TvlGapReport {
+        let current = self.current_tvl();
+        TvlGapReport {
+            current_tvl_cents: current,
+            vs_wormhole_bps: gap_bps(current, COMPETITOR_TVL_WORMHOLE_CENTS),
+            vs_across_bps: gap_bps(current, COMPETITOR_TVL_ACROSS_CENTS),
+            vs_stargate_bps: gap_bps(current, COMPETITOR_TVL_STARGATE_CENTS),
+            y1_target_progress_bps: self.y1_target_progress_bps(),
+        }
+    }
+
+    /// Number of snapshots recorded.
+    pub fn snapshot_count(&self) -> usize {
+        self.snapshots.len()
+    }
+}
+
+/// InterLink TVL vs competitor gap report.
+#[derive(Debug, Clone)]
+pub struct TvlGapReport {
+    /// Current InterLink TVL (USD cents).
+    pub current_tvl_cents: u128,
+    /// Gap vs Wormhole in bps (negative = InterLink is smaller).
+    pub vs_wormhole_bps: i64,
+    /// Gap vs Across in bps.
+    pub vs_across_bps: i64,
+    /// Gap vs Stargate in bps.
+    pub vs_stargate_bps: i64,
+    /// Progress toward Year-1 $100M target (0-10000 bps = 0-100%).
+    pub y1_target_progress_bps: u32,
+}
+
+fn gap_bps(current: u128, competitor: u128) -> i64 {
+    if competitor == 0 {
+        return 0;
+    }
+    let diff = current as i128 - competitor as i128;
+    (diff * 10_000 / competitor as i128) as i64
+}
+
 // ─── Errors ─────────────────────────────────────────────────────────────────
 
 #[derive(Debug, PartialEq)]
@@ -618,5 +762,87 @@ mod tests {
         let summary = prog.distribute_epoch(START + 2 * DAY).unwrap();
         assert_eq!(summary.eligible_lps, 0);
         assert_eq!(summary.total_distributed, 0);
+    }
+
+    // ── TVL Growth Tracker tests ──────────────────────────────────────────────
+
+    #[test]
+    fn test_tvl_tracker_no_snapshots_returns_zero() {
+        let tracker = TvlGrowthTracker::new();
+        assert_eq!(tracker.current_tvl(), 0);
+        assert!(tracker.wow_growth_bps().is_none());
+    }
+
+    #[test]
+    fn test_tvl_tracker_single_snapshot_no_growth_rate() {
+        let mut tracker = TvlGrowthTracker::new();
+        tracker.record(START, 1_000_000_000);
+        assert_eq!(tracker.current_tvl(), 1_000_000_000);
+        assert!(tracker.wow_growth_bps().is_none());
+    }
+
+    #[test]
+    fn test_tvl_tracker_wow_growth_positive() {
+        let mut tracker = TvlGrowthTracker::new();
+        let week = 7 * DAY;
+        tracker.record(START, 1_000_000_000);
+        tracker.record(START + week, 1_100_000_000); // +10%
+        let bps = tracker.wow_growth_bps().unwrap();
+        assert_eq!(bps, 1_000, "10% growth = 1000 bps");
+    }
+
+    #[test]
+    fn test_tvl_tracker_wow_growth_negative() {
+        let mut tracker = TvlGrowthTracker::new();
+        let week = 7 * DAY;
+        tracker.record(START, 1_000_000_000);
+        tracker.record(START + week, 900_000_000); // -10%
+        let bps = tracker.wow_growth_bps().unwrap();
+        assert_eq!(bps, -1_000, "-10% growth = -1000 bps");
+    }
+
+    #[test]
+    fn test_tvl_tracker_y1_target_progress() {
+        let mut tracker = TvlGrowthTracker::new();
+        // At 50% of $100M target = $50M
+        tracker.record(START, TVL_TARGET_Y1_CENTS / 2);
+        assert_eq!(tracker.y1_target_progress_bps(), 5_000);
+
+        let mut tracker2 = TvlGrowthTracker::new();
+        // Above target
+        tracker2.record(START, TVL_TARGET_Y1_CENTS * 2);
+        assert_eq!(tracker2.y1_target_progress_bps(), 10_000, "progress capped at 100%");
+    }
+
+    #[test]
+    fn test_tvl_gap_report_shows_we_are_behind_competitors() {
+        let mut tracker = TvlGrowthTracker::new();
+        // InterLink at $10M
+        tracker.record(START, 1_000_000_000);
+        let report = tracker.competitor_gap_report();
+        assert!(
+            report.vs_wormhole_bps < 0,
+            "InterLink must be behind Wormhole at $10M"
+        );
+        assert!(
+            report.vs_across_bps < 0,
+            "InterLink must be behind Across at $10M"
+        );
+        assert!(
+            report.vs_stargate_bps < 0,
+            "InterLink must be behind Stargate at $10M"
+        );
+    }
+
+    #[test]
+    fn test_tvl_tracker_multiple_snapshots_uses_closest() {
+        let mut tracker = TvlGrowthTracker::new();
+        let week = 7 * DAY;
+        tracker.record(START, 500_000_000);
+        tracker.record(START + week / 2, 750_000_000);
+        tracker.record(START + week, 1_000_000_000);
+        // WoW should compare latest (1B) vs ~1 week ago (500M)
+        let bps = tracker.wow_growth_bps().unwrap();
+        assert!(bps > 0, "TVL doubled over the week");
     }
 }

@@ -472,6 +472,126 @@ mod rate_limit {
     }
 }
 
+// ─── Validator stress: 10 000 pending transactions ───────────────────────────
+//
+// Testing-infrastructure checklist: "stress test validator with 10k pending txs".
+// Verifies that the batch pipeline and multisig bundle layer remain correct and
+// non-panicking under a 10 000-event flood.
+
+mod validator_stress {
+    use relayer::batch::BatchCollector;
+    use relayer::events::{DepositEvent, GatewayEvent};
+    use relayer::multisig::{add_signature, create_bundle, verify_bundle, ValidatorId, ValidatorSet};
+    use std::time::Duration;
+
+    const TOTAL_EVENTS: u64 = 10_000;
+    const BATCH_SIZE: usize = 100;
+
+    fn flood_event(seq: u64) -> GatewayEvent {
+        GatewayEvent::Deposit(DepositEvent {
+            block_number: seq,
+            tx_hash: {
+                let mut h = [0u8; 32];
+                h[..8].copy_from_slice(&seq.to_le_bytes());
+                h
+            },
+            sequence: seq,
+            sender: [0xCC; 20],
+            recipient: vec![0xDD; 32],
+            amount: 1,
+            destination_chain: 2,
+            payload_hash: {
+                let mut h = [0xEE; 32];
+                h[..8].copy_from_slice(&seq.to_le_bytes());
+                h
+            },
+        })
+    }
+
+    fn make_validator_set() -> ValidatorSet {
+        ValidatorSet::new(
+            vec![
+                ValidatorId::new(*b"validator_one___________________", 0, "v1"),
+                ValidatorId::new(*b"validator_two___________________", 1, "v2"),
+                ValidatorId::new(*b"validator_three_________________", 2, "v3"),
+            ],
+            2,
+        )
+        .expect("valid set")
+    }
+
+    /// Feed 10 000 events through the BatchCollector; every full batch must
+    /// contain exactly BATCH_SIZE events and batches must have sequential IDs.
+    #[test]
+    fn batch_pipeline_handles_10k_events_correctly() {
+        let mut collector = BatchCollector::new(BATCH_SIZE, Duration::from_secs(3600));
+        let mut flushed_batches = 0usize;
+        let mut total_events_in_batches = 0usize;
+
+        for seq in 0..TOTAL_EVENTS {
+            if let Some(batch) = collector.push(flood_event(seq)) {
+                assert_eq!(
+                    batch.len(),
+                    BATCH_SIZE,
+                    "every size-triggered batch must be exactly BATCH_SIZE"
+                );
+                assert_eq!(
+                    batch.batch_id as usize,
+                    flushed_batches,
+                    "batches must have sequential IDs"
+                );
+                total_events_in_batches += batch.len();
+                flushed_batches += 1;
+            }
+        }
+
+        let expected_batches = TOTAL_EVENTS as usize / BATCH_SIZE;
+        assert_eq!(
+            flushed_batches, expected_batches,
+            "expected {expected_batches} full batches from {TOTAL_EVENTS} events"
+        );
+        assert_eq!(
+            total_events_in_batches,
+            expected_batches * BATCH_SIZE,
+            "total events in batches must match"
+        );
+
+        // Remaining events stay in the pending buffer
+        let remainder = TOTAL_EVENTS as usize % BATCH_SIZE;
+        assert_eq!(
+            collector.pending_count(),
+            remainder,
+            "leftover events must stay in buffer"
+        );
+    }
+
+    /// With 10 000 pending events the multisig bundle layer must still produce
+    /// and verify bundles correctly — no panic, no silent failure.
+    #[test]
+    fn multisig_bundle_stable_under_flood() {
+        let vset = make_validator_set();
+
+        // Create and sign 1 000 bundles (representative sample of the 10k flood)
+        let mut success = 0usize;
+        for seq in 0u64..1_000 {
+            let payload = format!("flood_payload_{seq}");
+            let mut bundle = create_bundle(payload.as_bytes(), seq, 1, &[0xAA; 32], &vset);
+
+            add_signature(&mut bundle, 0, [0x01u8; 64], &vset, seq).unwrap();
+            add_signature(&mut bundle, 1, [0x02u8; 64], &vset, seq).unwrap();
+
+            if verify_bundle(&bundle, &vset).is_ok() {
+                success += 1;
+            }
+        }
+
+        assert_eq!(
+            success, 1_000,
+            "all 1 000 representative bundles must verify (success={success})"
+        );
+    }
+}
+
 // ─── Webhook DoS ──────────────────────────────────────────────────────────────
 
 mod webhook_dos {

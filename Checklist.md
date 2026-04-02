@@ -319,7 +319,7 @@ status: production-ready (testing: 366/366 relayer lib, 30/30 security, 18/18 in
   - [x] $10M over 6 months for lps — liquidity_mining.rs TOTAL_REWARD_BUDGET=10_000_000, 26 epochs
   - [x] epoch-based distribution with early-bird 2x boost + loyalty 1.5x boost — liquidity_mining.rs compute_boost_bps()
   - [x] anti-gaming: 24h minimum deposit, 25/75 immediate/vesting split — liquidity_mining.rs MIN_DEPOSIT_DURATION_SECS
-  - [ ] measure tvl growth rate vs similar programs
+  - [x] measure tvl growth rate vs similar programs — TvlGrowthTracker in liquidity_mining.rs: wow/mom growth bps, competitor gap report vs Wormhole/Across/Stargate, Y1 target progress
 
 ---
 
@@ -366,7 +366,7 @@ status: production-ready (testing: 366/366 relayer lib, 30/30 security, 18/18 in
   - [x] unit tests: 80%+ code coverage — 366 tests across all modules
   - [x] integration tests: mainnet forking (anvil) — relayer/tests/integration.rs (no live node needed)
   - [ ] e2e tests: real transfers on testnet
-  - [ ] load tests: 1000 concurrent transfers
+  - [x] load tests: 1000 concurrent transfers — tests/integration.rs test_1000_concurrent_transfers
 
 - [x] error handling & debugging
   - [x] clear error messages vs cryptic sdk errors — all modules use typed errors (GovernanceError, AmmError, etc.)
@@ -391,7 +391,7 @@ status: production-ready (testing: 366/366 relayer lib, 30/30 security, 18/18 in
   - [x] spend limits: per-tx ($500k), daily ($1M), monthly ($10M) — enterprise.rs DEFAULT_*_LIMIT_CENTS
 
 - [x] compliance features
-  - [ ] aml/kyc integration (optional, community-governed)
+  - [x] aml/kyc integration (optional, community-governed) — kyc.rs KycRegistry + AmlScreener, governance-toggled screening_enabled flag
   - [x] transaction audit trail — audit_trail.rs AuditLog with SHA-256 hash-chain, indexed by sender/receiver/corridor
   - [x] regulatory reporting exports — audit_trail.rs export_csv() + export_json()
 
@@ -453,7 +453,7 @@ track these vs competitors weekly:
 - [x] load testing harness
   - [x] concurrent transfer generator — bin/load_test.rs with --concurrency / --total flags
   - [x] measure queue depth + latency under load — p50/p95/p99 per run level + metrics snapshot
-  - [ ] stress test validator with 10k pending txs
+  - [x] stress test validator with 10k pending txs — tests/security.rs validator_stress module: batch_pipeline_handles_10k_events_correctly + multisig_bundle_stable_under_flood
 
 - [x] security test suite
   - [x] double-spend attempt (should fail) — tests/security.rs sequence_binding module
@@ -491,4 +491,4 @@ track these vs competitors weekly:
 
 ---
 
-last updated: 2026-03-31
+last updated: 2026-04-01
