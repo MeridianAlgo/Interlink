@@ -481,7 +481,9 @@ mod rate_limit {
 mod validator_stress {
     use relayer::batch::BatchCollector;
     use relayer::events::{DepositEvent, GatewayEvent};
-    use relayer::multisig::{add_signature, create_bundle, verify_bundle, ValidatorId, ValidatorSet};
+    use relayer::multisig::{
+        add_signature, create_bundle, verify_bundle, ValidatorId, ValidatorSet,
+    };
     use std::time::Duration;
 
     const TOTAL_EVENTS: u64 = 10_000;
@@ -536,8 +538,7 @@ mod validator_stress {
                     "every size-triggered batch must be exactly BATCH_SIZE"
                 );
                 assert_eq!(
-                    batch.batch_id as usize,
-                    flushed_batches,
+                    batch.batch_id as usize, flushed_batches,
                     "batches must have sequential IDs"
                 );
                 total_events_in_batches += batch.len();

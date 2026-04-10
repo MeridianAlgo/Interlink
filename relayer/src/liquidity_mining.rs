@@ -811,7 +811,11 @@ mod tests {
         let mut tracker2 = TvlGrowthTracker::new();
         // Above target
         tracker2.record(START, TVL_TARGET_Y1_CENTS * 2);
-        assert_eq!(tracker2.y1_target_progress_bps(), 10_000, "progress capped at 100%");
+        assert_eq!(
+            tracker2.y1_target_progress_bps(),
+            10_000,
+            "progress capped at 100%"
+        );
     }
 
     #[test]

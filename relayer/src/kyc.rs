@@ -16,7 +16,6 @@
 ///   Stargate:  no built-in KYC/AML
 ///   Circle CCTP: mandatory KYC for USDC transfers
 ///   InterLink: optional, community-governed, privacy-preserving
-
 use std::collections::{HashMap, HashSet};
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -502,10 +501,7 @@ mod tests {
         reg.whitelist("0xcustody");
 
         let result = reg.screen("0xcustody", NOW);
-        assert!(
-            !result.blocked,
-            "whitelisted address must bypass sanctions"
-        );
+        assert!(!result.blocked, "whitelisted address must bypass sanctions");
     }
 
     #[test]
@@ -571,6 +567,9 @@ mod tests {
         // No KYC record, require_kyc = false
 
         let result = reg.screen("0xanon", NOW);
-        assert!(!result.blocked, "unknown address without mandatory KYC must pass");
+        assert!(
+            !result.blocked,
+            "unknown address without mandatory KYC must pass"
+        );
     }
 }
