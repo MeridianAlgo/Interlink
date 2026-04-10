@@ -466,6 +466,8 @@ The simulated execution environment successfully processed the Hub operations ag
 
 ## Documentation and Resources
 
+- **Solana Operations**: [SOLANA_OPERATIONS.md](./docs/SOLANA_OPERATIONS.md)
+- **ZK Circuit Architecture**: [ZK_CIRCUITS_V1.md](./docs/ZK_CIRCUITS_V1.md)
 - **Technical Whitepaper**: [InterLink Research (PDF)](./Interlink_Research.pdf)
 - **Developer Portal**: [interlink.protocol](https://meridianalgo.github.io/Interlink/)
 - **GitHub Repository**: [MeridianAlgo/Interlink](https://github.com/MeridianAlgo/Interlink)
