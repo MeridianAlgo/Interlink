@@ -4,10 +4,20 @@
 [advisories]
 db-path = "~/.cargo/advisory-db"
 db-urls = ["https://github.com/rustsec/advisory-db"]
+# Valid values: "deny", "warn", "allow" for vulnerability/notice;
+# "all", "workspace", "transitive", "none" for unmaintained/yanked
 vulnerability = "deny"
-unmaintained = "warn"
-yanked = "warn"
+unmaintained = "workspace"
+yanked = "workspace"
 notice = "warn"
+ignore = [
+  # tracing-subscriber 0.2.25 ANSI escape injection — transitive via ark-relations 0.4.0.
+  # Cannot upgrade without full arkworks ecosystem bump. See .cargo/audit.toml for details.
+  { id = "RUSTSEC-2025-0055", reason = "transitive via ark-relations; no upstream fix available" },
+  # ring 0.16 AES panic + unmaintained — transitive via ethers-providers → jsonwebtoken 8.
+  { id = "RUSTSEC-2025-0009", reason = "transitive via ethers-providers 2.x; not in hot path" },
+  { id = "RUSTSEC-2025-0010", reason = "transitive via ethers-providers 2.x; not in hot path" },
+]
 
 [licenses]
 unlicensed = "deny"
