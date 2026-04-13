@@ -36,8 +36,11 @@ import {
   ChainId,
   FeeComparison,
   InterlinkConfig,
+  Transfer,
   TransferParams,
   TransferQuote,
+  TransferStatus,
+  SwapParams,
   WebhookEventType,
   WebhookRegistration,
   DEFAULT_RELAYER_URL,
@@ -136,6 +139,188 @@ export class InterlinkClient {
     };
   }
 
+  // ─── Transfers ─────────────────────────────────────────────────────────────
+
+  /**
+   * Initiate a cross-chain transfer.
+   *
+   * Submits a transfer request to the relayer, which handles finality
+   * confirmation, ZK proof generation, and settlement on the destination chain.
+   *
+   * @param params - Transfer parameters (recipient, destination chain, amount).
+   * @param quote - A valid quote obtained from {@link getQuote}. Must not be expired.
+   * @returns The submitted transfer with a sequence number for tracking.
+   *
+   * @example
+   * ```typescript
+   * const quote = await client.getQuote({ ... });
+   * const transfer = await client.transfer({
+   *   recipient: "8xk2...",
+   *   destinationChain: ChainId.Solana,
+   *   amountWei: 1_000_000_000_000_000_000n,
+   * }, quote);
+   * console.log("Sequence:", transfer.sequence);
+   * ```
+   */
+  async transfer(params: TransferParams, quote: TransferQuote): Promise<Transfer> {
+    if (quote.expiresAt < Math.floor(Date.now() / 1000)) {
+      throw new QuoteExpiredError(quote.expiresAt);
+    }
+
+    const data = await this.post("/transfers", {
+      recipient: params.recipient,
+      destination_chain: params.destinationChain,
+      token_address: params.tokenAddress ?? "0x0000000000000000000000000000000000000000",
+      amount_wei: params.amountWei.toString(),
+      payload: params.payload ? Buffer.from(params.payload).toString("base64") : null,
+      quote_expires_at: quote.expiresAt,
+    });
+
+    return {
+      sequence: data.sequence,
+      txHash: data.tx_hash,
+      blockNumber: data.block_number,
+      status: data.status as TransferStatus,
+      params,
+      quote,
+      settlementSignature: data.settlement_signature ?? undefined,
+      totalElapsedMs: data.total_elapsed_ms ?? undefined,
+      error: data.error ?? undefined,
+    };
+  }
+
+  /**
+   * Initiate a cross-chain swap (bridge + DEX swap on destination).
+   *
+   * Combines bridging with a destination-chain swap in a single atomic operation.
+   * Uses the intent solver to find the optimal path.
+   *
+   * @param params - Swap parameters (destination chain, output token, min amount).
+   * @param amountWei - Amount to bridge in wei.
+   * @returns The submitted transfer with swap details.
+   *
+   * @example
+   * ```typescript
+   * const transfer = await client.swap({
+   *   destinationChain: ChainId.Solana,
+   *   recipient: "8xk2...",
+   *   tokenOut: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", // USDC on Solana
+   *   minAmountOut: 3000_000_000n, // 3000 USDC (6 decimals)
+   * }, 1_000_000_000_000_000_000n);
+   * ```
+   */
+  async swap(params: SwapParams, amountWei: bigint): Promise<Transfer> {
+    const data = await this.post("/swaps", {
+      destination_chain: params.destinationChain,
+      recipient: params.recipient,
+      token_out: params.tokenOut,
+      min_amount_out: params.minAmountOut.toString(),
+      amount_wei: amountWei.toString(),
+      swap_data: params.swapData ? Buffer.from(params.swapData).toString("base64") : null,
+    });
+
+    return {
+      sequence: data.sequence,
+      txHash: data.tx_hash,
+      blockNumber: data.block_number,
+      status: data.status as TransferStatus,
+      params: {
+        recipient: params.recipient,
+        destinationChain: params.destinationChain,
+        amountWei,
+      },
+      quote: data.quote,
+      settlementSignature: data.settlement_signature ?? undefined,
+      totalElapsedMs: data.total_elapsed_ms ?? undefined,
+      error: data.error ?? undefined,
+    };
+  }
+
+  /**
+   * Get the current status of a transfer by sequence number.
+   *
+   * Poll this endpoint to track transfer progress through stages:
+   * PendingFinality → PendingProof → PendingSettlement → Complete
+   *
+   * @param sequence - The sequence number returned from {@link transfer} or {@link swap}.
+   * @returns The current transfer state, or null if not found.
+   *
+   * @example
+   * ```typescript
+   * const status = await client.getTransferStatus(42);
+   * if (status?.status === TransferStatus.Complete) {
+   *   console.log("Settled:", status.settlementSignature);
+   * }
+   * ```
+   */
+  async getTransferStatus(sequence: number): Promise<Transfer | null> {
+    try {
+      const data = await this.get(`/transfers/${sequence}`);
+      return {
+        sequence: data.sequence,
+        txHash: data.tx_hash,
+        blockNumber: data.block_number,
+        status: data.status as TransferStatus,
+        params: {
+          recipient: data.recipient,
+          destinationChain: data.destination_chain,
+          amountWei: BigInt(data.amount_wei),
+        },
+        quote: data.quote,
+        settlementSignature: data.settlement_signature ?? undefined,
+        totalElapsedMs: data.total_elapsed_ms ?? undefined,
+        error: data.error ?? undefined,
+      };
+    } catch (e) {
+      if (e instanceof InterlinkApiError && e.statusCode === 404) {
+        return null;
+      }
+      throw e;
+    }
+  }
+
+  /**
+   * Wait for a transfer to reach a terminal state (Complete or Failed).
+   *
+   * Polls {@link getTransferStatus} at the given interval until the transfer
+   * settles or the timeout is reached.
+   *
+   * @param sequence - Transfer sequence number.
+   * @param opts - Polling options.
+   * @returns The completed/failed transfer.
+   * @throws Error if the timeout is reached before settlement.
+   *
+   * @example
+   * ```typescript
+   * const result = await client.waitForSettlement(42, { timeoutMs: 120_000 });
+   * console.log("Final status:", result.status);
+   * ```
+   */
+  async waitForSettlement(
+    sequence: number,
+    opts: { pollIntervalMs?: number; timeoutMs?: number } = {}
+  ): Promise<Transfer> {
+    const pollInterval = opts.pollIntervalMs ?? 3_000;
+    const timeout = opts.timeoutMs ?? 120_000;
+    const deadline = Date.now() + timeout;
+
+    while (Date.now() < deadline) {
+      const transfer = await this.getTransferStatus(sequence);
+      if (
+        transfer &&
+        (transfer.status === TransferStatus.Complete ||
+          transfer.status === TransferStatus.Failed)
+      ) {
+        return transfer;
+      }
+      await new Promise((resolve) => setTimeout(resolve, pollInterval));
+    }
+
+    throw new Error(
+      `Transfer ${sequence} did not settle within ${timeout}ms`
+    );
+  }
+
   // ─── Fee comparison ────────────────────────────────────────────────────────
 
   /**
@@ -148,9 +333,21 @@ export class InterlinkClient {
    */
   async compareFeesAt(usdCents: number): Promise<FeeComparison> {
     const data = await this.get(`/compare?usd_cents=${usdCents}`);
+    const il = data.data.interlink;
     return {
-      interlink: data.data.interlink,
-      competitors: data.data.competitors,
+      interlink: {
+        feeBps: il.fee_bps,
+        feeUsdCents: il.fee_usd_cents,
+        settlementTargetSecs: il.settlement_target_secs,
+        feeDescription: il.fee_description,
+      },
+      competitors: data.data.competitors.map((c: Record<string, unknown>) => ({
+        name: c.name,
+        feeBps: c.fee_bps,
+        feeUsdCents: c.fee_usd_cents,
+        settlementMinSecs: c.settlement_min_secs,
+        settlementMaxSecs: c.settlement_max_secs,
+      })),
       interlinkWinsFee: data.data.interlink_wins_fee,
       interlinkWinsSpeed: data.data.interlink_wins_speed,
       savingsVsCheapestCents: data.comparison?.savings_vs_cheapest_cents ?? 0,

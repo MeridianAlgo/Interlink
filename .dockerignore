@@ -1,0 +1,15 @@
+target/
+contracts/*/target/
+contracts/solana/interlink-hub/target/
+node_modules/
+.git/
+.claude/
+.env
+*.log
+docs/
+research/
+sdk/
+scripts/
+contracts/evm/out/
+contracts/evm/cache/
+InterLink.png

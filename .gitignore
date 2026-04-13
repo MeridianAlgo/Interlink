@@ -4,7 +4,7 @@
 *.swp
 *.swo
 .DS_Store
-Cargo.lock
+# Cargo.lock is committed for binary crates (relayer) per Cargo best practices
 /claude
 .claude/
 .env

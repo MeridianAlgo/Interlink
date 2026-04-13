@@ -19,8 +19,10 @@ function mockFetch(responses: Record<string, unknown>) {
 global.fetch = jest.fn(async (url: string, init?: RequestInit) => {
   const path = new URL(url).pathname + new URL(url).search;
 
-  // Find best-matching mock
-  const key = Object.keys(mockResponses).find((k) => path.startsWith(k));
+  // Find best-matching mock (longest prefix wins to avoid /webhooks matching /webhooks/register)
+  const key = Object.keys(mockResponses)
+    .filter((k) => path.startsWith(k))
+    .sort((a, b) => b.length - a.length)[0];
   if (key) {
     const body = mockResponses[key];
     return {
@@ -198,19 +200,16 @@ describe("InterlinkClient", () => {
   // ─── Fee comparison ───────────────────────────────────────────────────────
 
   test("compareFeesAt returns interlink wins on fee and speed", async () => {
-    mockFetch({ "/compare": compareResponse });
-
     const cmp = await client.compareFeesAt(100_000);
 
     expect(cmp.interlinkWinsFee).toBe(true);
     expect(cmp.interlinkWinsSpeed).toBe(true);
     expect(cmp.competitors).toHaveLength(3);
-    expect(cmp.competitors.map((c) => c.name)).toContain("Wormhole");
-    expect(cmp.competitors.map((c) => c.name)).toContain("Across");
+    expect(cmp.competitors.map((c: { name: string }) => c.name)).toContain("Wormhole");
+    expect(cmp.competitors.map((c: { name: string }) => c.name)).toContain("Across");
   });
 
   test("compareFeesAt tier 1 zero fee", async () => {
-    mockFetch({ "/compare": compareResponse });
     const cmp = await client.compareFeesAt(100_000); // $1,000 = Tier 1
     expect(cmp.interlink.feeBps).toBe(0);
     expect(cmp.interlink.feeUsdCents).toBe(0);
@@ -280,12 +279,19 @@ describe("InterlinkClient", () => {
   // ─── Error handling ───────────────────────────────────────────────────────
 
   test("get throws InterlinkApiError on non-2xx response", async () => {
-    (global.fetch as jest.Mock).mockResolvedValueOnce({
-      ok: false,
-      status: 500,
-      json: async () => ({ error: "internal server error" }),
-      text: async () => "internal server error",
-    });
+    (global.fetch as jest.Mock)
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        json: async () => ({ error: "internal server error" }),
+        text: async () => "internal server error",
+      })
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        json: async () => ({ error: "internal server error" }),
+        text: async () => "internal server error",
+      });
 
     await expect(client.getMetrics()).rejects.toThrow(InterlinkApiError);
     await expect(client.getMetrics()).rejects.toThrow("500");
@@ -307,6 +313,143 @@ describe("InterlinkClient", () => {
       expect(err.statusCode).toBe(429);
       expect(err.responseBody).toBe("rate limited");
     }
+  });
+
+  // ─── Transfers ────────────────────────────────────────────────────────────
+
+  test("transfer submits and returns Transfer object", async () => {
+    const transferResponse = {
+      sequence: 42,
+      tx_hash: "0xabc123",
+      block_number: 12345,
+      status: "pending_finality",
+    };
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => transferResponse,
+      text: async () => JSON.stringify(transferResponse),
+    });
+
+    const quote = {
+      sourceChain: ChainId.Ethereum,
+      destChain: ChainId.Solana,
+      amountWei: 1_000_000_000_000_000_000n,
+      usdCents: 300_000,
+      feeWei: 500_000_000_000_000n,
+      feeTier: "Standard",
+      feeBps: 5,
+      estimatedSettlementSecs: 17,
+      sourceGasWei: 2_400_000_000_000_000n,
+      destFeeLamports: 5200,
+      expiresAt: Math.floor(Date.now() / 1000) + 60,
+    };
+
+    const transfer = await client.transfer(
+      {
+        recipient: "8xk2abc",
+        destinationChain: ChainId.Solana,
+        amountWei: 1_000_000_000_000_000_000n,
+      },
+      quote
+    );
+
+    expect(transfer.sequence).toBe(42);
+    expect(transfer.txHash).toBe("0xabc123");
+    expect(transfer.status).toBe(TransferStatus.PendingFinality);
+  });
+
+  test("transfer throws QuoteExpiredError for expired quote", async () => {
+    const { QuoteExpiredError } = await import("./client");
+
+    const expiredQuote = {
+      sourceChain: ChainId.Ethereum,
+      destChain: ChainId.Solana,
+      amountWei: 1_000_000_000_000_000_000n,
+      usdCents: 300_000,
+      feeWei: 0n,
+      feeTier: "Zero",
+      feeBps: 0,
+      estimatedSettlementSecs: 17,
+      sourceGasWei: 0n,
+      destFeeLamports: 0,
+      expiresAt: Math.floor(Date.now() / 1000) - 10, // expired 10s ago
+    };
+
+    await expect(
+      client.transfer(
+        { recipient: "8xk2", destinationChain: ChainId.Solana, amountWei: 1n },
+        expiredQuote
+      )
+    ).rejects.toThrow(QuoteExpiredError);
+  });
+
+  test("getTransferStatus returns transfer details", async () => {
+    const statusResponse = {
+      sequence: 42,
+      tx_hash: "0xabc123",
+      block_number: 12345,
+      status: "complete",
+      recipient: "8xk2abc",
+      destination_chain: ChainId.Solana,
+      amount_wei: "1000000000000000000",
+      quote: {},
+      settlement_signature: "5Ht9...",
+      total_elapsed_ms: 18_000,
+    };
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => statusResponse,
+      text: async () => JSON.stringify(statusResponse),
+    });
+
+    const transfer = await client.getTransferStatus(42);
+    expect(transfer).not.toBeNull();
+    expect(transfer!.status).toBe(TransferStatus.Complete);
+    expect(transfer!.settlementSignature).toBe("5Ht9...");
+    expect(transfer!.totalElapsedMs).toBe(18_000);
+  });
+
+  test("getTransferStatus returns null on 404", async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: false,
+      status: 404,
+      json: async () => ({ error: "not found" }),
+      text: async () => "not found",
+    });
+
+    const transfer = await client.getTransferStatus(999);
+    expect(transfer).toBeNull();
+  });
+
+  test("swap submits and returns Transfer with swap fields", async () => {
+    const swapResponse = {
+      sequence: 99,
+      tx_hash: "0xdef456",
+      block_number: 12346,
+      status: "pending_proof",
+      quote: {},
+    };
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => swapResponse,
+      text: async () => JSON.stringify(swapResponse),
+    });
+
+    const transfer = await client.swap(
+      {
+        destinationChain: ChainId.Solana,
+        recipient: "8xk2abc",
+        tokenOut: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        minAmountOut: 3000_000_000n,
+      },
+      1_000_000_000_000_000_000n
+    );
+
+    expect(transfer.sequence).toBe(99);
+    expect(transfer.status).toBe(TransferStatus.PendingProof);
   });
 
   // ─── Config ───────────────────────────────────────────────────────────────
