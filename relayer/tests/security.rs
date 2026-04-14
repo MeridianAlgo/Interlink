@@ -1,16 +1,16 @@
-/// Security test suite for the InterLink relayer (Phase 11 / Testing Infrastructure)
-///
-/// Tests attack vectors that a cross-chain bridge must withstand:
-///
-/// 1. Sequence binding: different sequences yield different commitments
-/// 2. Byzantine validator: forge threshold bundles with insufficient signers
-/// 3. Oversized / malformed input: zero amounts, boundary values, max-u128 fee
-/// 4. AMM manipulation: price impact guard rejects large manipulative swaps
-/// 5. Governance attack: below-threshold proposals, duplicate votes, premature execute
-/// 6. Rate-limit bypass: cannot exceed free-tier cap
-/// 7. Webhook DoS: auto-disable after 10 consecutive failures via record_delivery
-///
-/// All tests run entirely in-process — no live chain needed.
+// Security test suite for the InterLink relayer (Phase 11 / Testing Infrastructure)
+//
+// Tests attack vectors that a cross-chain bridge must withstand:
+//
+// 1. Sequence binding: different sequences yield different commitments
+// 2. Byzantine validator: forge threshold bundles with insufficient signers
+// 3. Oversized / malformed input: zero amounts, boundary values, max-u128 fee
+// 4. AMM manipulation: price impact guard rejects large manipulative swaps
+// 5. Governance attack: below-threshold proposals, duplicate votes, premature execute
+// 6. Rate-limit bypass: cannot exceed free-tier cap
+// 7. Webhook DoS: auto-disable after 10 consecutive failures via record_delivery
+//
+// All tests run entirely in-process — no live chain needed.
 
 // ─── Sequence / Replay ────────────────────────────────────────────────────────
 

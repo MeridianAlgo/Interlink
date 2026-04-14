@@ -191,7 +191,7 @@ impl LiquidityMiningProgram {
 
         let epoch = self.current_epoch;
         let budget = self.epoch_budgets.get(epoch as usize).copied().unwrap_or(0);
-        let epoch_start = self.program_start + (epoch as u64 * EPOCH_DURATION_SECS);
+        let _epoch_start = self.program_start + (epoch as u64 * EPOCH_DURATION_SECS);
 
         // Filter eligible LPs (minimum deposit duration + non-zero liquidity)
         let eligible: Vec<(String, u128, u32)> = self
@@ -221,7 +221,7 @@ impl LiquidityMiningProgram {
             .iter()
             .map(|(_, liq, consec)| {
                 let boost = compute_boost_bps(epoch, *consec);
-                (*liq as u128) * (boost as u128) / (BPS as u128)
+                *liq * (boost as u128) / (BPS as u128)
             })
             .sum();
 
@@ -230,17 +230,13 @@ impl LiquidityMiningProgram {
 
         for (id, liq, consec) in &eligible {
             let boost = compute_boost_bps(epoch, *consec);
-            let weighted = (*liq as u128) * (boost as u128) / (BPS as u128);
-            let base_reward = if total_weighted > 0 {
-                (budget as u128 * (*liq as u128) / total_weighted.max(1)) as u64
-            } else {
-                0
-            };
-            let final_reward = if total_weighted > 0 {
-                (budget as u128 * weighted / total_weighted) as u64
-            } else {
-                0
-            };
+            let weighted = *liq * (boost as u128) / (BPS as u128);
+            let base_reward = ((budget as u128 * *liq)
+                .checked_div(total_weighted.max(1))
+                .unwrap_or(0)) as u64;
+            let final_reward = ((budget as u128 * weighted)
+                .checked_div(total_weighted)
+                .unwrap_or(0)) as u64;
 
             // Split into immediate + vesting
             let immediate =
@@ -274,7 +270,7 @@ impl LiquidityMiningProgram {
             actual_distributed += final_reward;
         }
 
-        let total_liquidity: u128 = eligible.iter().map(|(_, l, _)| *l as u128).sum();
+        let total_liquidity: u128 = eligible.iter().map(|(_, l, _)| *l).sum();
         self.total_distributed += actual_distributed;
         self.current_epoch += 1;
 
@@ -454,12 +450,8 @@ impl TvlGrowthTracker {
             .rev()
             .skip(1) // skip latest
             .min_by_key(|s| {
-                let diff = if s.timestamp >= target_ts {
-                    s.timestamp - target_ts
-                } else {
-                    target_ts - s.timestamp
-                };
-                diff
+                
+                s.timestamp.abs_diff(target_ts)
             })?;
 
         if prior.tvl_usd_cents == 0 {

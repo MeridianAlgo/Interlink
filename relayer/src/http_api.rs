@@ -359,7 +359,7 @@ fn not_found() -> (u16, &'static str, String) {
 // ─── HTTP helpers ─────────────────────────────────────────────────────────────
 
 /// Parse an HTTP request into (method, path, query_params, body).
-fn parse_request<'a>(request: &'a str) -> (&'a str, &'a str, HashMap<String, String>, String) {
+fn parse_request(request: &str) -> (&str, &str, HashMap<String, String>, String) {
     let first_line = request.lines().next().unwrap_or("");
     let parts: Vec<&str> = first_line.splitn(3, ' ').collect();
     if parts.len() < 2 {

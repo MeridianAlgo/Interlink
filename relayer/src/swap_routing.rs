@@ -173,11 +173,7 @@ pub struct SwapRouter {
 #[derive(Debug, Clone)]
 struct SwapExecution {
     source: DexSource,
-    chain_id: u32,
-    quoted_output: u128,
-    actual_output: u128,
     slippage_bps: u32,
-    timestamp: u64,
     success: bool,
 }
 
@@ -211,18 +207,16 @@ impl SwapRouter {
         }
 
         // Sort by output amount descending (best first)
-        valid_quotes.sort_by(|a, b| b.amount_out.cmp(&a.amount_out));
+        valid_quotes.sort_by_key(|q| std::cmp::Reverse(q.amount_out));
 
         let best = valid_quotes[0].clone();
         let fallback = valid_quotes.get(1).cloned();
 
         // Check minimum output ratio
         let expected_output = request.amount_in; // 1:1 as baseline
-        let output_ratio_bps = if expected_output > 0 {
-            (best.amount_out as u128 * 10_000 / expected_output) as u32
-        } else {
-            0
-        };
+        let output_ratio_bps = ((best.amount_out * 10_000)
+            .checked_div(expected_output)
+            .unwrap_or(0)) as u32;
 
         let mut warnings = Vec::new();
         let output_acceptable = output_ratio_bps >= MIN_OUTPUT_RATIO_BPS || expected_output == 0;
@@ -254,25 +248,21 @@ impl SwapRouter {
     pub fn record_execution(
         &mut self,
         source: DexSource,
-        chain_id: u32,
         quoted_output: u128,
         actual_output: u128,
-        timestamp: u64,
         success: bool,
     ) {
         let slippage_bps = if quoted_output > 0 && actual_output < quoted_output {
-            ((quoted_output - actual_output) * 10_000 / quoted_output) as u32
+            ((quoted_output - actual_output) * 10_000)
+                .checked_div(quoted_output)
+                .unwrap_or(0) as u32
         } else {
             0
         };
 
         self.execution_history.push(SwapExecution {
             source: source.clone(),
-            chain_id,
-            quoted_output,
-            actual_output,
             slippage_bps,
-            timestamp,
             success,
         });
 
@@ -476,17 +466,17 @@ mod tests {
     #[test]
     fn test_record_execution_reliability() {
         let mut router = SwapRouter::new();
-        router.record_execution(DexSource::UniswapV3, 1, 100, 99, 1000, true);
-        router.record_execution(DexSource::UniswapV3, 1, 100, 98, 1001, true);
-        router.record_execution(DexSource::UniswapV3, 1, 100, 0, 1002, false);
+        router.record_execution(DexSource::UniswapV3, 100, 99, true);
+        router.record_execution(DexSource::UniswapV3, 100, 98, true);
+        router.record_execution(DexSource::UniswapV3, 100, 0, false);
         assert!((router.source_reliability_pct(&DexSource::UniswapV3) - 66.66).abs() < 1.0);
     }
 
     #[test]
     fn test_average_slippage() {
         let mut router = SwapRouter::new();
-        router.record_execution(DexSource::Jupiter, 900, 1000, 990, 100, true); // 100 bps
-        router.record_execution(DexSource::Jupiter, 900, 1000, 980, 101, true); // 200 bps
+        router.record_execution(DexSource::Jupiter, 1000, 990, true); // 100 bps
+        router.record_execution(DexSource::Jupiter, 1000, 980, true); // 200 bps
         let avg = router.average_slippage_bps(&DexSource::Jupiter);
         assert_eq!(avg, 150); // (100 + 200) / 2
     }
@@ -501,10 +491,10 @@ mod tests {
     fn test_ranked_sources() {
         let mut router = SwapRouter::new();
         // Uniswap: 100% reliable
-        router.record_execution(DexSource::UniswapV3, 1, 100, 99, 1000, true);
+        router.record_execution(DexSource::UniswapV3, 100, 99, true);
         // 1inch: 50% reliable
-        router.record_execution(DexSource::OneInch, 1, 100, 99, 1001, true);
-        router.record_execution(DexSource::OneInch, 1, 100, 0, 1002, false);
+        router.record_execution(DexSource::OneInch, 100, 99, true);
+        router.record_execution(DexSource::OneInch, 100, 0, false);
 
         let ranked = router.ranked_sources(1);
         assert!(ranked.len() >= 2);
@@ -524,7 +514,7 @@ mod tests {
     #[test]
     fn test_stats_json() {
         let mut router = SwapRouter::new();
-        router.record_execution(DexSource::Jupiter, 900, 1000, 990, 100, true);
+        router.record_execution(DexSource::Jupiter, 1000, 990, true);
         let j = router.stats_json();
         assert_eq!(j["total_executions"], 1);
         assert!(j["sources"].is_array());

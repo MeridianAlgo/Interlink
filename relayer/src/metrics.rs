@@ -325,7 +325,7 @@ impl Metrics {
     pub fn top_corridors(&self, n: usize) -> Vec<(String, u64)> {
         let counts = self.0.corridor_counts.lock().unwrap();
         let mut pairs: Vec<(String, u64)> = counts.iter().map(|(k, v)| (k.clone(), *v)).collect();
-        pairs.sort_by(|a, b| b.1.cmp(&a.1));
+        pairs.sort_by_key(|a| std::cmp::Reverse(a.1));
         pairs.truncate(n);
         pairs
     }
@@ -643,11 +643,7 @@ fn atomic_max(cell: &AtomicU64, val: u64) {
 }
 
 fn mean(sum: u64, count: u64) -> u64 {
-    if count == 0 {
-        0
-    } else {
-        sum / count
-    }
+    sum.checked_div(count).unwrap_or(0)
 }
 
 fn write_counter(out: &mut String, name: &str, help: &str, val: u64) {
@@ -849,35 +845,35 @@ mod tests {
     #[test]
     fn test_tvl_tracking() {
         let m = Metrics::new();
-        m.set_tvl_usd_cents(100_000_000_00); // $100M
-        assert_eq!(m.tvl_usd_cents(), 100_000_000_00);
+        m.set_tvl_usd_cents(10_000_000_000); // $100M
+        assert_eq!(m.tvl_usd_cents(), 10_000_000_000);
         let j = m.as_json();
-        assert_eq!(j["tvl"]["usd_cents"], 100_000_000_00u64);
+        assert_eq!(j["tvl"]["usd_cents"], 10_000_000_000u64);
     }
 
     #[test]
     fn test_daily_volume_tracking() {
         let m = Metrics::new();
-        m.record_volume_usd_cents(500_000_00); // $500k
-        m.record_volume_usd_cents(300_000_00); // $300k
-        assert_eq!(m.daily_volume_usd_cents(), 800_000_00); // $800k
-        assert_eq!(m.cumulative_volume_usd_cents(), 800_000_00);
+        m.record_volume_usd_cents(50_000_000); // $500k
+        m.record_volume_usd_cents(30_000_000); // $300k
+        assert_eq!(m.daily_volume_usd_cents(), 80_000_000); // $800k
+        assert_eq!(m.cumulative_volume_usd_cents(), 80_000_000);
     }
 
     #[test]
     fn test_volume_reset_daily() {
         let m = Metrics::new();
-        m.record_volume_usd_cents(100_00);
+        m.record_volume_usd_cents(10_000);
         m.reset_daily();
         assert_eq!(m.daily_volume_usd_cents(), 0);
         // Cumulative should NOT reset
-        assert_eq!(m.cumulative_volume_usd_cents(), 100_00);
+        assert_eq!(m.cumulative_volume_usd_cents(), 10_000);
     }
 
     #[test]
     fn test_tvl_prometheus_export() {
         let m = Metrics::new();
-        m.set_tvl_usd_cents(50_000_00);
+        m.set_tvl_usd_cents(5_000_000);
         let text = m.prometheus_text();
         assert!(text.contains("interlink_tvl_usd_cents"));
         assert!(text.contains("interlink_daily_volume_usd_cents"));

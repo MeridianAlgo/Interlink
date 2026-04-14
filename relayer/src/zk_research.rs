@@ -15,12 +15,7 @@ impl ZkResearch {
 
     /// Analyze alternative curves if bn254 becomes bottleneck
     pub fn evaluate_curves(curve: &str) -> bool {
-        match curve {
-            "secp256k1" => true,
-            "bn254" => true,
-            "bls12-381" => true,
-            _ => false,
-        }
+        matches!(curve, "secp256k1" | "bn254" | "bls12-381")
     }
 }
 

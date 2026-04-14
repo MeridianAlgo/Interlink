@@ -6,6 +6,12 @@ pub struct NetworkOptimizer {
     pub use_libp2p: bool,
 }
 
+impl Default for NetworkOptimizer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl NetworkOptimizer {
     pub fn new() -> Self {
         Self {

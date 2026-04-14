@@ -14,6 +14,7 @@ use std::time::{Duration, Instant};
 
 // ─── Published competitor benchmarks (from public docs/measurement) ──────────
 
+#[allow(dead_code)]
 struct CompetitorBenchmark {
     name: &'static str,
     proof_or_vaa_ms: Option<u64>, // proof/VAA generation time (None if N/A)
@@ -66,6 +67,7 @@ const COMPETITORS: &[CompetitorBenchmark] = &[
 // ─── Benchmark runner ────────────────────────────────────────────────────────
 
 #[derive(Debug)]
+#[allow(dead_code)]
 struct BenchmarkResult {
     count: usize,
     total_ms: u128,

@@ -368,8 +368,8 @@ mod tests {
         let d2 = p.delay_for_attempt(2, 99);
         // With different seeds, delays should differ (with high probability)
         // Both should be in range [4000 - 2000, 4000 + 2000] = [2000, 6000]
-        assert!(d1 >= 2000 && d1 <= 6000, "d1={d1}");
-        assert!(d2 >= 2000 && d2 <= 6000, "d2={d2}");
+        assert!((2000..=6000).contains(&d1), "d1={d1}");
+        assert!((2000..=6000).contains(&d2), "d2={d2}");
     }
 
     #[test]

@@ -27,7 +27,7 @@ pub const PROOF_FAILURE_THRESHOLD: u32 = 5;
 /// Consecutive settlement failures before auto-pause
 pub const SETTLEMENT_FAILURE_THRESHOLD: u32 = 3;
 /// Maximum outflow (in cents) within the drain window before auto-pause
-pub const TVL_DRAIN_LIMIT_CENTS: u64 = 1_000_000_00; // $1M
+pub const TVL_DRAIN_LIMIT_CENTS: u64 = 100_000_000; // $1M in cents
 /// Drain detection window in seconds
 pub const DRAIN_WINDOW_SECS: u64 = 300; // 5 minutes
 /// Cooldown period before auto-recovery in seconds
@@ -244,7 +244,7 @@ impl CircuitBreaker {
         // Evict stale entries outside the window
         while outflows
             .front()
-            .map_or(false, |r| now - r.timestamp > DRAIN_WINDOW_SECS)
+            .is_some_and(|r| now - r.timestamp > DRAIN_WINDOW_SECS)
         {
             outflows.pop_front();
         }

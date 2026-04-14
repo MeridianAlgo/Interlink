@@ -175,7 +175,7 @@ pub fn calculate_breakeven() -> BreakevenAnalysis {
     let collateral_fraction = 10u64; // 10%
 
     let mut lo: u64 = 0;
-    let mut hi: u64 = 100_000_000_00u64; // $100M in cents
+    let mut hi: u64 = 10_000_000_000u64; // $100M in cents
 
     while hi - lo > 100 {
         let mid = (lo + hi) / 2;

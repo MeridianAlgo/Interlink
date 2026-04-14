@@ -165,7 +165,9 @@ impl RewardDistributor {
 
         if total_weight > 0 {
             for (id, weight) in &eligible {
-                let reward = (validator_pool as u128 * weight / total_weight) as u64;
+                let reward = ((validator_pool as u128 * weight)
+                    .checked_div(total_weight)
+                    .unwrap_or(0)) as u64;
                 if let Some(v) = self.validators.get_mut(id) {
                     v.epoch_rewards = reward;
                     v.total_rewards += reward;

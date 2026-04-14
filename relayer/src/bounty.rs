@@ -116,6 +116,7 @@ impl BountyRegistry {
     }
 
     /// Submit a new bug report.
+    #[allow(clippy::too_many_arguments)]
     pub fn submit(
         &mut self,
         reporter: impl Into<String>,

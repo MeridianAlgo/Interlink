@@ -201,11 +201,9 @@ pub fn estimate(
     let protocol_fee_amount = fee::calculate_fee(amount, usd_cents);
 
     // Protocol fee in USD cents
-    let protocol_fee_usd_cents = if amount > 0 {
-        protocol_fee_amount * usd_cents as u128 / amount
-    } else {
-        0
-    } as u64;
+    let protocol_fee_usd_cents = (protocol_fee_amount * usd_cents as u128)
+        .checked_div(amount)
+        .unwrap_or(0) as u64;
 
     // Source gas cost in USD cents
     let _ = eth_price_usd; // used in full impl; simplified here

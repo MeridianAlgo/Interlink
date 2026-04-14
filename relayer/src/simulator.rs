@@ -1,17 +1,3 @@
-/// Transfer simulation engine for InterLink (Phase 11)
-///
-/// Dry-runs a cross-chain transfer end-to-end WITHOUT submitting anything
-/// on-chain. Reports estimated fees, settlement time, route, slippage,
-/// and potential failure points so users/integrators can validate before
-/// committing real funds.
-///
-/// Comparison:
-///   LiFi:      has "simulate" flag on /quote — partial, doesn't check finality
-///   Across:    no simulation endpoint
-///   Wormhole:  no simulation (you just submit and hope)
-///   InterLink: full dry-run checking fees, wrapped resolution, AMM liquidity,
-///              rate limits, circuit breaker status, and estimated time
-use std::time::Duration;
 
 // ─── Input ───────────────────────────────────────────────────────────────────
 
@@ -195,11 +181,9 @@ pub fn simulate(req: &SimulationRequest, config: &SimulatorConfig) -> Simulation
         ));
         warnings.push("Insufficient liquidity — transfer may be delayed".into());
     } else {
-        let utilization_bps = if config.dest_liquidity > 0 {
-            (amount_after_fee * 10_000 / config.dest_liquidity) as u32
-        } else {
-            10_000
-        };
+        let utilization_bps = ((amount_after_fee * 10_000)
+            .checked_div(config.dest_liquidity)
+            .unwrap_or(10_000)) as u32;
         checks.push(SimCheck::pass(
             "liquidity",
             format!("Liquidity utilization: {}bps", utilization_bps),

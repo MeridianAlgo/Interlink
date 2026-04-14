@@ -594,10 +594,11 @@ mod tests {
     fn test_mark_settled() {
         let (mut mgr, org_id) = setup_org();
         // Small transfer (no approval needed, instant hold=0)
-        let mut config = mgr.orgs.get_mut(&org_id).unwrap();
-        config.hold_period_secs = 0;
-        let config_clone = config.clone();
-        drop(config);
+        let config_clone = {
+            let config = mgr.orgs.get_mut(&org_id).unwrap();
+            config.hold_period_secs = 0;
+            config.clone()
+        };
         mgr.orgs.insert(org_id.clone(), config_clone);
 
         let (id, result) = mgr

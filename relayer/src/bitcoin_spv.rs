@@ -4,6 +4,12 @@ pub struct BitcoinSpvClient {
     pub min_confirmations: u8,
 }
 
+impl Default for BitcoinSpvClient {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl BitcoinSpvClient {
     pub fn new() -> Self {
         Self {

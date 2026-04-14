@@ -112,6 +112,7 @@ impl AuditLog {
     }
 
     /// Append a new audit entry. Returns the sequence number.
+    #[allow(clippy::too_many_arguments)]
     pub fn append(
         &mut self,
         timestamp: u64,
