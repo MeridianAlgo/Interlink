@@ -449,10 +449,7 @@ impl TvlGrowthTracker {
             .iter()
             .rev()
             .skip(1) // skip latest
-            .min_by_key(|s| {
-                
-                s.timestamp.abs_diff(target_ts)
-            })?;
+            .min_by_key(|s| s.timestamp.abs_diff(target_ts))?;
 
         if prior.tvl_usd_cents == 0 {
             return None;

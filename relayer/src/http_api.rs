@@ -99,7 +99,14 @@ async fn handle_connection(
     let raw = String::from_utf8_lossy(&buf[..n]);
     let (method, path, query, body_str) = parse_request(&raw);
 
-    let (status, content_type, body) = route(method, path, &query, &body_str, &metrics, &registry);
+    let api_token = std::env::var("API_TOKEN").ok();
+    let (status, content_type, body) = match check_auth(path, &raw, api_token.as_deref()) {
+        Err(denied) => denied,
+        Ok(()) if method == "GET" && path.starts_with("/transfers/") => {
+            transfer_status(&path["/transfers/".len()..]).await
+        }
+        Ok(()) => route(method, path, &query, &body_str, &metrics, &registry),
+    };
 
     let response = format!(
         "HTTP/1.1 {status} {reason}\r\n\
@@ -122,6 +129,160 @@ async fn handle_connection(
         .map_err(|e| format!("write: {e}"))?;
 
     Ok(())
+}
+
+// ─── Auth ─────────────────────────────────────────────────────────────────────
+
+/// Webhook routes register outbound callbacks (an SSRF vector) and list other
+/// subscribers' URLs, so they need `Authorization: Bearer <API_TOKEN>`. With no
+/// `API_TOKEN` configured they are disabled. Read-only routes stay public.
+fn requires_auth(path: &str) -> bool {
+    path == "/webhooks" || path.starts_with("/webhooks/")
+}
+
+fn bearer_token(raw: &str) -> Option<&str> {
+    raw.lines()
+        .take_while(|l| !l.trim().is_empty())
+        .filter_map(|l| l.split_once(':'))
+        .find(|(name, _)| name.trim().eq_ignore_ascii_case("authorization"))
+        .and_then(|(_, value)| value.trim().strip_prefix("Bearer "))
+        .map(str::trim)
+}
+
+/// Compare without short-circuiting, so response timing does not leak the token.
+fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+    a.len() == b.len() && a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
+}
+
+fn check_auth(
+    path: &str,
+    raw: &str,
+    api_token: Option<&str>,
+) -> Result<(), (u16, &'static str, String)> {
+    if !requires_auth(path) {
+        return Ok(());
+    }
+    let Some(expected) = api_token.filter(|t| !t.is_empty()) else {
+        return Err((
+            403,
+            "application/json",
+            r#"{"error":"webhook endpoints are disabled; set API_TOKEN to enable"}"#.into(),
+        ));
+    };
+    match bearer_token(raw) {
+        Some(given) if constant_time_eq(given.as_bytes(), expected.as_bytes()) => Ok(()),
+        _ => Err((
+            401,
+            "application/json",
+            r#"{"error":"missing or invalid bearer token"}"#.into(),
+        )),
+    }
+}
+
+// ─── Transfer status (hub on-chain record) ───────────────────────────────────
+
+/// Decoded hub `MessageRecord`: discriminator (8) | payload_hash (32) |
+/// action (1) | executed (1) | attested_by (32) | attested_at (i64).
+#[derive(Debug, PartialEq, Eq)]
+struct MessageRecord {
+    payload_hash: [u8; 32],
+    action: u8,
+    executed: bool,
+    attested_by: [u8; 32],
+    attested_at: i64,
+}
+
+fn parse_message_record(data: &[u8]) -> Option<MessageRecord> {
+    if data.len() < 82 {
+        return None;
+    }
+    Some(MessageRecord {
+        payload_hash: data[8..40].try_into().ok()?,
+        action: data[40],
+        executed: data[41] != 0,
+        attested_by: data[42..74].try_into().ok()?,
+        attested_at: i64::from_le_bytes(data[74..82].try_into().ok()?),
+    })
+}
+
+/// GET /transfers/{payloadHash}: status of a message on the hub, read from
+/// its on-chain record (so it is correct whichever relayer processed it).
+async fn transfer_status(hash_hex: &str) -> (u16, &'static str, String) {
+    let bad = |msg: &str| {
+        (
+            400,
+            "application/json",
+            serde_json::json!({ "error": msg }).to_string(),
+        )
+    };
+    let Ok(hash) = crate::evm::hex32(hash_hex) else {
+        return bad("payload hash must be 32 bytes of hex");
+    };
+    let rpc_url =
+        std::env::var("SOLANA_RPC_URL").unwrap_or_else(|_| "https://api.devnet.solana.com".into());
+    let program_id = std::env::var("HUB_PROGRAM_ID")
+        .unwrap_or_else(|_| "AKzpc9tvxfhLjj5AantKizK2YZgSjoyhLmYqRZy6b8Lz".into());
+    let Ok(program) = crate::solana_tx::pubkey(&program_id) else {
+        return (
+            500,
+            "application/json",
+            r#"{"error":"invalid HUB_PROGRAM_ID"}"#.into(),
+        );
+    };
+    let Ok(address) = crate::solana_tx::pda(&[b"message", &hash], &program) else {
+        return (
+            500,
+            "application/json",
+            r#"{"error":"PDA derivation failed"}"#.into(),
+        );
+    };
+
+    let client = reqwest::Client::new();
+    let result = crate::evm::rpc_call(
+        &client,
+        &rpc_url,
+        "getAccountInfo",
+        serde_json::json!([bs58::encode(address).into_string(), {"encoding": "base64", "commitment": "confirmed"}]),
+    )
+    .await;
+    let value = match result {
+        Ok(v) => v["value"].clone(),
+        Err(e) => {
+            return (
+                502,
+                "application/json",
+                serde_json::json!({ "error": e }).to_string(),
+            )
+        }
+    };
+    let payload = crate::evm::to_hex(&hash);
+    if value.is_null() {
+        let body = serde_json::json!({ "payload_hash": payload, "status": "not_found" });
+        return (200, "application/json", body.to_string());
+    }
+    let record = value["data"][0]
+        .as_str()
+        .and_then(|b64| {
+            base64::Engine::decode(&base64::engine::general_purpose::STANDARD, b64).ok()
+        })
+        .and_then(|data| parse_message_record(&data));
+    match record {
+        Some(r) if r.payload_hash == hash => {
+            let body = serde_json::json!({
+                "payload_hash": payload,
+                "status": if r.executed { "executed" } else { "attested" },
+                "action": r.action,
+                "attested_by": bs58::encode(r.attested_by).into_string(),
+                "attested_at": r.attested_at,
+            });
+            (200, "application/json", body.to_string())
+        }
+        _ => (
+            502,
+            "application/json",
+            r#"{"error":"unexpected message record layout"}"#.into(),
+        ),
+    }
 }
 
 // ─── Router ───────────────────────────────────────────────────────────────────
@@ -349,6 +510,7 @@ fn not_found() -> (u16, &'static str, String) {
             "/metrics",
             "/metrics/json",
             "/webhooks",
+            "/transfers/{payloadHash}",
             "/webhooks/register (POST)",
             "/webhooks/{id} (GET, DELETE)",
         ],
@@ -396,9 +558,13 @@ fn parse_request(request: &str) -> (&str, &str, HashMap<String, String>, String)
 fn reason(status: u16) -> &'static str {
     match status {
         200 => "OK",
+        201 => "Created",
         400 => "Bad Request",
+        401 => "Unauthorized",
+        403 => "Forbidden",
         404 => "Not Found",
         500 => "Internal Server Error",
+        502 => "Bad Gateway",
         _ => "Unknown",
     }
 }
@@ -490,6 +656,64 @@ mod tests {
         assert_eq!(status, 200);
         assert!(ct.contains("application/json"));
         assert!(body.contains("proof_gen"));
+    }
+
+    #[test]
+    fn test_webhook_routes_require_token() {
+        let req = |auth: &str| {
+            format!("POST /webhooks/register HTTP/1.1\r\nHost: x\r\n{auth}\r\n{{\"url\":\"https://e.com\"}}")
+        };
+        // No token configured: webhook routes disabled entirely.
+        let err = check_auth("/webhooks/register", &req(""), None).unwrap_err();
+        assert_eq!(err.0, 403);
+        // Token configured: missing or wrong bearer is rejected.
+        assert_eq!(
+            check_auth("/webhooks", &req(""), Some("s3cret"))
+                .unwrap_err()
+                .0,
+            401
+        );
+        let wrong = req("Authorization: Bearer nope\r\n");
+        assert_eq!(
+            check_auth("/webhooks/abc", &wrong, Some("s3cret"))
+                .unwrap_err()
+                .0,
+            401
+        );
+        // Correct token (header name is case-insensitive).
+        let good = req("authorization: Bearer s3cret\r\n");
+        assert!(check_auth("/webhooks/register", &good, Some("s3cret")).is_ok());
+        // Public routes never need a token.
+        assert!(check_auth("/health", &req(""), None).is_ok());
+        assert!(check_auth("/metrics", &req(""), None).is_ok());
+    }
+
+    #[test]
+    fn test_parse_message_record() {
+        let mut data = vec![0u8; 82];
+        data[8..40].copy_from_slice(&[7u8; 32]);
+        data[40] = 1;
+        data[41] = 1;
+        data[42..74].copy_from_slice(&[9u8; 32]);
+        data[74..82].copy_from_slice(&1_700_000_000i64.to_le_bytes());
+        let r = parse_message_record(&data).unwrap();
+        assert_eq!(r.payload_hash, [7u8; 32]);
+        assert!(r.executed);
+        assert_eq!(r.attested_at, 1_700_000_000);
+        assert!(parse_message_record(&data[..60]).is_none());
+    }
+
+    #[tokio::test]
+    async fn test_transfer_status_rejects_bad_hash() {
+        let (status, _, body) = transfer_status("0x1234").await;
+        assert_eq!(status, 400);
+        assert!(body.contains("32 bytes"));
+    }
+
+    #[test]
+    fn test_bearer_token_ignores_body() {
+        let raw = "GET /webhooks HTTP/1.1\r\n\r\nAuthorization: Bearer injected";
+        assert_eq!(bearer_token(raw), None);
     }
 
     #[test]

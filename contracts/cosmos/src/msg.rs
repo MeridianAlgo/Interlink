@@ -7,13 +7,13 @@ pub struct InstantiateMsg {
     pub guardian: String,
     /// The chain ID of the Solana Hub (destination for proofs)
     pub hub_chain_id: u16,
-    /// Fee rate in basis points (e.g., 10 = 0.1%)
+    /// Fee rate in basis points (e.g., 10 = 0.1%). Capped at `MAX_FEE_RATE_BPS`.
     pub fee_rate_bps: u16,
 }
 
 #[cw_serde]
 pub enum ExecuteMsg {
-    /// Send a cross-chain message by locking native tokens in the gateway vault.
+    /// Send a cross-chain message by locking exactly one native coin denomination.
     /// The relayer network will observe the resulting event and generate a ZK proof.
     SendCrossChainMessage {
         recipient: Vec<u8>,
@@ -21,14 +21,18 @@ pub enum ExecuteMsg {
         payload: Vec<u8>,
     },
 
-    /// Execute a verified message from the Hub. Called by relayers with a valid proof.
-    /// Releases locked tokens to the specified recipient.
+    /// Execute a verified message from the Hub, releasing locked tokens.
+    ///
+    /// Every field that affects where funds go is hashed on-chain into the
+    /// proof's public input, so a relayer cannot change recipient, denom or
+    /// amount after the proof is generated.
     ExecuteVerifiedMessage {
+        source_chain: u64,
         nonce: u64,
         recipient: String,
+        denom: String,
         amount: Uint128,
         proof: Vec<u8>,
-        public_inputs: Vec<u8>,
     },
 
     /// Initiate a cross-chain swap. Locks input tokens and emits a SwapInitiated event.
@@ -46,11 +50,15 @@ pub enum ExecuteMsg {
     /// Unpause the contract (guardian only)
     Unpause {},
 
-    /// Emergency withdraw all funds to the guardian (guardian only)
+    /// Withdraw all funds of `denom` to the guardian. Guardian only, and only
+    /// while paused, so it cannot be used silently during normal operation.
     EmergencyWithdraw { denom: String },
 
-    /// Update the guardian address (guardian only)
-    UpdateGuardian { new_guardian: String },
+    /// Nominate a new guardian (step 1 of 2, guardian only).
+    ProposeGuardian { new_guardian: String },
+
+    /// Accept the guardian role (step 2 of 2, pending guardian only).
+    AcceptGuardian {},
 }
 
 #[cw_serde]
@@ -60,13 +68,13 @@ pub enum QueryMsg {
     #[returns(ConfigResponse)]
     Config {},
 
-    /// Returns the current sequence number
+    /// Returns the next sequence number to be assigned
     #[returns(SequenceResponse)]
     Sequence {},
 
-    /// Returns whether a message nonce has been executed
+    /// Returns whether an inbound message has been executed
     #[returns(MessageStatusResponse)]
-    MessageStatus { nonce: u64 },
+    MessageStatus { source_chain: u64, nonce: u64 },
 
     /// Returns whether the contract is paused
     #[returns(PausedResponse)]
@@ -76,6 +84,7 @@ pub enum QueryMsg {
 #[cw_serde]
 pub struct ConfigResponse {
     pub guardian: String,
+    pub pending_guardian: Option<String>,
     pub hub_chain_id: u16,
     pub fee_rate_bps: u16,
 }
@@ -87,6 +96,7 @@ pub struct SequenceResponse {
 
 #[cw_serde]
 pub struct MessageStatusResponse {
+    pub source_chain: u64,
     pub nonce: u64,
     pub executed: bool,
 }

@@ -1,7 +1,10 @@
 /**
  * @interlink/sdk — InterLink ZK cross-chain bridge SDK
  *
- * Zero-fee bridging under $1,000. ZK-SNARK security. <30s settlement.
+ * Transfers are gateway transactions signed by the user; the relayer only
+ * observes the chain. Status is tracked by canonical payload hash.
+ *
+ * NOTE: the protocol is experimental and unaudited; see docs/SECURITY_REVIEW.md.
  *
  * @example
  * ```typescript
@@ -36,8 +39,20 @@ export {
   CHAIN_FINALITY_SECONDS,
   DEFAULT_RELAYER_URL,
 } from "./types";
+export {
+  GATEWAY_ABI,
+  ERC20_ABI,
+  MessageAction,
+  ZERO_ADDRESS,
+  hashMessage,
+  parseMessagePublished,
+  swapExtraHash,
+  toBytes32Recipient,
+} from "./gateway";
+export type { CanonicalMessage, PublishedMessage } from "./gateway";
 export type {
   InterlinkConfig,
+  TransferStatusInfo,
   TransferParams,
   TransferQuote,
   Transfer,

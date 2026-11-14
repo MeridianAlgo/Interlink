@@ -4,8 +4,17 @@
  * Tests use a mock fetch to avoid requiring a live relayer.
  */
 
-import { InterlinkClient, InterlinkApiError } from "./client";
-import { ChainId, TransferStatus } from "./types";
+import { Signer, getBytes, keccak256, zeroPadValue } from "ethers";
+import { InterlinkClient, InterlinkApiError, QuoteExpiredError } from "./client";
+import {
+  MessageAction,
+  erc20Interface,
+  gatewayInterface,
+  hashMessage,
+  swapExtraHash,
+  toBytes32Recipient,
+} from "./gateway";
+import { ChainId, TransferQuote, TransferStatus } from "./types";
 
 // ─── Mock fetch ───────────────────────────────────────────────────────────────
 
@@ -315,144 +324,204 @@ describe("InterlinkClient", () => {
     }
   });
 
-  // ─── Transfers ────────────────────────────────────────────────────────────
+  // ─── Transfers (gateway calls signed by the user) ─────────────────────────
 
-  test("transfer submits and returns Transfer object", async () => {
-    const transferResponse = {
-      sequence: 42,
-      tx_hash: "0xabc123",
-      block_number: 12345,
-      status: "pending_finality",
-    };
-    (global.fetch as jest.Mock).mockResolvedValueOnce({
-      ok: true,
-      status: 200,
-      json: async () => transferResponse,
-      text: async () => JSON.stringify(transferResponse),
-    });
+  const GATEWAY = "0x000000000000000000000000000000000000bEEF";
+  const USER = "0x00000000000000000000000000000000000b0b0b";
+  const HUB_GATEWAY = "0x" + "7b".repeat(32);
+  const SOL_RECIPIENT = "8xk2fA3NVuwBnbYQSgqxk5jhUuA9DUFRh3JZbXMwG6ra";
 
-    const quote = {
-      sourceChain: ChainId.Ethereum,
-      destChain: ChainId.Solana,
-      amountWei: 1_000_000_000_000_000_000n,
-      usdCents: 300_000,
-      feeWei: 500_000_000_000_000n,
-      feeTier: "Standard",
-      feeBps: 5,
-      estimatedSettlementSecs: 17,
-      sourceGasWei: 2_400_000_000_000_000n,
-      destFeeLamports: 5200,
-      expiresAt: Math.floor(Date.now() / 1000) + 60,
-    };
-
-    const transfer = await client.transfer(
-      {
-        recipient: "8xk2abc",
-        destinationChain: ChainId.Solana,
-        amountWei: 1_000_000_000_000_000_000n,
+  /**
+   * Mock ethers signer. `sendTransaction` decodes the gateway call and emits
+   * the MessagePublished log the real gateway would, so the SDK's calldata,
+   * receipt parsing and payload-hash check are exercised end to end.
+   */
+  function mockSigner(opts: { allowance?: bigint } = {}) {
+    const sent: { to: string; data: string; value?: bigint }[] = [];
+    const signer = {
+      sent,
+      provider: { getNetwork: async () => ({ chainId: 1n }) },
+      getAddress: async () => USER,
+      call: async () => erc20Interface.encodeFunctionResult("allowance", [opts.allowance ?? 0n]),
+      sendTransaction: async (tx: { to: string; data: string; value?: bigint }) => {
+        sent.push(tx);
+        const logs: { address: string; topics: string[]; data: string }[] = [];
+        if (tx.to === GATEWAY) {
+          const call = gatewayInterface.parseTransaction({ data: tx.data, value: tx.value })!;
+          const a = call.args;
+          const isSwap = call.name === "initiateSwap";
+          const message = {
+            srcChain: 1n,
+            srcGateway: zeroPadValue(GATEWAY, 32),
+            dstChain: a[0] as bigint,
+            dstGateway: HUB_GATEWAY,
+            nonce: 7n,
+            action: isSwap ? MessageAction.Swap : MessageAction.Transfer,
+            sender: zeroPadValue(USER, 32),
+            asset: zeroPadValue(a[1], 32),
+            amount: a[2] as bigint,
+            recipient: isSwap ? a[5] : a[3],
+            extraHash: isSwap ? swapExtraHash(a[3], a[4], getBytes(a[6])) : keccak256(a[4]),
+          };
+          const ev = gatewayInterface.encodeEventLog("MessagePublished", [
+            hashMessage(message), message.nonce, message.dstChain, message.dstGateway,
+            message.action, message.sender, message.asset, message.amount,
+            message.recipient, message.extraHash, "0x",
+          ]);
+          logs.push({ address: GATEWAY, topics: ev.topics, data: ev.data });
+        }
+        return {
+          hash: "0x" + "ab".repeat(32),
+          wait: async () => ({ status: 1, hash: "0x" + "ab".repeat(32), blockNumber: 12345, logs }),
+        };
       },
-      quote
-    );
+    };
+    return signer as unknown as Signer & { sent: typeof sent };
+  }
 
-    expect(transfer.sequence).toBe(42);
-    expect(transfer.txHash).toBe("0xabc123");
-    expect(transfer.status).toBe(TransferStatus.PendingFinality);
-  });
-
-  test("transfer throws QuoteExpiredError for expired quote", async () => {
-    const { QuoteExpiredError } = await import("./client");
-
-    const expiredQuote = {
+  const freshQuote = () =>
+    ({
       sourceChain: ChainId.Ethereum,
       destChain: ChainId.Solana,
-      amountWei: 1_000_000_000_000_000_000n,
+      amountWei: 10n ** 18n,
       usdCents: 300_000,
       feeWei: 0n,
       feeTier: "Zero",
       feeBps: 0,
-      estimatedSettlementSecs: 17,
+      estimatedSettlementSecs: 900,
       sourceGasWei: 0n,
       destFeeLamports: 0,
-      expiresAt: Math.floor(Date.now() / 1000) - 10, // expired 10s ago
-    };
+      expiresAt: Math.floor(Date.now() / 1000) + 60,
+    }) as TransferQuote;
 
-    await expect(
-      client.transfer(
-        { recipient: "8xk2", destinationChain: ChainId.Solana, amountWei: 1n },
-        expiredQuote
-      )
-    ).rejects.toThrow(QuoteExpiredError);
-  });
-
-  test("getTransferStatus returns transfer details", async () => {
-    const statusResponse = {
-      sequence: 42,
-      tx_hash: "0xabc123",
-      block_number: 12345,
-      status: "complete",
-      recipient: "8xk2abc",
-      destination_chain: ChainId.Solana,
-      amount_wei: "1000000000000000000",
-      quote: {},
-      settlement_signature: "5Ht9...",
-      total_elapsed_ms: 18_000,
-    };
-    (global.fetch as jest.Mock).mockResolvedValueOnce({
-      ok: true,
-      status: 200,
-      json: async () => statusResponse,
-      text: async () => JSON.stringify(statusResponse),
-    });
-
-    const transfer = await client.getTransferStatus(42);
-    expect(transfer).not.toBeNull();
-    expect(transfer!.status).toBe(TransferStatus.Complete);
-    expect(transfer!.settlementSignature).toBe("5Ht9...");
-    expect(transfer!.totalElapsedMs).toBe(18_000);
-  });
-
-  test("getTransferStatus returns null on 404", async () => {
-    (global.fetch as jest.Mock).mockResolvedValueOnce({
-      ok: false,
-      status: 404,
-      json: async () => ({ error: "not found" }),
-      text: async () => "not found",
-    });
-
-    const transfer = await client.getTransferStatus(999);
-    expect(transfer).toBeNull();
-  });
-
-  test("swap submits and returns Transfer with swap fields", async () => {
-    const swapResponse = {
-      sequence: 99,
-      tx_hash: "0xdef456",
-      block_number: 12346,
-      status: "pending_proof",
-      quote: {},
-    };
-    (global.fetch as jest.Mock).mockResolvedValueOnce({
-      ok: true,
-      status: 200,
-      json: async () => swapResponse,
-      text: async () => JSON.stringify(swapResponse),
-    });
-
-    const transfer = await client.swap(
-      {
-        destinationChain: ChainId.Solana,
-        recipient: "8xk2abc",
-        tokenOut: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
-        minAmountOut: 3000_000_000n,
-      },
-      1_000_000_000_000_000_000n
+  test("transfer sends a native gateway call and returns its payload hash", async () => {
+    const c = new InterlinkClient({ relayerUrl: "http://localhost:8080", gatewayAddress: GATEWAY });
+    const signer = mockSigner();
+    const t = await c.transfer(
+      { recipient: SOL_RECIPIENT, destinationChain: ChainId.Solana, amountWei: 10n ** 18n },
+      freshQuote(),
+      signer
     );
-
-    expect(transfer.sequence).toBe(99);
-    expect(transfer.status).toBe(TransferStatus.PendingProof);
+    expect(signer.sent).toHaveLength(1);
+    expect(signer.sent[0].value).toBe(10n ** 18n);
+    const call = gatewayInterface.parseTransaction({ data: signer.sent[0].data })!;
+    expect(call.name).toBe("sendCrossChainMessage");
+    expect(call.args[0]).toBe(BigInt(ChainId.Solana));
+    expect(call.args[3]).toBe(toBytes32Recipient(SOL_RECIPIENT));
+    expect(t.sequence).toBe(7);
+    expect(t.payloadHash).toMatch(/^0x[0-9a-f]{64}$/);
+    expect(t.status).toBe(TransferStatus.Pending);
+    expect(t.blockNumber).toBe(12345);
   });
 
-  // ─── Config ───────────────────────────────────────────────────────────────
+  test("transfer approves ERC-20 allowance first when insufficient", async () => {
+    const c = new InterlinkClient({ gatewayAddress: GATEWAY, sourceChain: ChainId.Ethereum });
+    const token = "0x00000000000000000000000000000000000a11ce";
+    const signer = mockSigner({ allowance: 0n });
+    await c.transfer(
+      { recipient: SOL_RECIPIENT, destinationChain: ChainId.Solana, amountWei: 500n, tokenAddress: token },
+      freshQuote(),
+      signer
+    );
+    expect(signer.sent).toHaveLength(2);
+    expect(erc20Interface.parseTransaction({ data: signer.sent[0].data })!.name).toBe("approve");
+    expect(signer.sent[1].value).toBe(0n);
+  });
+
+  test("transfer skips approval when allowance suffices", async () => {
+    const c = new InterlinkClient({ gatewayAddress: GATEWAY });
+    const signer = mockSigner({ allowance: 10_000n });
+    await c.transfer(
+      {
+        recipient: SOL_RECIPIENT,
+        destinationChain: ChainId.Solana,
+        amountWei: 500n,
+        tokenAddress: "0x00000000000000000000000000000000000a11ce",
+      },
+      freshQuote(),
+      signer
+    );
+    expect(signer.sent).toHaveLength(1);
+  });
+
+  test("transfer throws QuoteExpiredError for expired quote", async () => {
+    const c = new InterlinkClient({ gatewayAddress: GATEWAY });
+    const expired = { ...freshQuote(), expiresAt: Math.floor(Date.now() / 1000) - 60 };
+    await expect(
+      c.transfer({ recipient: SOL_RECIPIENT, destinationChain: ChainId.Solana, amountWei: 1n }, expired, mockSigner())
+    ).rejects.toBeInstanceOf(QuoteExpiredError);
+  });
+
+  test("transfer requires a gateway address", async () => {
+    const c = new InterlinkClient();
+    await expect(
+      c.transfer({ recipient: SOL_RECIPIENT, destinationChain: ChainId.Solana, amountWei: 1n }, freshQuote(), mockSigner())
+    ).rejects.toThrow("gatewayAddress");
+  });
+
+  test("swap sends initiateSwap with bytes32 tokenOut and recipient", async () => {
+    const c = new InterlinkClient({ gatewayAddress: GATEWAY });
+    const signer = mockSigner();
+    const usdcMint = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
+    const t = await c.swap(
+      { destinationChain: ChainId.Solana, recipient: SOL_RECIPIENT, tokenOut: usdcMint, minAmountOut: 3_000_000_000n },
+      10n ** 18n,
+      signer
+    );
+    const call = gatewayInterface.parseTransaction({ data: signer.sent[0].data, value: signer.sent[0].value })!;
+    expect(call.name).toBe("initiateSwap");
+    expect(call.args[3]).toBe(toBytes32Recipient(usdcMint));
+    expect(call.args[4]).toBe(3_000_000_000n);
+    expect(t.quote).toBeUndefined();
+    expect(t.payloadHash).toMatch(/^0x[0-9a-f]{64}$/);
+  });
+
+  test("swap rejects minAmountOut above u64", async () => {
+    const c = new InterlinkClient({ gatewayAddress: GATEWAY });
+    await expect(
+      c.swap(
+        { destinationChain: ChainId.Solana, recipient: SOL_RECIPIENT, tokenOut: SOL_RECIPIENT, minAmountOut: 1n << 64n },
+        1n,
+        mockSigner()
+      )
+    ).rejects.toThrow("u64");
+  });
+
+  // ─── Status (hub on-chain record via relayer) ─────────────────────────────
+
+  const HASH = "0x" + "07".repeat(32);
+
+  test("getTransferStatus maps hub record states", async () => {
+    mockFetch({ [`/transfers/${HASH}`]: { status: "executed", attested_by: "Relayer111", attested_at: 1700000000 } });
+    const info = await client.getTransferStatus(HASH);
+    expect(info.status).toBe(TransferStatus.Complete);
+    expect(info.attestedBy).toBe("Relayer111");
+  });
+
+  test("getTransferStatus reports pending when not yet attested", async () => {
+    const other = "0x" + "08".repeat(32);
+    mockFetch({ [`/transfers/${other}`]: { status: "not_found" } });
+    expect((await client.getTransferStatus(other)).status).toBe(TransferStatus.Pending);
+  });
+
+  test("getTransferStatus rejects malformed hashes", async () => {
+    await expect(client.getTransferStatus("42")).rejects.toThrow("invalid payload hash");
+  });
+
+  test("waitForSettlement resolves once executed", async () => {
+    const h = "0x" + "09".repeat(32);
+    mockFetch({ [`/transfers/${h}`]: { status: "executed" } });
+    const info = await client.waitForSettlement(h, { pollIntervalMs: 1, timeoutMs: 1000 });
+    expect(info.status).toBe(TransferStatus.Complete);
+  });
+
+  test("webhook calls send the API token as a bearer header", async () => {
+    const c = new InterlinkClient({ relayerUrl: "http://localhost:8080", apiToken: "s3cret" });
+    mockFetch({ "/webhooks": { count: 0, active_count: 0, webhooks: [] } });
+    await c.listWebhooks();
+    const init = (global.fetch as jest.Mock).mock.calls.at(-1)[1] as RequestInit;
+    expect((init.headers as Record<string, string>).Authorization).toBe("Bearer s3cret");
+  });
 
   test("default relayer URL is used when none provided", () => {
     const c = new InterlinkClient();

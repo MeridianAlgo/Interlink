@@ -172,7 +172,7 @@ contract DeployL2Verify is Script {
         bool paused = gateway.paused();
         require(!paused, "Verification failed: gateway is paused at deployment");
 
-        uint256 nonce = gateway.nonce();
+        uint256 nonce = gateway.currentNonce();
         require(nonce == 0, "Verification failed: nonce should be 0 at deployment");
 
         console2.log("Verification PASSED for gateway:", gatewayAddr);

@@ -1,7 +1,9 @@
 # Interlink Architecture & Proof System
 
 ## Proof System Design: ZK vs Wormhole VAA Model
-Wormhole relies on a Guardian consensus model where 19 authorities independently verify observations and issue VAAs (Verified Action Approvals). Interlink replaces this multi-signature trust vector with **Zero-Knowledge (ZK) Proofs**. Wait implicitly, Interlink compiles cross-chain observations into single deterministic PLONK/Halo2 SNARKs that validators sign over, binding exact intent deterministically.
+Wormhole relies on a Guardian consensus model where 19 authorities independently verify observations and issue VAAs (Verified Action Approvals). Interlink aims to replace this multi-signature trust vector with **Zero-Knowledge (ZK) Proofs**: a Groth16 (BN254) proof per message, bound to a canonical payload hash that every gateway recomputes on-chain (see [SECURITY_REVIEW.md](SECURITY_REVIEW.md#canonical-message-format)).
+
+> The current circuit proves only the commitment relation, not source-chain consensus or receipt inclusion. Until it does, security depends on whoever holds the proving key.
 
 ## Why ZK is Better for Settlement Speed
 Instead of waiting for multiple block confirmations + multi-signature threshold synchronization across diverse global nodes, our ZK engine runs highly parallelized proving pipelines using our `ProofPerformance` optimizations. This brings settlement latency down to sub-15s windows, bypassing standard consensus stalls.

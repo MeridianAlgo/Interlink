@@ -6,12 +6,9 @@
 //! - Cosmos: 1 block (~6s) for Tendermint BFT finality
 //! - L2s (Arbitrum, Optimism, Base): inherit L1 finality (~7 min optimistic)
 //!
-//! Two finality strategies are provided:
-//! - `wait_for_finality`: HTTP polling (fallback, ~12s per poll for ETH)
-//! - `wait_for_finality_ws`: WebSocket newHeads subscription (preferred, <1s reaction time)
-//!
-//! The WebSocket path is ~12x faster on Ethereum than HTTP polling because we receive
-//! a notification on every block instead of waiting for the next poll interval.
+//! The relayer pipeline uses `wait_for_finalized_inclusion`, which waits for the
+//! node's `finalized` block tag and re-checks the receipt. `wait_for_finality`
+//! (confirmation counting) is kept for tooling but is not reorg-safe.
 
 use std::time::Duration;
 use tracing::{info, warn};
@@ -64,7 +61,8 @@ impl ChainFinality {
 
 /// Wait for a block to be finalized on the source chain.
 ///
-/// Uses an ethers-rs provider to poll block confirmations.
+/// Polls block height over HTTP JSON-RPC and counts confirmations. Not reorg-safe;
+/// the pipeline uses `wait_for_finalized_inclusion` instead.
 /// Returns Ok(()) once the block has enough confirmations, or Err on timeout.
 pub async fn wait_for_finality(
     chain_id: u64,
@@ -154,109 +152,146 @@ pub async fn wait_for_finality(
     }
 }
 
-/// Wait for block finality using a WebSocket `eth_subscribe("newHeads")` subscription.
-///
-/// # Why this beats HTTP polling
-///
-/// The HTTP polling path wakes up every `poll_interval` seconds (12s for Ethereum).
-/// In the worst case the relayer is 12 seconds behind — which alone would blow our
-/// <30s settlement target for events that land right after a poll.
-///
-/// With WebSocket subscriptions the node pushes each new block header to us the moment
-/// it is imported (~100-500ms after the block is mined). We check confirmations on every
-/// push, so reaction time is 1 block-time rather than 1 poll-interval.
-///
-/// Competitive comparison:
-/// - Wormhole: polls every ~1-2min for finality detection → 2-15min total
-/// - InterLink (HTTP polling): up to 12s delay per check → worst case adds 12s
-/// - InterLink (WebSocket):    <1s notification delay   → worst case adds 1 block-time
-///
-/// Falls back to HTTP polling for non-WebSocket URLs (Solana, Cosmos HTTP endpoints).
-pub async fn wait_for_finality_ws(
-    chain_id: u64,
-    block_number: u64,
-    ws_url: &str,
-) -> Result<(), String> {
-    // Only use WebSocket path for actual WS URLs; fall back for HTTP/others.
-    if !ws_url.starts_with("ws://") && !ws_url.starts_with("wss://") {
-        return wait_for_finality(chain_id, block_number, ws_url).await;
+// ─── Finalized inclusion (used by the relayer pipeline) ─────────────────────
+
+/// Why an event could not be confirmed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum InclusionError {
+    /// The event is no longer in the canonical chain (reorged out, failed tx,
+    /// or log missing). Never retry: relaying it would mint unbacked tokens.
+    NotCanonical(String),
+    /// RPC/network problem or timeout. Safe to retry later.
+    Transient(String),
+}
+
+impl std::fmt::Display for InclusionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            InclusionError::NotCanonical(s) => write!(f, "not canonical: {}", s),
+            InclusionError::Transient(s) => write!(f, "transient: {}", s),
+        }
     }
+}
 
-    use ethers_providers::{Middleware, StreamExt};
-
-    let finality = ChainFinality::from_chain_id(chain_id);
-    let required = finality.required_confirmations();
-    // Add 2 minutes of slack beyond expected finality for network jitter.
-    let timeout_duration = Duration::from_secs(finality.expected_finality_secs() * 2 + 120);
-
-    info!(
-        chain_id,
-        block_number,
-        required_confirmations = required,
-        timeout_secs = timeout_duration.as_secs(),
-        "waiting for finality via WebSocket newHeads subscription"
-    );
-
-    let provider = ethers_providers::Provider::<ethers_providers::Ws>::connect(ws_url)
+async fn rpc(
+    client: &reqwest::Client,
+    url: &str,
+    method: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, InclusionError> {
+    crate::evm::rpc_call(client, url, method, params)
         .await
-        .map_err(|e| format!("ws connect failed: {}", e))?;
+        .map_err(InclusionError::Transient)
+}
 
-    let mut stream = provider
-        .subscribe_blocks()
-        .await
-        .map_err(|e| format!("subscribe_blocks failed: {}", e))?;
+fn hex_u64(v: &serde_json::Value) -> Option<u64> {
+    u64::from_str_radix(v.as_str()?.trim_start_matches("0x"), 16).ok()
+}
 
+/// Wait until the event's block is finalized, then confirm the exact log is
+/// still in the canonical chain.
+///
+/// Replaces depth counting (64 blocks on L1, 10 blocks on L2s, which is about
+/// 2.5 seconds on Arbitrum) with the node's `finalized` block tag, which
+/// Ethereum and the major rollups (Arbitrum, OP Stack, Base) expose as real
+/// finality. After that it re-fetches the receipt and checks block hash,
+/// success status, emitting gateway and payload hash, so a reorged-out
+/// deposit is never relayed.
+pub async fn wait_for_finalized_inclusion(
+    rpc_url: &str,
+    event: &crate::events::MessageEvent,
+    poll_interval: Duration,
+    timeout: Duration,
+) -> Result<(), InclusionError> {
+    let client = reqwest::Client::new();
     let start = std::time::Instant::now();
 
     loop {
-        let remaining = timeout_duration.saturating_sub(start.elapsed());
-        if remaining.is_zero() {
-            warn!(chain_id, block_number, "WebSocket finality wait timed out");
-            return Err(format!(
-                "timed out waiting for finality on chain {} block {}",
-                chain_id, block_number
-            ));
+        let finalized = rpc(
+            &client,
+            rpc_url,
+            "eth_getBlockByNumber",
+            serde_json::json!(["finalized", false]),
+        )
+        .await?;
+        let finalized_number = hex_u64(&finalized["number"]).ok_or_else(|| {
+            InclusionError::Transient(
+                "node did not return a finalized block (is the tag supported?)".into(),
+            )
+        })?;
+        if finalized_number >= event.block_number {
+            break;
         }
-
-        match tokio::time::timeout(remaining, stream.next()).await {
-            Ok(Some(block)) => {
-                let current_block = block.number.unwrap_or_default().as_u64();
-                let confirmations = current_block.saturating_sub(block_number);
-
-                tracing::debug!(
-                    chain_id,
-                    current_block,
-                    target_block = block_number,
-                    confirmations,
-                    required,
-                    "newHead received"
-                );
-
-                if confirmations >= required {
-                    info!(
-                        chain_id,
-                        block_number,
-                        confirmations,
-                        elapsed_ms = start.elapsed().as_millis(),
-                        "finality confirmed via WebSocket"
-                    );
-                    return Ok(());
-                }
-            }
-            Ok(None) => {
-                return Err(
-                    "WebSocket newHeads stream ended before finality was reached".to_string(),
-                );
-            }
-            Err(_elapsed) => {
-                warn!(chain_id, block_number, "WebSocket finality timeout elapsed");
-                return Err(format!(
-                    "timed out waiting for finality on chain {} block {}",
-                    chain_id, block_number
-                ));
-            }
+        if start.elapsed() > timeout {
+            return Err(InclusionError::Transient(format!(
+                "block {} not finalized after {:?} (finalized head {})",
+                event.block_number, timeout, finalized_number
+            )));
         }
+        tracing::debug!(
+            block = event.block_number,
+            finalized_number,
+            "waiting for finality"
+        );
+        tokio::time::sleep(poll_interval).await;
     }
+
+    let receipt = rpc(
+        &client,
+        rpc_url,
+        "eth_getTransactionReceipt",
+        serde_json::json!([crate::evm::to_hex(&event.tx_hash)]),
+    )
+    .await?;
+    if receipt.is_null() {
+        return Err(InclusionError::NotCanonical(
+            "transaction receipt not found".into(),
+        ));
+    }
+    if receipt["status"].as_str() != Some("0x1") {
+        return Err(InclusionError::NotCanonical("transaction reverted".into()));
+    }
+    if !receipt["blockHash"]
+        .as_str()
+        .unwrap_or_default()
+        .eq_ignore_ascii_case(&crate::evm::to_hex(&event.block_hash))
+    {
+        return Err(InclusionError::NotCanonical(format!(
+            "transaction now in block {} (event seen in {}): reorg",
+            receipt["blockHash"],
+            crate::evm::to_hex(&event.block_hash)
+        )));
+    }
+
+    let gateway = crate::evm::to_hex(&event.gateway);
+    let topic0 = crate::evm::to_hex(&crate::evm::message_published_topic());
+    let payload = crate::evm::to_hex(&event.payload_hash);
+    let found = receipt["logs"].as_array().into_iter().flatten().any(|log| {
+        let topics = log["topics"].as_array();
+        log["address"]
+            .as_str()
+            .is_some_and(|a| a.eq_ignore_ascii_case(&gateway))
+            && topics.is_some_and(|t| {
+                t.len() >= 2
+                    && t[0]
+                        .as_str()
+                        .is_some_and(|s| s.eq_ignore_ascii_case(&topic0))
+                    && t[1]
+                        .as_str()
+                        .is_some_and(|s| s.eq_ignore_ascii_case(&payload))
+            })
+    });
+    if !found {
+        return Err(InclusionError::NotCanonical(
+            "MessagePublished log not in finalized receipt".into(),
+        ));
+    }
+
+    info!(
+        block = event.block_number,
+        "event finalized and confirmed canonical"
+    );
+    Ok(())
 }
 
 #[cfg(test)]

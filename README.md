@@ -1,35 +1,42 @@
 # InterLink
 
+> **Status: experimental and unaudited. Do not use with real funds.**
+> The current Groth16 circuit does not yet verify source-chain consensus or receipt
+> inclusion, so proofs attest to message *format*, not to the message having happened.
+> See [docs/SECURITY_REVIEW.md](docs/SECURITY_REVIEW.md) for findings and fixes, and
+> [docs/SECURITY_GUARANTEES.md](docs/SECURITY_GUARANTEES.md) for what is and isn't guaranteed.
+> The "goal" column in the comparison table describes targets, not the current build.
+
 ## Overview
 
-InterLink is a zero-knowledge interoperability protocol enabling mathematically guaranteed cross-chain state transitions. By utilizing zk-SNARKs (Halo2 with Groth16 on BN254) and a high-throughput Solana Coordination Hub, InterLink enables instant, permissionless cross-chain message passing and asset transfers with O(1) on-chain verification.
+InterLink is a cross-chain bridge in development. Its goal is ZK-proven cross-chain messages:
+a Groth16 (BN254) proof per message, verified on-chain against a canonical payload hash that
+every gateway recomputes itself.
 
 <p align="center">
   <img src="InterLink.png" alt="InterLink Architecture" width="80%">
 </p>
 
-The protocol follows a **Hub-and-Spoke** architecture where Solana acts as the central settlement and verification layer, while EVM chains (Ethereum, Optimism, Arbitrum, Base, Polygon), Cosmos IBC chains, and future networks serve as spoke gateways.
+The protocol follows a **Hub-and-Spoke** architecture. Solana is the settlement and verification
+hub. EVM chains (Ethereum, Optimism, Arbitrum, Base, Polygon) and Cosmos chains are spoke gateways.
 
-> **IMPORTANT – PROVER CONSISTENCY REQUIREMENT**
->
-> The relayer's Halo2 prover MUST use the exact same `interlink_v1_domain` salt when generating proofs. This is strictly required to match the updated Solidity input binding logic in `InterlinkGateway.sol:L175-180`. Ensure the entire pipeline (prover -> relayer -> on-chain verification) uses consistent domain separation to prevent proof mismatches.
+> **Canonical message format.** EVM gateways, the Solana hub, the relayer and the SDK all hash
+> messages identically (both chain IDs, both gateway addresses, nonce, action, sender, asset,
+> amount, recipient, extra data). A shared test vector pins this across all four
+> implementations. See [docs/SECURITY_REVIEW.md](docs/SECURITY_REVIEW.md#canonical-message-format).
 
 ---
 
 ## Why InterLink?
 
-| Feature | Wormhole | Stargate | Across | LiFi | **InterLink** |
+| Feature | Wormhole | Stargate | Across | **InterLink: goal** | **InterLink: today** |
 |---|---|---|---|---|---|
-| **Verification** | Guardian multisig (19) | UltraLight Client | Optimistic Oracle | Aggregated | **ZK proofs (O(1))** |
-| **Settlement** | 2-15 min | 1-2 min | 5-60 min | Varies | **<30 seconds** |
-| **Fees (Tier 1)** | $1-20 VAA | $0.50-5 | 0.25-1% | Varies | **0% (zero-fee)** |
-| **Proof model** | Trust 13/19 guardians | Trust relayer | Trust 5 signers | Trust bridge | **Trustless math** |
-| **Uptime SLA** | 99.95% (informal) | None published | None | None | **99.9% (enforced)** |
-| **Governance** | Guardian multisig | Snapshot (off-chain) | UMA Oracle | None | **On-chain DAO** |
-| **Audit trail** | On-chain VAA log | None | None | None | **SHA-256 hash-chain** |
-| **Rate limiting** | None | None | None | 50 req/min | **100 req/min free** |
-| **Bug bounty** | $50k-2M | Varies | Varies | None | **$100-500k** |
-| **LP incentives** | None | STG emissions | ACX rewards | None | **Epoch-based + boost** |
+| **Verification** | Guardian multisig (13/19) | DVNs | Optimistic oracle | ZK light-client proofs | Groth16 proof bound to the message, but the circuit does not yet verify source-chain consensus (trusts the proving-key holder) |
+| **Settlement** | 2-15 min | 1-2 min | 5-60 min | Source finality + seconds | Source finality (~13 min on Ethereum) + proof + hub tx |
+| **Fees (Tier 1)** | $1-20 VAA | $0.50-5 | 0.25-1% | 0% under $1k | Fee model exists in `fee.rs`; not enforced on-chain |
+| **Return path** | Yes | Yes | Yes | Any → any | EVM → Solana mint/swap, Solana → EVM withdrawal |
+| **Governance** | Guardian multisig | Off-chain | UMA | On-chain DAO | Guardian/admin keys with timelocks (simulation in `governance.rs`) |
+| **Audits** | Multiple | Multiple | Multiple | Required before mainnet | None yet |
 
 ---
 
@@ -37,58 +44,51 @@ The protocol follows a **Hub-and-Spoke** architecture where Solana acts as the c
 
 ```
 interlink/
-├── circuits/                    # ZK circuit definitions
-│   ├── src/
-│   │   ├── merkle.rs           # Poseidon Merkle inclusion proofs
-│   │   ├── consensus.rs        # Ethereum Sync Committee + Tendermint circuits
-│   │   ├── folding.rs          # Recursive proof folding pipeline
-│   │   └── config.rs           # Circuit configuration
-│   └── Cargo.toml
+├── circuits/                    # Halo2 research circuits (not used by the relayer)
+│   └── src/{merkle,consensus,recursion,config}.rs
 ├── contracts/
 │   ├── evm/
 │   │   ├── src/InterlinkGateway.sol    # EVM spoke gateway (Solidity 0.8.28)
-│   │   ├── script/Deploy.s.sol         # Mainnet deployment
-│   │   ├── script/DeployL2.s.sol       # L2 deployment (OP/Arb/Base/Polygon)
-│   │   └── test/InterlinkGateway.t.sol # Foundry fuzz tests (23 tests)
-│   ├── solana/interlink-hub/
-│   │   ├── programs/interlink-hub/     # Anchor program (BN254 pairing)
-│   │   └── tests/                      # Devnet integration tests
-│   └── cosmos/interlink-gateway/       # CosmWasm gateway (IBC-ready)
+│   │   ├── script/                     # Deploy, DeployAndInit, DeployL2
+│   │   └── test/InterlinkGateway.t.sol # Foundry tests incl. a real Groth16 proof
+│   ├── solana/interlink-hub/           # Anchor hub program + TS integration tests
+│   └── cosmos/                         # CosmWasm gateway (inbound disabled: no verifier)
 ├── relayer/
 │   ├── src/
-│   │   ├── main.rs             # Entry point, env config, task spawning
-│   │   ├── lib.rs              # Module registry (41 modules)
-│   │   └── [41 modules]       # See Module Reference below
-│   ├── tests/
-│   │   ├── security.rs         # 30 security-focused tests
-│   │   └── integration.rs      # 18 end-to-end integration tests
-│   └── bin/
-│       ├── benchmark.rs        # Proof generation benchmarks
-│       └── load_test.rs        # Concurrent transfer load testing
-├── interlink-core/             # Core circuit engine + payload types
-├── sdk/                        # @interlink/sdk TypeScript package
-└── website/                    # Developer portal (React + Vite)
+│   │   ├── main.rs             # Both pipelines: EVM → hub and hub → EVM
+│   │   ├── lib.rs              # Production modules vs experimental modules
+│   │   └── ...
+│   ├── tests/                  # security.rs, integration.rs, checklist_features.rs
+│   └── src/bin/                # export-vk, benchmark, load-test
+├── interlink-core/             # Halo2 Poseidon chip + payload types
+├── sdk/                        # @interlink/sdk (TypeScript, ethers v6)
+└── docs/                       # SECURITY_REVIEW.md, SECURITY_GUARANTEES.md, ...
 ```
 
 ---
 
-## Relayer Module Reference (41 modules)
+## Relayer Module Reference
 
-The relayer is the heart of InterLink — a standalone Rust service with 41 specialized modules organized by domain.
+Only the **Core Bridge Pipeline** modules run in the `relayer` binary. Every other module
+below is standalone library or simulation code. It is tested, but it is not wired into the
+running relayer and gives no runtime guarantees.
 
 ### Core Bridge Pipeline
 
 | Module | File | Description |
 |---|---|---|
-| **listener** | `listener.rs` | WebSocket EVM event subscription with exponential backoff reconnection. Parses `MessagePublished`, `SwapInitiated`, `NFTLocked` events from gateway contracts. |
-| **events** | `events.rs` | `GatewayEvent` enum with typed variants for Deposit, Swap, and NFTLock. ABI-compatible decoding from EVM log topics + data. |
-| **finality** | `finality.rs` | Per-chain finality confirmation. Polls EVM HTTP RPC for block confirmations. Supports configurable confirmation counts per chain (Ethereum: 75 blocks, L2s: 1-2 blocks). |
-| **prover** | `prover.rs` | Halo2 Groth16 proof generation on BN254. Domain-separated with `interlink_v1_domain` salt. Semaphore-bounded concurrent proving with `spawn_blocking`. Result-based error propagation (no panics in async runtime). |
-| **submitter** | `submitter.rs` | Builds and submits raw Solana transactions with ZK proofs. Compact-u16 encoding, PDA derivation (state_registry, stake_account, vk), cached keypair loading. |
-| **batch** | `batch.rs` | `BatchCollector` aggregates transfers into single settlement transactions every 5 seconds. Configurable batch size with flush-on-full. |
-| **nonce** | `nonce.rs` | `DurableNoncePool` for parallel Solana settlement (10-100 concurrent nonces). Lock-free acquire/release with exhaustion alerting. |
+| **listener** | `listener.rs` | Polls `eth_getLogs` over a block cursor for `MessagePublished`. Verifies the RPC chain ID, decodes strictly and drops logs whose fields don't reproduce the payload hash. |
+| **finality** | `finality.rs` | Waits for the node's `finalized` block tag, then re-checks the receipt (block hash, status, log). Reorged events are never relayed. |
+| **prover** | `prover.rs` | Groth16 (arkworks, BN254) proofs with a persistent proving key shared with `export-vk`. |
+| **submitter** | `submitter.rs` | Hub `submit_proof` (attest) and `execute_transfer` / `execute_swap`, with confirmation tracking and idempotency. |
+| **solana_tx** | `solana_tx.rs` | Legacy message compiler, PDA/ATA derivation (checked against the Solana CLI), Anchor discriminators. |
+| **hub_outbound** | `hub_outbound.rs` | Reads finalized hub withdrawals (`OutboundMessageEvent`), accepting event logs only while the hub program is executing. |
+| **evm_tx / evm_submitter** | `evm_tx.rs`, `evm_submitter.rs` | EIP-1559 signing (k256, cross-checked against ethers-core) and delivery via `releaseTokens`. |
+| **events / evm** | `events.rs`, `evm.rs` | Canonical message type and minimal keccak/hex/JSON-RPC helpers (no ethers-rs at runtime). |
+| **http_api** | `http_api.rs` | `/health`, `/quote`, `/compare`, `/metrics`, `/transfers/{payloadHash}` (hub on-chain status). Webhook routes need `API_TOKEN`. |
+| **batch / metrics / webhook / fee / gas** | | Batching, Prometheus metrics, webhook registry, fee and gas models. |
 
-### Economics & Fees
+### Economics & Fees (experimental)
 
 | Module | File | Description |
 |---|---|---|
@@ -166,22 +166,25 @@ The relayer is the heart of InterLink — a standalone Rust service with 41 spec
 
 ## Testing Framework
 
-InterLink employs a multi-layered testing strategy with **460 tests across all layers**, all verified passing.
+Test counts as of this branch. "Run" means executed in the latest review; the Foundry and
+Anchor suites need their CLIs and were compiled but not executed there.
 
 ### Full Test Suite Summary
 
 | Layer | Tool | Tests | Status |
 |---|---|---|---|
-| Relayer lib (unit) | `cargo test --lib` | 366 | All passing |
-| Relayer security | `cargo test --test security` | 30 | All passing |
-| Relayer integration | `cargo test --test integration` | 18 | All passing |
-| Relayer checklist e2e | `cargo test --test checklist_features`| 9 | All passing |
-| ZK Circuits | `cargo test -p circuits` | 10 | All passing |
-| EVM Gateway (Solidity) | `forge test` | 23 | All passing |
-| Solana Hub (devnet) | Anchor / Mocha | 4 | All passing |
-| **Total** | | **460** | **All passing** |
+| Relayer lib (unit) | `cargo test -p relayer --lib` | 445 | Run, passing |
+| Relayer security | `cargo test --test security` | 32 | Run, passing |
+| Relayer integration | `cargo test --test integration` | 19 | Run, passing |
+| Relayer checklist e2e | `cargo test --test checklist_features` | 9 | Run, passing |
+| Circuits / interlink-core | `cargo test -p circuits -p interlink-core` | 15 | Run, passing |
+| Solana hub (host, incl. real Groth16 proof) | `cargo test` in `contracts/solana/interlink-hub` | 11 | Run, passing |
+| Cosmos gateway | `cargo test` in `contracts/cosmos` | 14 | Run, passing |
+| SDK | `npm test` in `sdk` | 31 | Run, passing |
+| EVM gateway (incl. real Groth16 proof) | `forge test` | 42 | Compiled with solc 0.8.28; not executed (no Foundry) |
+| Solana hub integration | `anchor test` | 5 | Not executed (no Anchor CLI) |
 
-### Security Test Coverage (30 tests)
+### Security Test Coverage (32 tests)
 
 | Module | Tests | What's Validated |
 |---|---|---|
@@ -244,29 +247,32 @@ Advanced ZK primitives built on Halo2 over BN254:
 
 ### EVM Spoke Gateway (`contracts/evm/`)
 
-Solidity 0.8.28 with BN254 pairing precompiles:
+- **InterlinkGateway.sol**: deposits (`sendCrossChainMessage`, `initiateSwap`, `lockNFT`),
+  verified inbound releases (`releaseTokens`) and generic calls (`executeVerifiedMessage`,
+  which can never target the gateway or a custodied asset). Groth16 verification uses the
+  BN254 precompiles. VK and remote-gateway changes have a 2-day timelock, the guardian
+  transfers in two steps, and emergency withdrawal only works while paused.
+- **Scripts**: `Deploy.s.sol`, `DeployAndInit.s.sol` (uploads the VK from `export-vk`),
+  `DeployL2.s.sol`.
+- **Tests**: Foundry suite including a real arkworks Groth16 proof (`testRealProof_*`).
 
-- **InterlinkGateway.sol**: Message routing, swap initiation, NFT locking, ZK proof verification
-- **Deploy.s.sol**: Mainnet deployment with guardian address configuration
-- **DeployL2.s.sol**: L2-specific deployment (Optimism, Arbitrum, Base, Polygon) with per-chain finality calibration
-- **23 Foundry tests** including fuzz tests (256 runs each)
-
-### Solana Hub Gateway (`contracts/solana/interlink-hub/`)
-
-Anchor-based program with `alt_bn128` syscalls:
+### Solana Hub (`contracts/solana/interlink-hub/`)
 
 - **Program ID**: `AKzpc9tvxfhLjj5AantKizK2YZgSjoyhLmYqRZy6b8Lz`
-- PDA derivation: `state_registry`, `stake_account`, `vk` accounts
-- `submit_proof`: Verifies ZK proof, mints/releases on destination
-- `process_cross_chain_swap`: AMM integration with stake verification
-- **Live on Solana devnet** with 4 passing integration tests
+- `submit_proof`: a staked relayer attests a fully specified message (the hash is recomputed
+  on-chain and a record is kept per payload hash).
+- `execute_transfer` / `execute_swap`: permissionless execution bound to the attested hash.
+  Creates the recipient's token account if needed.
+- `burn_for_withdrawal`: burns wrapped tokens and emits an outbound message for
+  `releaseTokens` on the origin chain.
+- Wrapped-asset and remote-gateway registries, 7-day unbonding, VK timelock.
+- Host tests run a real Groth16 proof through the on-chain verifier.
 
 ### Cosmos Gateway (`contracts/cosmos/`)
 
-CosmWasm-based gateway for IBC-connected chains:
-
-- Initial implementation for Tendermint consensus verification
-- IBC channel management for cross-chain message relay
+- Deposits (one denom per message, bound into the hash), two-step guardian.
+- **Inbound execution is disabled** (`VerifierUnavailable`): CosmWasm 1.5 has no BN254
+  pairing, so there is no sound verifier yet.
 
 ---
 
@@ -311,28 +317,30 @@ CosmWasm-based gateway for IBC-connected chains:
 
 ## Security Model
 
-### ZK Proof Verification
+> Read [docs/SECURITY_REVIEW.md](docs/SECURITY_REVIEW.md) first. The protocol is unaudited.
 
-Every cross-chain message is verified by a Halo2 Groth16 proof on BN254. The on-chain verifier performs a single pairing check — O(1) regardless of message complexity. Domain separation via `keccak256("interlink_v1_domain")` prevents cross-protocol proof reuse.
+### What a proof attests today
 
-### Multi-Layer Protection
+Each message gets a Groth16 (BN254) proof whose public input is
+`(payloadHash mod r + keccak256("interlink_v1_domain"))^5 + nonce`. Every verifier recomputes
+`payloadHash` from the message fields, so a proof cannot be reused for different amounts,
+recipients, chains or gateways. The circuit does **not** yet verify source-chain consensus or
+receipt inclusion. Until it does, whoever holds the proving key can attest any message.
 
-| Layer | Mechanism | Auto-Trigger |
-|---|---|---|
-| **Circuit Breaker** | Auto-pause bridge operations | ≥5 proof failures, ≥3 settlement failures, $1M outflow in 5min |
-| **Guardian Pause** | Emergency manual pause | Authorized guardian key hash |
-| **Threshold Multi-Sig** | 3-of-5 Ed25519 validator co-signing | All settlement transactions |
-| **Rate Limiting** | Token-bucket per API key | Free: 100/min, Pro: 1000/min |
-| **Retry Engine** | Exponential backoff with dead-letter queue | Per-chain optimized policies |
-| **Audit Trail** | SHA-256 hash-chain append-only log | Every transfer recorded |
+### Defense in depth (implemented)
 
-### Validator Economics
+| Layer | Where |
+|---|---|
+| Canonical payload hash recomputed on-chain | EVM gateway, Solana hub, Cosmos |
+| Replay protection per payload hash | EVM `executedMessages`, hub message records |
+| Custody cap: releases ≤ locked amount per asset | EVM `totalLocked` |
+| Verified calls cannot touch custody | EVM `executeVerifiedMessage` |
+| Timelocked VK / remote-gateway changes, two-step guardian | EVM, hub, Cosmos |
+| Finalized-tag wait + receipt re-check (reorg safety) | relayer `finality.rs` |
+| Relayer stake in the real ILINK mint, 7-day unbonding | hub |
 
-- **10% fee share** distributed to validators per epoch
-- **Weighted by**: stake amount × uptime percentage
-- **Minimum uptime**: 90% required for reward eligibility
-- **Perfect uptime bonus**: +5% additional rewards
-- **Slashing**: 5% for downtime, 50% for byzantine behavior
+Not wired in (library code only): the circuit breaker, rate limiter, multisig co-signing and
+audit trail modules.
 
 ---
 
@@ -340,60 +348,37 @@ Every cross-chain message is verified by a Halo2 Groth16 proof on BN254. The on-
 
 | Parameter | Value |
 |---|---|
-| Proving System | Halo2 (IPA commitment, BN254 scalar field) |
-| Elliptic Curve | BN254 (alt_bn128) |
-| Hash Function | Poseidon quintic S-box (x^5), injective over BN254 |
-| Domain Separation | `keccak256("interlink_v1_domain")` |
-| Verification Complexity | O(1) on-chain |
-| State Commitment | Sparse Merkle Trees |
-| Recursion | Pairwise folding, O(log N) depth, Fiat-Shamir alpha = (C1+C2)^5 |
-| Consensus (ETH) | Sync Committee 342/512 threshold |
-| Consensus (Cosmos) | Tendermint >2/3 voting power |
-| Settlement Target | <30 seconds end-to-end |
-| Uptime SLA | 99.9% (8.76h max annual downtime) |
-| Settlement SLA | <60s p99 |
-| API Response SLA | <500ms p99 |
+| Proving system | Groth16 over BN254 (arkworks), single public input |
+| On-chain verification | EVM precompiles 0x06/0x07/0x08; Solana `alt_bn128` syscalls |
+| Message hash | keccak256 of the ABI-encoded canonical message |
+| Hub chain ID | `2` (both gateway addresses are also hashed) |
+| Source finality | Node `finalized` tag (Ethereum ≈ 13 min; rollups per their L1 finality) |
+| Trusted setup | Local single-party (dev). A multi-party ceremony is required for production |
 
 ---
 
 ## Developer Setup
 
 ### Prerequisites
-- Rust (Edition 2021)
-- Solana CLI (`>=1.18`) & Anchor CLI (`0.32.1`)
-- Foundry (`forge`, `cast`, `anvil`) — install via `foundryup`
-- Node.js & yarn (for Anchor TypeScript tests and website)
+- Rust (stable), Node.js
+- Solana CLI and Anchor CLI `0.30.1` (hub program)
+- Foundry (`forge`) for EVM contracts
 
-### Building the Workspace
+### Building and testing
 ```bash
-# Build all Rust crates
-cargo build --release
-
-# Build the Solana Hub program
-cd contracts/solana/interlink-hub
-anchor build
-
-# Build EVM contracts
-cd contracts/evm
-forge build
+cargo test --workspace                       # relayer, circuits, interlink-core
+(cd contracts/solana/interlink-hub && cargo test)   # hub host tests
+(cd contracts/cosmos && cargo test)
+(cd contracts/evm && forge test)
+(cd sdk && npm ci && npm test)
+cargo run --bin export-vk                    # proving key + VK for on-chain upload
 ```
 
-### Environment Variables
-
-```bash
-# Required
-EVM_WS_RPC_URL=wss://...          # WebSocket for event subscription
-EVM_HTTP_RPC_URL=https://...       # HTTP for finality polling
-SOLANA_RPC_URL=https://...         # Solana RPC endpoint
-GATEWAY_ADDRESS=0x...              # EVM gateway contract address
-HUB_PROGRAM_ID=AKzpc9...          # Solana hub program ID
-KEYPAIR_PATH=/path/to/keypair.json # Solana relayer keypair
-
-# Optional
-LOG_FORMAT=json                    # Structured JSON logging (default: text)
-BATCH_SIZE=50                      # Transfers per batch (default: 50)
-NONCE_POOL_SIZE=10                 # Parallel Solana nonces (default: 10)
-```
+### Relayer environment
+See [`.env.example`](.env.example). Key variables: `CHAIN_ID` (EIP-155), `EVM_HTTP_RPC_URL`,
+`GATEWAY_ADDRESS`, `SOLANA_RPC_URL`, `HUB_PROGRAM_ID`, `KEYPAIR_PATH`, `PROVING_KEY_PATH`,
+and optionally `EVM_PRIVATE_KEY_FILE` (enables hub → EVM withdrawals) and `API_TOKEN`
+(enables webhook endpoints).
 
 ---
 
@@ -442,25 +427,12 @@ validator_heartbeats_total, validator_heartbeats_expected
 
 ---
 
-## Solana Hub — Live Devnet Deployment & Testing Results
+## Solana Hub — Devnet
 
-- **Program ID:** `AKzpc9tvxfhLjj5AantKizK2YZgSjoyhLmYqRZy6b8Lz`
-- **Deploy Transaction:** `59bSsMZU9GZAvaVL5mEL8NQ24Ucs4HvgpQ7i9TmnFDYPdANivm24n3b18Yb5Nx2aSZYp9ti3NmT7GF1jsd2v59ZY`
-- **IDL Account:** `3YddvfRCPY6MALVoVzAN59njDkzCEQ3px2NMhszBrZpp`
-- **Cluster:** Solana Devnet
-
-### Explicit Chain Run Results
-
-The simulated execution environment successfully processed the Hub operations against Devnet validators, concluding in 0 errors and matching exact settlement benchmarks.
-
-| Test Execution Layer | Execution Path | Validated Constraints | Latency / Result |
-|---|---|---|---|
-| **Hub Initialization** | `interlink::initialize_hub` | Derived PDA assignments mapped for `state_registry`, `vk`, and secure `stake_accounts`. | `[PASS] 0.42s Exec` |
-| **ZK Payload Decoding** | `interlink::submit_proof` | Falsified Groth16 hashes properly reverted. Domain-separated EVM batch payload ingested safely. | `[PASS] 0.81s Exec` |
-| **Token Bridging (Mint/Burn)** | `interlink::settle_cross_chain` | Dynamic synthetic SPL mappings successfully wrapped without double-spend vulnerabilities. | `[PASS] 0.53s Exec` |
-| **Defi AMM Cross-Swap** | `amm::process_intent_swap` | Raydium intent simulated bridging + swapping simultaneously maintaining slippage below `<0.5%`. | `[PASS] 0.94s Exec` |
-
-**Final Settlement Telemetry:** All 4 internal Solana devnet operations completed smoothly processing 100% test branch execution coverage against ZK verification nodes in ~2.7s total elapsed simulated time.
+An earlier version of the hub was deployed to devnet at
+`AKzpc9tvxfhLjj5AantKizK2YZgSjoyhLmYqRZy6b8Lz`. The program has since changed (account
+layouts, instructions, verification), so it must be redeployed before devnet testing. Results
+previously listed here named instructions that do not exist in the program and were removed.
 
 ---
 

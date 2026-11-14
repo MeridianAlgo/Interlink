@@ -3,8 +3,8 @@
  *
  * Provides methods to:
  *   - Get fee quotes before bridging
- *   - Initiate cross-chain transfers and swaps
- *   - Track transfer status
+ *   - Initiate cross-chain transfers and swaps (gateway calls signed by the user)
+ *   - Track transfer status by payload hash (read from the hub on-chain)
  *   - Register webhook subscriptions
  *   - Compare costs vs Wormhole, Stargate, Across
  *
@@ -32,6 +32,15 @@
  * ```
  */
 
+import { Signer, isHexString } from "ethers";
+import {
+  ZERO_ADDRESS,
+  erc20Interface,
+  gatewayInterface,
+  parseMessagePublished,
+  toBytes32Recipient,
+  type PublishedMessage,
+} from "./gateway";
 import {
   ChainId,
   FeeComparison,
@@ -40,12 +49,15 @@ import {
   TransferParams,
   TransferQuote,
   TransferStatus,
+  TransferStatusInfo,
   SwapParams,
   WebhookEventType,
   WebhookRegistration,
   DEFAULT_RELAYER_URL,
   CHAIN_FINALITY_SECONDS,
 } from "./types";
+
+const MAX_U64 = (1n << 64n) - 1n;
 
 /** Default timeout for API requests (ms). */
 const DEFAULT_TIMEOUT_MS = 10_000;
@@ -59,11 +71,17 @@ export class InterlinkClient {
   private readonly relayerUrl: string;
   private readonly timeoutMs: number;
   private readonly debug: boolean;
+  private readonly gatewayAddress?: string;
+  private readonly sourceChain?: ChainId;
+  private readonly apiToken?: string;
 
   constructor(config: InterlinkConfig = {}) {
     this.relayerUrl = (config.relayerUrl ?? DEFAULT_RELAYER_URL).replace(/\/$/, "");
     this.timeoutMs = config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.debug = config.debug ?? false;
+    this.gatewayAddress = config.gatewayAddress;
+    this.sourceChain = config.sourceChain;
+    this.apiToken = config.apiToken;
   }
 
   // ─── Health ────────────────────────────────────────────────────────────────
@@ -142,183 +160,187 @@ export class InterlinkClient {
   // ─── Transfers ─────────────────────────────────────────────────────────────
 
   /**
-   * Initiate a cross-chain transfer.
+   * Initiate a cross-chain transfer by calling `InterlinkGateway.sendCrossChainMessage`
+   * with the user's own signer. The relayer picks the event up from the chain;
+   * nothing is sent to the relayer and it never holds user funds.
    *
-   * Submits a transfer request to the relayer, which handles finality
-   * confirmation, ZK proof generation, and settlement on the destination chain.
+   * For ERC-20 tokens the gateway's allowance is checked and, if needed, an
+   * `approve` transaction is sent first.
    *
    * @param params - Transfer parameters (recipient, destination chain, amount).
    * @param quote - A valid quote obtained from {@link getQuote}. Must not be expired.
-   * @returns The submitted transfer with a sequence number for tracking.
+   * @param signer - ethers v6 signer on the source chain (pays gas and funds).
+   * @returns The transfer, identified by its canonical payload hash.
    *
    * @example
    * ```typescript
+   * const client = new InterlinkClient({ gatewayAddress: "0x…" });
    * const quote = await client.getQuote({ ... });
    * const transfer = await client.transfer({
-   *   recipient: "8xk2...",
+   *   recipient: "8xk2…",                // Solana address (base58)
    *   destinationChain: ChainId.Solana,
    *   amountWei: 1_000_000_000_000_000_000n,
-   * }, quote);
-   * console.log("Sequence:", transfer.sequence);
+   * }, quote, signer);
+   * await client.waitForSettlement(transfer.payloadHash);
    * ```
    */
-  async transfer(params: TransferParams, quote: TransferQuote): Promise<Transfer> {
+  async transfer(params: TransferParams, quote: TransferQuote, signer: Signer): Promise<Transfer> {
     if (quote.expiresAt < Math.floor(Date.now() / 1000)) {
       throw new QuoteExpiredError(quote.expiresAt);
     }
-
-    const data = await this.post("/transfers", {
-      recipient: params.recipient,
-      destination_chain: params.destinationChain,
-      token_address: params.tokenAddress ?? "0x0000000000000000000000000000000000000000",
-      amount_wei: params.amountWei.toString(),
-      payload: params.payload ? Buffer.from(params.payload).toString("base64") : null,
-      quote_expires_at: quote.expiresAt,
-    });
-
+    const token = params.tokenAddress ?? ZERO_ADDRESS;
+    const data = gatewayInterface.encodeFunctionData("sendCrossChainMessage", [
+      params.destinationChain,
+      token,
+      params.amountWei,
+      toBytes32Recipient(params.recipient),
+      params.payload ?? new Uint8Array(),
+    ]);
+    const published = await this.sendGatewayTx(signer, token, params.amountWei, data);
     return {
-      sequence: data.sequence,
-      txHash: data.tx_hash,
-      blockNumber: data.block_number,
-      status: data.status as TransferStatus,
+      sequence: Number(published.message.nonce),
+      payloadHash: published.payloadHash,
+      txHash: published.txHash,
+      blockNumber: published.blockNumber,
+      status: TransferStatus.Pending,
       params,
       quote,
-      settlementSignature: data.settlement_signature ?? undefined,
-      totalElapsedMs: data.total_elapsed_ms ?? undefined,
-      error: data.error ?? undefined,
     };
   }
 
   /**
-   * Initiate a cross-chain swap (bridge + DEX swap on destination).
-   *
-   * Combines bridging with a destination-chain swap in a single atomic operation.
-   * Uses the intent solver to find the optimal path.
+   * Initiate a cross-chain swap (bridge, then swap on the hub's pool) by
+   * calling `InterlinkGateway.initiateSwap` with the user's signer.
    *
    * @param params - Swap parameters (destination chain, output token, min amount).
-   * @param amountWei - Amount to bridge in wei.
-   * @returns The submitted transfer with swap details.
+   * @param amountWei - Amount of `params.tokenIn` (default native) to bridge.
+   * @param signer - ethers v6 signer on the source chain.
    *
    * @example
    * ```typescript
    * const transfer = await client.swap({
    *   destinationChain: ChainId.Solana,
-   *   recipient: "8xk2...",
-   *   tokenOut: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", // USDC on Solana
-   *   minAmountOut: 3000_000_000n, // 3000 USDC (6 decimals)
-   * }, 1_000_000_000_000_000_000n);
+   *   recipient: "8xk2…",
+   *   tokenOut: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", // USDC mint
+   *   minAmountOut: 3000_000_000n,
+   * }, 1_000_000_000_000_000_000n, signer);
    * ```
    */
-  async swap(params: SwapParams, amountWei: bigint): Promise<Transfer> {
-    const data = await this.post("/swaps", {
-      destination_chain: params.destinationChain,
-      recipient: params.recipient,
-      token_out: params.tokenOut,
-      min_amount_out: params.minAmountOut.toString(),
-      amount_wei: amountWei.toString(),
-      swap_data: params.swapData ? Buffer.from(params.swapData).toString("base64") : null,
-    });
-
+  async swap(params: SwapParams, amountWei: bigint, signer: Signer): Promise<Transfer> {
+    if (params.minAmountOut > MAX_U64) {
+      throw new Error("minAmountOut must fit in a u64 (Solana token amounts)");
+    }
+    const token = params.tokenIn ?? ZERO_ADDRESS;
+    const data = gatewayInterface.encodeFunctionData("initiateSwap", [
+      params.destinationChain,
+      token,
+      amountWei,
+      toBytes32Recipient(params.tokenOut),
+      params.minAmountOut,
+      toBytes32Recipient(params.recipient),
+      params.swapData ?? new Uint8Array(),
+    ]);
+    const published = await this.sendGatewayTx(signer, token, amountWei, data);
     return {
-      sequence: data.sequence,
-      txHash: data.tx_hash,
-      blockNumber: data.block_number,
-      status: data.status as TransferStatus,
+      sequence: Number(published.message.nonce),
+      payloadHash: published.payloadHash,
+      txHash: published.txHash,
+      blockNumber: published.blockNumber,
+      status: TransferStatus.Pending,
       params: {
         recipient: params.recipient,
         destinationChain: params.destinationChain,
+        tokenAddress: token,
         amountWei,
       },
-      quote: data.quote,
-      settlementSignature: data.settlement_signature ?? undefined,
-      totalElapsedMs: data.total_elapsed_ms ?? undefined,
-      error: data.error ?? undefined,
     };
   }
 
   /**
-   * Get the current status of a transfer by sequence number.
+   * Hub status of a message, read from its on-chain record by the relayer.
    *
-   * Poll this endpoint to track transfer progress through stages:
-   * PendingFinality → PendingProof → PendingSettlement → Complete
-   *
-   * @param sequence - The sequence number returned from {@link transfer} or {@link swap}.
-   * @returns The current transfer state, or null if not found.
-   *
-   * @example
-   * ```typescript
-   * const status = await client.getTransferStatus(42);
-   * if (status?.status === TransferStatus.Complete) {
-   *   console.log("Settled:", status.settlementSignature);
-   * }
-   * ```
+   * @param payloadHash - Canonical payload hash returned by {@link transfer} / {@link swap}.
    */
-  async getTransferStatus(sequence: number): Promise<Transfer | null> {
-    try {
-      const data = await this.get(`/transfers/${sequence}`);
-      return {
-        sequence: data.sequence,
-        txHash: data.tx_hash,
-        blockNumber: data.block_number,
-        status: data.status as TransferStatus,
-        params: {
-          recipient: data.recipient,
-          destinationChain: data.destination_chain,
-          amountWei: BigInt(data.amount_wei),
-        },
-        quote: data.quote,
-        settlementSignature: data.settlement_signature ?? undefined,
-        totalElapsedMs: data.total_elapsed_ms ?? undefined,
-        error: data.error ?? undefined,
-      };
-    } catch (e) {
-      if (e instanceof InterlinkApiError && e.statusCode === 404) {
-        return null;
-      }
-      throw e;
+  async getTransferStatus(payloadHash: string): Promise<TransferStatusInfo> {
+    if (!isHexString(payloadHash, 32)) {
+      throw new Error(`invalid payload hash: ${payloadHash}`);
     }
+    const data = await this.get(`/transfers/${payloadHash.toLowerCase()}`);
+    const status =
+      data.status === "executed"
+        ? TransferStatus.Complete
+        : data.status === "attested"
+          ? TransferStatus.PendingSettlement
+          : TransferStatus.Pending;
+    return {
+      payloadHash,
+      status,
+      attestedBy: data.attested_by ?? undefined,
+      attestedAt: data.attested_at ?? undefined,
+    };
   }
 
   /**
-   * Wait for a transfer to reach a terminal state (Complete or Failed).
-   *
-   * Polls {@link getTransferStatus} at the given interval until the transfer
-   * settles or the timeout is reached.
-   *
-   * @param sequence - Transfer sequence number.
-   * @param opts - Polling options.
-   * @returns The completed/failed transfer.
-   * @throws Error if the timeout is reached before settlement.
-   *
-   * @example
-   * ```typescript
-   * const result = await client.waitForSettlement(42, { timeoutMs: 120_000 });
-   * console.log("Final status:", result.status);
-   * ```
+   * Poll {@link getTransferStatus} until the message is executed on the hub.
+   * Source-chain finality alone is ~13 minutes on Ethereum, so the default
+   * timeout is 30 minutes.
    */
   async waitForSettlement(
-    sequence: number,
+    payloadHash: string,
     opts: { pollIntervalMs?: number; timeoutMs?: number } = {}
-  ): Promise<Transfer> {
-    const pollInterval = opts.pollIntervalMs ?? 3_000;
-    const timeout = opts.timeoutMs ?? 120_000;
+  ): Promise<TransferStatusInfo> {
+    const pollInterval = opts.pollIntervalMs ?? 15_000;
+    const timeout = opts.timeoutMs ?? 30 * 60_000;
     const deadline = Date.now() + timeout;
 
     while (Date.now() < deadline) {
-      const transfer = await this.getTransferStatus(sequence);
-      if (
-        transfer &&
-        (transfer.status === TransferStatus.Complete ||
-          transfer.status === TransferStatus.Failed)
-      ) {
-        return transfer;
+      const info = await this.getTransferStatus(payloadHash);
+      if (info.status === TransferStatus.Complete) {
+        return info;
       }
       await new Promise((resolve) => setTimeout(resolve, pollInterval));
     }
+    throw new Error(`Transfer ${payloadHash} did not settle within ${timeout}ms`);
+  }
 
-    throw new Error(
-      `Transfer ${sequence} did not settle within ${timeout}ms`
-    );
+  /** Approve if needed, send the gateway call and decode its MessagePublished event. */
+  private async sendGatewayTx(
+    signer: Signer,
+    token: string,
+    amount: bigint,
+    data: string
+  ): Promise<PublishedMessage & { txHash: string; blockNumber: number }> {
+    if (!this.gatewayAddress) {
+      throw new Error("gatewayAddress must be set in InterlinkConfig to send transfers");
+    }
+    const gateway = this.gatewayAddress;
+    const native = token === ZERO_ADDRESS;
+
+    if (!native) {
+      const owner = await signer.getAddress();
+      const raw = await signer.call({
+        to: token,
+        data: erc20Interface.encodeFunctionData("allowance", [owner, gateway]),
+      });
+      const [allowance] = erc20Interface.decodeFunctionResult("allowance", raw);
+      if (allowance < amount) {
+        this.log(`approving ${amount} of ${token} for ${gateway}`);
+        const approval = await signer.sendTransaction({
+          to: token,
+          data: erc20Interface.encodeFunctionData("approve", [gateway, amount]),
+        });
+        await approval.wait();
+      }
+    }
+
+    const tx = await signer.sendTransaction({ to: gateway, data, value: native ? amount : 0n });
+    const receipt = await tx.wait();
+    if (!receipt || receipt.status !== 1) {
+      throw new Error(`gateway transaction ${tx.hash} failed`);
+    }
+    const srcChain = BigInt(this.sourceChain ?? (await signer.provider!.getNetwork()).chainId);
+    const published = parseMessagePublished(receipt.logs, gateway, srcChain);
+    return { ...published, txHash: receipt.hash, blockNumber: receipt.blockNumber };
   }
 
   // ─── Fee comparison ────────────────────────────────────────────────────────
@@ -449,7 +471,7 @@ export class InterlinkClient {
     const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
 
     try {
-      const resp = await fetch(url, { signal: controller.signal });
+      const resp = await fetch(url, { headers: this.authHeaders(path), signal: controller.signal });
       if (!resp.ok) {
         throw new InterlinkApiError(resp.status, await resp.text(), path);
       }
@@ -469,7 +491,7 @@ export class InterlinkClient {
     try {
       const resp = await fetch(url, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...this.authHeaders(path) },
         body: JSON.stringify(body),
         signal: controller.signal,
       });
@@ -486,11 +508,17 @@ export class InterlinkClient {
     const url = `${this.relayerUrl}${path}`;
     this.log(`DELETE ${url}`);
 
-    const resp = await fetch(url, { method: "DELETE" });
+    const resp = await fetch(url, { method: "DELETE", headers: this.authHeaders(path) });
     if (!resp.ok) {
       throw new InterlinkApiError(resp.status, await resp.text(), path);
     }
     return resp.json();
+  }
+
+  private authHeaders(path: string): Record<string, string> {
+    return this.apiToken && path.startsWith("/webhooks")
+      ? { Authorization: `Bearer ${this.apiToken}` }
+      : {};
   }
 
   private log(msg: string) {

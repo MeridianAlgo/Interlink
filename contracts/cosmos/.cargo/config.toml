@@ -1,0 +1,9 @@
+# CosmWasm contracts import their host functions (db_read, addr_validate, ...)
+# from the VM. cosmwasm-std 1.5 declares them as plain `extern "C"` and relies
+# on the linker allowing undefined symbols, which recent Rust no longer passes
+# to rust-lld for wasm32-unknown-unknown. Restore it so they become wasm imports.
+[target.wasm32-unknown-unknown]
+rustflags = ["-C", "link-arg=--allow-undefined"]
+
+[alias]
+wasm = "build --release --lib --target wasm32-unknown-unknown"

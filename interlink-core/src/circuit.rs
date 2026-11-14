@@ -135,7 +135,7 @@ impl<F: PrimeField> Circuit<F> for InterlinkCircuit<F> {
     ) -> Result<(), Error> {
         let chip = PoseidonChip::<F>::construct(config);
 
-        let hash = ethers_core::utils::keccak256(b"interlink_v1_domain");
+        let hash = crate::keccak256(b"interlink_v1_domain");
         let mut arr = [0u8; 8];
         arr.copy_from_slice(&hash[0..8]);
         let rc_val = u64::from_be_bytes(arr);
@@ -173,7 +173,7 @@ mod tests {
         let k = 5;
         let msg = Fr::from(12345);
         let seq = Fr::from(1);
-        let hash = ethers_core::utils::keccak256(b"interlink_v1_domain");
+        let hash = crate::keccak256(b"interlink_v1_domain");
         let mut arr = [0u8; 8];
         arr.copy_from_slice(&hash[0..8]);
         let rc_val = u64::from_be_bytes(arr);
@@ -242,7 +242,7 @@ impl<F: PrimeField, const BATCH_SIZE: usize> Circuit<F> for BatchedInterlinkCirc
     ) -> Result<(), Error> {
         let chip = PoseidonChip::<F>::construct(config);
 
-        let hash = ethers_core::utils::keccak256(b"interlink_v1_domain");
+        let hash = crate::keccak256(b"interlink_v1_domain");
         let mut arr = [0u8; 8];
         arr.copy_from_slice(&hash[0..8]);
         let rc_val = u64::from_be_bytes(arr);
@@ -283,7 +283,7 @@ mod batched_tests {
         const BATCH_SIZE: usize = 3;
         let k = 6;
 
-        let hash = ethers_core::utils::keccak256(b"interlink_v1_domain");
+        let hash = crate::keccak256(b"interlink_v1_domain");
         let mut arr = [0u8; 8];
         arr.copy_from_slice(&hash[0..8]);
         let rc = Fr::from(u64::from_be_bytes(arr));

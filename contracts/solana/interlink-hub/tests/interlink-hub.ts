@@ -1,130 +1,179 @@
 import * as anchor from "@coral-xyz/anchor";
 import { Program } from "@coral-xyz/anchor";
+import { createMint } from "@solana/spl-token";
 import { InterlinkHub } from "../target/types/interlink_hub";
 import { expect } from "chai";
+
+const BPF_UPGRADEABLE_LOADER = new anchor.web3.PublicKey(
+  "BPFLoaderUpgradeab1e11111111111111111111111"
+);
 
 describe("interlink-hub", () => {
   const provider = anchor.AnchorProvider.env();
   anchor.setProvider(provider);
 
   const program = anchor.workspace.interlinkHub as Program<InterlinkHub>;
-  const admin = provider.wallet;
+  const admin = provider.wallet as anchor.Wallet;
 
-  let stateRegistryPda: anchor.web3.PublicKey;
-  let vkPda: anchor.web3.PublicKey;
+  const pda = (...seeds: Buffer[]) =>
+    anchor.web3.PublicKey.findProgramAddressSync(seeds, program.programId)[0];
+
+  const statePda = pda(Buffer.from("state"));
+  const vkPda = pda(Buffer.from("vk"));
+  const stakePda = pda(Buffer.from("stake"), admin.publicKey.toBuffer());
+  const [programData] = anchor.web3.PublicKey.findProgramAddressSync(
+    [program.programId.toBuffer()],
+    BPF_UPGRADEABLE_LOADER
+  );
+
+  let ilinkMint: anchor.web3.PublicKey;
+
+  const sampleMessage = () => ({
+    srcChain: new anchor.BN(1),
+    srcGateway: new Array(32).fill(0x11),
+    nonce: new anchor.BN(42),
+    sender: new Array(32).fill(0x22),
+    asset: new Array(32).fill(0x33),
+    amount: new anchor.BN("1000000000000000000"),
+    recipient: admin.publicKey,
+    extraHash: new Array(32).fill(0x55),
+  });
+
+  const expectError = async (p: Promise<unknown>, ...names: string[]) => {
+    try {
+      await p;
+      expect.fail("should have thrown");
+    } catch (err) {
+      const msg = String(err);
+      expect(
+        names.some((n) => msg.includes(n)),
+        `expected one of ${names.join(", ")}, got: ${msg}`
+      ).to.be.true;
+    }
+  };
 
   before(async () => {
-    [stateRegistryPda] = anchor.web3.PublicKey.findProgramAddressSync(
-      [Buffer.from("state")],
-      program.programId
-    );
-    [vkPda] = anchor.web3.PublicKey.findProgramAddressSync(
-      [Buffer.from("vk")],
-      program.programId
+    ilinkMint = await createMint(
+      provider.connection,
+      admin.payer,
+      admin.publicKey,
+      null,
+      6
     );
   });
 
-  it("initializes the hub with fee rate", async () => {
-    const feeRateBps = 10; // 0.1%
-
-    const tx = await program.methods
-      .initialize(feeRateBps)
-      .accounts({
-        stateRegistry: stateRegistryPda,
+  it("initializes the hub (upgrade authority only)", async () => {
+    await program.methods
+      .initialize(10)
+      .accountsPartial({
+        stateRegistry: statePda,
+        ilinkMint,
         admin: admin.publicKey,
-        systemProgram: anchor.web3.SystemProgram.programId,
+        program: program.programId,
+        programData,
       })
       .rpc();
 
-    console.log("Initialize tx:", tx);
-
-    // Verify state — field is nextSequence (renamed from processedSequences)
-    const state = await program.account.stateRegistry.fetch(stateRegistryPda);
-    expect(state.admin.toString()).to.equal(admin.publicKey.toString());
-    expect(state.feeRateBps).to.equal(feeRateBps);
-    expect(state.nextSequence.toNumber()).to.equal(0);
-    expect(state.totalStaked.toNumber()).to.equal(0);
-    expect(state.totalBurned.toNumber()).to.equal(0);
+    const state = await program.account.stateRegistry.fetch(statePda);
+    expect(state.admin.toBase58()).to.equal(admin.publicKey.toBase58());
+    expect(state.ilinkMint.toBase58()).to.equal(ilinkMint.toBase58());
+    expect(state.feeRateBps).to.equal(10);
     expect(state.vkInitialized).to.equal(false);
   });
 
-  it("rejects submit_proof when VK is not initialized", async () => {
-    // Derive the stake PDA for the admin/relayer
-    const [stakePda] = anchor.web3.PublicKey.findProgramAddressSync(
-      [Buffer.from("stake"), admin.publicKey.toBuffer()],
-      program.programId
-    );
-    const proof = Buffer.alloc(256);
+  it("rejects submit_proof before the VK is set", async () => {
+    const msg = sampleMessage();
     const payloadHash = new Array(32).fill(0);
-    const commitmentInput = new Array(32).fill(0);
-
-    try {
-      await program.methods
-        .submitProof(
-          new anchor.BN(1), // source_chain
-          new anchor.BN(0), // sequence
-          proof,
-          payloadHash,
-          commitmentInput
-        )
-        .accounts({
-          stateRegistry: stateRegistryPda,
+    await expectError(
+      program.methods
+        .submitProof(payloadHash, 1, msg, Buffer.alloc(256))
+        .accountsPartial({
+          stateRegistry: statePda,
           stakeAccount: stakePda,
           verificationKey: vkPda,
+          messageRecord: pda(Buffer.from("message"), Buffer.from(payloadHash)),
           relayer: admin.publicKey,
         })
-        .rpc();
-      expect.fail("should have thrown");
-    } catch (err) {
-      // Expected: VKNotInitialized or InsufficientStake (stake account not funded)
-      const msg = err.toString();
-      expect(
-        msg.includes("VKNotInitialized") || msg.includes("InsufficientStake") || msg.includes("AccountNotInitialized")
-      ).to.be.true;
-    }
-  });
-
-  it("rejects submit_proof with wrong proof length", async () => {
-    const [stakePda] = anchor.web3.PublicKey.findProgramAddressSync(
-      [Buffer.from("stake"), admin.publicKey.toBuffer()],
-      program.programId
+        .rpc(),
+      "AccountNotInitialized",
+      "InsufficientStake",
+      "VKNotInitialized"
     );
-    const invalidProof = Buffer.alloc(100); // Wrong length (should be 256)
-    const payloadHash = new Array(32).fill(0);
-    const commitmentInput = new Array(32).fill(0);
-
-    try {
-      await program.methods
-        .submitProof(
-          new anchor.BN(1),
-          new anchor.BN(0),
-          invalidProof,
-          payloadHash,
-          commitmentInput
-        )
-        .accounts({
-          stateRegistry: stateRegistryPda,
-          stakeAccount: stakePda,
-          verificationKey: vkPda,
-          relayer: admin.publicKey,
-        })
-        .rpc();
-      expect.fail("should have thrown");
-    } catch (err) {
-      // Expected rejection — wrong proof length, insufficient stake, or uninitialized VK
-      const msg = err.toString();
-      expect(
-        msg.includes("InvalidProof") || msg.includes("InsufficientStake") ||
-        msg.includes("VKNotInitialized") || msg.includes("AccountNotInitialized")
-      ).to.be.true;
-    }
   });
 
-  it("rejects duplicate sequence numbers via sequential ordering", async () => {
-    // Sequence 0 cannot be submitted again once next_sequence > 0.
-    // We just verify the guard is in place by checking the state.
-    const state = await program.account.stateRegistry.fetch(stateRegistryPda);
-    // nextSequence starts at 0 — any re-submission of seq < nextSequence is rejected
-    expect(state.nextSequence.toNumber()).to.be.gte(0);
+  it("sets the initial VK exactly once", async () => {
+    // Shape-only VK; real proofs are covered by the Rust groth16_end_to_end test.
+    const vk = Buffer.alloc(576, 1);
+    await program.methods
+      .setVerificationKey(vk)
+      .accountsPartial({
+        stateRegistry: statePda,
+        verificationKey: vkPda,
+        admin: admin.publicKey,
+      })
+      .rpc();
+
+    // A second direct set must fail: rotation goes through the timelock.
+    await expectError(
+      program.methods
+        .setVerificationKey(vk)
+        .accountsPartial({
+          stateRegistry: statePda,
+          verificationKey: vkPda,
+          admin: admin.publicKey,
+        })
+        .rpc(),
+      "already in use"
+    );
+  });
+
+  it("refuses to apply a proposed VK before the timelock", async () => {
+    const pendingPda = pda(Buffer.from("pending_vk"));
+    await program.methods
+      .proposeVerificationKey(Buffer.alloc(576, 2))
+      .accountsPartial({
+        stateRegistry: statePda,
+        pendingVerificationKey: pendingPda,
+        admin: admin.publicKey,
+      })
+      .rpc();
+
+    await expectError(
+      program.methods
+        .applyVerificationKey()
+        .accountsPartial({
+          stateRegistry: statePda,
+          pendingVerificationKey: pendingPda,
+          verificationKey: vkPda,
+          admin: admin.publicKey,
+        })
+        .rpc(),
+      "TimelockNotElapsed"
+    );
+  });
+
+  it("rejects staking with a token other than ILINK", async () => {
+    const fakeMint = await createMint(
+      provider.connection,
+      admin.payer,
+      admin.publicKey,
+      null,
+      6
+    );
+    await expectError(
+      program.methods
+        .stake(new anchor.BN("100000000000"))
+        .accountsPartial({
+          stateRegistry: statePda,
+          stakeAccount: stakePda,
+          stakeVault: pda(Buffer.from("stake_vault"), admin.publicKey.toBuffer()),
+          ilinkMint: fakeMint,
+          relayerTokenAccount: admin.publicKey, // never reached
+          relayer: admin.publicKey,
+        })
+        .rpc(),
+      "InvalidMint",
+      "ConstraintAddress"
+    );
   });
 });

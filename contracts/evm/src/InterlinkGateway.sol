@@ -3,24 +3,37 @@ pragma solidity 0.8.28;
 
 /**
  * @title InterlinkGateway
- * @dev Source chain gateway (spoke) for EVM chains.
- * Handles asset custody, event logging for relayers, and verified hub commands.
+ * @dev Spoke gateway for EVM chains: custody, outbound messages, verified inbound messages.
  *
- * Security:
- *  - CEI pattern in sendCrossChainMessage
- *  - Zero-address guards
- *  - emergencyWithdraw for untrapping funds
- *  - Standard Groth16 verification (4-pairing check)
- *  - Pinned to 0.8.28 for stability
+ * Canonical message (shared with the Solana hub and relayer):
  *
- * Groth16 verification uses stored verification key (VK) with the equation:
- *   e(-A, B) · e(α, β) · e(L, γ) · e(C, δ) = 1
- * where L = IC[0] + publicInput * IC[1]
+ *   payloadHash = keccak256(abi.encode(
+ *       keccak256("InterlinkMessage(v1)"),
+ *       uint64 srcChain,  bytes32 srcGateway,
+ *       uint64 dstChain,  bytes32 dstGateway,
+ *       uint64 nonce,     uint8   action,
+ *       bytes32 sender,   bytes32 asset,
+ *       uint256 amount,   bytes32 recipient,
+ *       bytes32 extraHash))
+ *
+ * Both chain IDs and both gateway addresses are bound, so a message cannot be
+ * replayed against another deployment or another chain. Recipients are
+ * bytes32 so Solana addresses fit.
+ *
+ * Inbound proofs are Groth16 over BN254 with one public input:
+ *   commitment = (payloadHash mod r + rc)^5 + nonce   (mod r)
+ * which is the relation the relayer's circuit proves.
+ *
+ * Trust changes (verification key, remote gateways, guardian) are timelocked
+ * or two-step; emergency withdrawal requires the gateway to be paused.
+ *
+ * NOTE: the circuit currently proves only knowledge of a preimage of the
+ * commitment; it does NOT prove that the message was emitted on the source
+ * chain. See docs/SECURITY_REVIEW.md before holding real value here.
  */
 
-interface IERC20 {
-    function transferFrom(address sender, address recipient, uint256 amount) external returns (bool);
-    function transfer(address recipient, uint256 amount) external returns (bool);
+interface IERC20Balance {
+    function balanceOf(address account) external view returns (uint256);
 }
 
 interface IERC721 {
@@ -29,74 +42,119 @@ interface IERC721 {
 }
 
 contract InterlinkGateway {
-    address public immutable daoGuardian;
+    // ─── Constants ──────────────────────────────────────────────────────────
+
+    /// BN254 scalar field r
+    uint256 internal constant R =
+        21888242871839275222246405745257275088548364400416034343698204186575808495617;
+    /// BN254 base field p
+    uint256 internal constant P =
+        21888242871839275222246405745257275088696311157297823662689037894645226208583;
+    /// Circuit round constant: keccak256("interlink_v1_domain") mod r
+    uint256 internal constant ROUND_CONSTANT = uint256(keccak256("interlink_v1_domain")) % R;
+
+    bytes32 public constant MESSAGE_TYPEHASH = keccak256("InterlinkMessage(v1)");
+    uint256 public constant TIMELOCK = 2 days;
+
+    uint8 public constant ACTION_TRANSFER = 1;
+    uint8 public constant ACTION_SWAP = 2;
+    uint8 public constant ACTION_NFT = 3;
+    uint8 public constant ACTION_CALL = 4;
+
+    // ─── Types ──────────────────────────────────────────────────────────────
+
+    struct Message {
+        uint64 srcChain;
+        bytes32 srcGateway;
+        uint64 dstChain;
+        bytes32 dstGateway;
+        uint64 nonce;
+        uint8 action;
+        bytes32 sender;
+        bytes32 asset;
+        uint256 amount;
+        bytes32 recipient;
+        bytes32 extraHash;
+    }
+
+    /// Inbound message fields supplied by the caller. Source gateway and
+    /// destination are not caller-controlled: they come from config and this contract.
+    struct InboundMessage {
+        uint64 srcChain;
+        uint64 nonce;
+        bytes32 sender;
+        bytes32 asset;
+        uint256 amount;
+        bytes32 recipient;
+        bytes32 extraHash;
+    }
+
+    struct PendingRemote {
+        bytes32 gateway;
+        uint256 eta;
+    }
+
+    // ─── State ──────────────────────────────────────────────────────────────
+
+    address public guardian;
+    address public pendingGuardian;
     bool public paused;
+    uint256 private _reentrancy = 1;
 
-    // Anti-replay. Don't execute a nonce more than once.
-    mapping(uint64 => bool) public executedNonces;
     uint64 public currentNonce;
+    /// Inbound replay protection, keyed by canonical payload hash.
+    mapping(bytes32 => bool) public executedMessages;
+    /// Trusted gateway per remote chain. Doubles as the destination allowlist.
+    mapping(uint64 => bytes32) public remoteGateways;
+    mapping(uint64 => bool) public remoteEverConfigured;
+    mapping(uint64 => PendingRemote) public pendingRemoteGateways;
+    /// Amount of each asset backing bridged supply. Releases can never exceed it.
+    mapping(address => uint256) public totalLocked;
+    /// Assets the gateway custodies. `executeVerifiedMessage` may never call them.
+    mapping(address => bool) public isCustodiedAsset;
+    /// No destination mints or returns NFTs yet, so locking is off until one does.
+    bool public nftBridgingEnabled;
 
-    // ─── Groth16 Verification Key ───────────────────────────────────────────
-    // Stored on-chain after trusted setup. Set via setVerificationKey().
+    /// Verification key as 18 words:
+    /// [0..1] alpha | [2..5] beta | [6..9] gamma | [10..13] delta | [14..15] ic0 | [16..17] ic1
+    /// G2 words are (x_im, x_re, y_im, y_re), the EIP-197 precompile order.
+    uint256[18] internal _vk;
     bool public vkInitialized;
-
-    // VK points (BN254, big-endian, EVM precompile format)
-    uint256[2] public vk_alpha;     // G1: (x, y)
-    uint256[2][2] public vk_beta;   // G2: (x_im, x_re, y_im, y_re) packed as [[x_im,x_re],[y_im,y_re]]
-    uint256[2][2] public vk_gamma;  // G2
-    uint256[2][2] public vk_delta;  // G2
-    uint256[2] public vk_ic0;       // G1: IC base
-    uint256[2] public vk_ic1;       // G1: IC for public input
-
-    // BN254 scalar field modulus
-    uint256 constant BN254_SCALAR_FIELD = 21888242871839275222246405745257275088548364400416034343698204186575808495617;
-    // BN254 base field modulus (for point negation)
-    uint256 constant BN254_BASE_FIELD = 21888242871839275222246405745257275088696311157297823662689037894645226208583;
+    uint256[18] internal _pendingVk;
+    uint256 public pendingVkEta;
 
     // ─── Events ─────────────────────────────────────────────────────────────
 
     event MessagePublished(
+        bytes32 indexed payloadHash,
         uint64 indexed nonce,
-        uint64 destinationChain,
-        address sender,
-        bytes32 payloadHash,
-        bytes payload
+        uint64 dstChain,
+        bytes32 dstGateway,
+        uint8 action,
+        bytes32 sender,
+        bytes32 asset,
+        uint256 amount,
+        bytes32 recipient,
+        bytes32 extraHash,
+        bytes data
     );
-
-    event MessageExecuted(uint64 indexed nonce, bool success);
-
-    event SwapInitiated(
-        uint64 indexed nonce,
-        address indexed sender,
-        address recipient,
-        uint256 amountIn,
-        address tokenIn,
-        address tokenOut,
-        uint256 minAmountOut,
-        uint64 destinationChain,
-        bytes swapData,
-        bytes32 payloadHash
-    );
-
-    event NFTLocked(
-        uint64 indexed nonce,
-        address indexed sender,
-        address nftContract,
-        uint256 tokenId,
-        uint64 destinationChain,
-        bytes32 destinationRecipient,
-        bytes32 nftHash
-    );
+    event MessageExecuted(bytes32 indexed payloadHash, uint64 indexed srcChain, uint64 nonce);
 
     event GatewayPaused();
     event GatewayUnpaused();
     event EmergencyWithdraw(address indexed token, address indexed to, uint256 amount);
+    event GuardianProposed(address indexed pendingGuardian);
+    event GuardianTransferred(address indexed previousGuardian, address indexed newGuardian);
+    event RemoteGatewaySet(uint64 indexed chainId, bytes32 gateway);
+    event RemoteGatewayProposed(uint64 indexed chainId, bytes32 gateway, uint256 eta);
+    event VerificationKeyProposed(uint256 eta);
     event VerificationKeyUpdated();
+    event NftBridgingSet(bool enabled);
 
     // ─── Modifiers ──────────────────────────────────────────────────────────
 
     modifier onlyGuardian() {
-        require(msg.sender == daoGuardian, "Interlink: Unauthorized");
+        require(msg.sender == guardian, "Interlink: Unauthorized");
         _;
     }
 
@@ -105,9 +163,16 @@ contract InterlinkGateway {
         _;
     }
 
+    modifier nonReentrant() {
+        require(_reentrancy == 1, "Interlink: reentrant call");
+        _reentrancy = 2;
+        _;
+        _reentrancy = 1;
+    }
+
     constructor(address _guardian) {
         require(_guardian != address(0), "Interlink: zero guardian");
-        daoGuardian = _guardian;
+        guardian = _guardian;
     }
 
     // ─── Admin ──────────────────────────────────────────────────────────────
@@ -122,253 +187,387 @@ contract InterlinkGateway {
         emit GatewayUnpaused();
     }
 
+    /// @dev Step 1 of 2. The guardian should be a multisig/timelock, not an EOA.
+    function transferGuardian(address newGuardian) external onlyGuardian {
+        pendingGuardian = newGuardian;
+        emit GuardianProposed(newGuardian);
+    }
+
+    /// @dev Step 2 of 2: the nominee proves it controls the address.
+    function acceptGuardian() external {
+        require(msg.sender == pendingGuardian, "Interlink: not pending guardian");
+        emit GuardianTransferred(guardian, msg.sender);
+        guardian = msg.sender;
+        pendingGuardian = address(0);
+    }
+
+    /// @dev Only while paused, so funds cannot be pulled silently during normal operation.
     function emergencyWithdraw(address token, address to, uint256 amount) external onlyGuardian {
+        require(paused, "Interlink: pause first");
         require(to != address(0), "Interlink: zero recipient");
-        if (token == address(0)) {
-            (bool ok,) = to.call{value: amount}("");
-            require(ok, "Interlink: ETH transfer failed");
-        } else {
-            require(IERC20(token).transfer(to, amount), "Interlink: token transfer failed");
-        }
+        uint256 locked = totalLocked[token];
+        totalLocked[token] = amount > locked ? 0 : locked - amount;
+        _send(token, to, amount);
         emit EmergencyWithdraw(token, to, amount);
     }
 
-    /**
-     * @dev Set the Groth16 verification key. Must be called once after trusted
-     * setup before any proofs can be verified. Guardian-only.
-     *
-     * @param alpha   G1 point (2 uint256: x, y)
-     * @param beta    G2 point (2x2 uint256: [x_im,x_re], [y_im,y_re])
-     * @param gamma   G2 point
-     * @param delta   G2 point
-     * @param ic0     G1 point — IC base
-     * @param ic1     G1 point — IC for public input
-     */
-    function setVerificationKey(
-        uint256[2] calldata alpha,
-        uint256[2][2] calldata beta,
-        uint256[2][2] calldata gamma,
-        uint256[2][2] calldata delta,
-        uint256[2] calldata ic0,
-        uint256[2] calldata ic1
-    ) external onlyGuardian {
-        vk_alpha = alpha;
-        vk_beta = beta;
-        vk_gamma = gamma;
-        vk_delta = delta;
-        vk_ic0 = ic0;
-        vk_ic1 = ic1;
+    /// @dev Initial configuration of a remote chain takes effect immediately.
+    /// Any later change must go through propose/apply with the timelock.
+    function setRemoteGateway(uint64 chainId, bytes32 gateway) external onlyGuardian {
+        require(gateway != bytes32(0), "Interlink: zero gateway");
+        require(!remoteEverConfigured[chainId], "Interlink: use proposeRemoteGateway");
+        remoteEverConfigured[chainId] = true;
+        remoteGateways[chainId] = gateway;
+        emit RemoteGatewaySet(chainId, gateway);
+    }
+
+    function proposeRemoteGateway(uint64 chainId, bytes32 gateway) external onlyGuardian {
+        require(gateway != bytes32(0), "Interlink: zero gateway");
+        uint256 eta = block.timestamp + TIMELOCK;
+        pendingRemoteGateways[chainId] = PendingRemote(gateway, eta);
+        emit RemoteGatewayProposed(chainId, gateway, eta);
+    }
+
+    function applyRemoteGateway(uint64 chainId) external onlyGuardian {
+        PendingRemote memory p = pendingRemoteGateways[chainId];
+        require(p.gateway != bytes32(0), "Interlink: nothing pending");
+        require(block.timestamp >= p.eta, "Interlink: timelock");
+        delete pendingRemoteGateways[chainId];
+        remoteEverConfigured[chainId] = true;
+        remoteGateways[chainId] = p.gateway;
+        emit RemoteGatewaySet(chainId, p.gateway);
+    }
+
+    /// @dev Disabling a route reduces trust, so it is immediate.
+    function disableRemoteGateway(uint64 chainId) external onlyGuardian {
+        delete remoteGateways[chainId];
+        emit RemoteGatewaySet(chainId, bytes32(0));
+    }
+
+    /// @dev Enable only once a destination can mint and return bridged NFTs.
+    function setNftBridgingEnabled(bool enabled) external onlyGuardian {
+        nftBridgingEnabled = enabled;
+        emit NftBridgingSet(enabled);
+    }
+
+    /// @notice Set the initial Groth16 verification key (576 bytes, as produced by
+    /// `cargo run --bin export-vk`). Replacement keys go through proposeVerificationKey.
+    function setVerificationKey(bytes calldata vkData) external onlyGuardian {
+        require(!vkInitialized, "Interlink: use proposeVerificationKey");
+        _vk = _decodeVk(vkData);
         vkInitialized = true;
         emit VerificationKeyUpdated();
     }
 
-    // ─── User-facing ────────────────────────────────────────────────────────
+    function proposeVerificationKey(bytes calldata vkData) external onlyGuardian {
+        _pendingVk = _decodeVk(vkData);
+        pendingVkEta = block.timestamp + TIMELOCK;
+        emit VerificationKeyProposed(pendingVkEta);
+    }
 
+    function applyVerificationKey() external onlyGuardian {
+        require(pendingVkEta != 0, "Interlink: nothing pending");
+        require(block.timestamp >= pendingVkEta, "Interlink: timelock");
+        _vk = _pendingVk;
+        delete _pendingVk;
+        pendingVkEta = 0;
+        vkInitialized = true;
+        emit VerificationKeyUpdated();
+    }
+
+    function verificationKey() external view returns (uint256[18] memory) {
+        return _vk;
+    }
+
+    // ─── Outbound ───────────────────────────────────────────────────────────
+
+    /// @notice Lock `amount` of `token` (address(0) = native) and send it to `recipient` on `dstChain`.
     function sendCrossChainMessage(
-        uint64 destChain,
+        uint64 dstChain,
         address token,
         uint256 amount,
+        bytes32 recipient,
         bytes calldata payload
-    ) external payable whenNotPaused {
-        if (token == address(0)) {
-            require(msg.value == amount, "Interlink: Incorrect native value sent");
-        }
-
-        uint64 nonce = currentNonce++;
-        bytes32 payloadHash = keccak256(abi.encode(msg.sender, destChain, token, amount, payload));
-
-        emit MessagePublished(nonce, destChain, msg.sender, payloadHash, payload);
-
-        if (token != address(0)) {
-            require(IERC20(token).transferFrom(msg.sender, address(this), amount), "Interlink: Transfer failed");
-        }
+    ) external payable whenNotPaused nonReentrant returns (bytes32 payloadHash) {
+        require(recipient != bytes32(0), "Interlink: zero recipient");
+        uint256 received = _collect(token, amount);
+        payloadHash = _publish(
+            dstChain, ACTION_TRANSFER, _toBytes32(token), received, recipient, keccak256(payload), payload
+        );
     }
 
+    /// @notice Lock `amountIn` and request a swap into `tokenOut` on `dstChain`.
+    /// @param tokenOut     Destination-chain token (bytes32 so Solana mints fit).
+    /// @param minAmountOut Minimum output in destination token units (≤ uint64 max for Solana).
     function initiateSwap(
-        uint64 destChain,
+        uint64 dstChain,
         address tokenIn,
         uint256 amountIn,
-        address tokenOut,
+        bytes32 tokenOut,
         uint256 minAmountOut,
-        address recipient,
+        bytes32 recipient,
         bytes calldata swapData
-    ) external payable whenNotPaused {
-        require(amountIn > 0, "Interlink: zero amount");
-        require(recipient != address(0), "Interlink: zero recipient");
-
-        if (tokenIn == address(0)) {
-            require(msg.value == amountIn, "Interlink: Incorrect native value sent");
-        }
-
-        uint64 nonce = currentNonce++;
-        bytes32 payloadHash = keccak256(abi.encode(
-            msg.sender, destChain, tokenIn, amountIn, tokenOut, minAmountOut, recipient, swapData
-        ));
-
-        emit SwapInitiated(
-            nonce, msg.sender, recipient, amountIn,
-            tokenIn, tokenOut, minAmountOut, destChain, swapData, payloadHash
+    ) external payable whenNotPaused nonReentrant returns (bytes32 payloadHash) {
+        require(recipient != bytes32(0), "Interlink: zero recipient");
+        require(tokenOut != bytes32(0), "Interlink: zero tokenOut");
+        require(minAmountOut <= type(uint64).max, "Interlink: minAmountOut too large");
+        uint256 received = _collect(tokenIn, amountIn);
+        bytes32 extraHash = keccak256(abi.encode(tokenOut, minAmountOut, keccak256(swapData)));
+        payloadHash = _publish(
+            dstChain,
+            ACTION_SWAP,
+            _toBytes32(tokenIn),
+            received,
+            recipient,
+            extraHash,
+            abi.encode(tokenOut, minAmountOut, swapData)
         );
-
-        if (tokenIn != address(0)) {
-            require(IERC20(tokenIn).transferFrom(msg.sender, address(this), amountIn), "Interlink: Transfer failed");
-        }
     }
 
+    /// @notice Lock an NFT for bridging. Disabled by default (`nftBridgingEnabled`):
+    /// no destination mints or returns NFTs yet, so a locked NFT would be stranded.
     function lockNFT(
         address nftContract,
         uint256 tokenId,
-        uint64 destinationChain,
-        bytes32 destinationRecipient
-    ) external whenNotPaused {
-        require(nftContract != address(0), "Interlink: zero NFT contract");
-        require(destinationRecipient != bytes32(0), "Interlink: zero recipient");
-
-        uint64 nonce = currentNonce++;
-        bytes32 nftHash = keccak256(abi.encode(nftContract, tokenId, msg.sender, destinationChain));
-
-        emit NFTLocked(
-            nonce, msg.sender, nftContract, tokenId,
-            destinationChain, destinationRecipient, nftHash
-        );
+        uint64 dstChain,
+        bytes32 recipient
+    ) external whenNotPaused nonReentrant returns (bytes32 payloadHash) {
+        require(nftBridgingEnabled, "Interlink: NFT bridging disabled");
+        require(nftContract.code.length > 0, "Interlink: zero NFT contract");
+        require(recipient != bytes32(0), "Interlink: zero recipient");
 
         IERC721(nftContract).transferFrom(msg.sender, address(this), tokenId);
+        require(IERC721(nftContract).ownerOf(tokenId) == address(this), "Interlink: NFT not received");
+        isCustodiedAsset[nftContract] = true;
+
+        payloadHash = _publish(
+            dstChain,
+            ACTION_NFT,
+            _toBytes32(nftContract),
+            1,
+            recipient,
+            keccak256(abi.encode(tokenId)),
+            abi.encode(tokenId)
+        );
     }
 
-    // ─── Relayer-facing ─────────────────────────────────────────────────────
+    // ─── Inbound ────────────────────────────────────────────────────────────
 
-    /**
-     * @dev Execute a verified message from the hub. Uses standard Groth16
-     * verification with stored VK.
-     *
-     * @param target     Destination contract for the payload.
-     * @param nonce      Origin sequence ID — prevents replay.
-     * @param payload    ABI-encoded call data.
-     * @param snarkProof 256-byte Groth16 proof: A(64) + B(128) + C(64).
-     */
+    /// @notice Release locked tokens for a proven inbound transfer.
+    function releaseTokens(InboundMessage calldata m, bytes calldata proof)
+        external
+        whenNotPaused
+        nonReentrant
+    {
+        bytes32 h = _consume(ACTION_TRANSFER, m, proof);
+        address token = _toAddress(m.asset);
+        address to = _toAddress(m.recipient);
+        require(to != address(0), "Interlink: zero recipient");
+
+        // Reverts on underflow: the gateway never releases more than it locked.
+        totalLocked[token] -= m.amount;
+        _send(token, to, m.amount);
+
+        emit MessageExecuted(h, m.srcChain, m.nonce);
+    }
+
+    /// @notice Execute a proven generic call. The target may not be this
+    /// gateway or any asset it custodies: a verified message must never be
+    /// able to move custody (the Poly Network failure mode).
     function executeVerifiedMessage(
-        address target,
-        uint64 nonce,
+        InboundMessage calldata m,
         bytes calldata payload,
-        bytes calldata snarkProof
-    ) external whenNotPaused {
-        require(target != address(0), "Interlink: zero target");
-        require(!executedNonces[nonce], "Interlink: Message already executed");
-        require(vkInitialized, "Interlink: VK not initialized");
+        bytes calldata proof
+    ) external whenNotPaused nonReentrant {
+        require(m.asset == bytes32(0) && m.amount == 0, "Interlink: calls carry no value");
+        require(m.extraHash == keccak256(payload), "Interlink: payload mismatch");
+        address target = _toAddress(m.recipient);
+        require(target.code.length > 0, "Interlink: target has no code");
+        require(target != address(this), "Interlink: cannot target gateway");
+        require(!isCustodiedAsset[target], "Interlink: cannot target custodied asset");
 
-        // Derive public input: keccak256(target, nonce, payload) domain-separated
-        bytes32 publicInputHash = keccak256(abi.encodePacked(target, nonce, payload));
-        uint256 publicInput = uint256(
-            keccak256(abi.encodePacked(publicInputHash, "interlink_v1_domain"))
-        ) % BN254_SCALAR_FIELD;
-
-        bool valid = _verifyGroth16(snarkProof, publicInput);
-        require(valid, "Interlink: Invalid Groth16 proof");
-
-        executedNonces[nonce] = true;
+        bytes32 h = _consume(ACTION_CALL, m, proof);
 
         (bool success,) = target.call(payload);
         require(success, "Interlink: Execution failed");
 
-        emit MessageExecuted(nonce, success);
+        emit MessageExecuted(h, m.srcChain, m.nonce);
     }
 
-    // ─── Groth16 Verification ───────────────────────────────────────────────
+    // ─── Hashing ────────────────────────────────────────────────────────────
 
-    /**
-     * @dev Standard Groth16 verification using BN254 precompiles.
-     *
-     * Verification equation (4-pairing multi-check):
-     *   e(-A, B) · e(α, β) · e(L, γ) · e(C, δ) = 1
-     *
-     * Where L = IC[0] + publicInput * IC[1]
-     *
-     * @param proof        256-byte proof: A(64) + B(128) + C(64)
-     * @param publicInput  Scalar field element (the commitment)
-     */
-    function _verifyGroth16(bytes calldata proof, uint256 publicInput) internal view returns (bool) {
-        if (proof.length != 256) return false;
-        require(publicInput < BN254_SCALAR_FIELD, "Interlink: input >= scalar field");
-
-        // Decode proof points
-        (uint256 ax, uint256 ay) = abi.decode(proof[0:64], (uint256, uint256));
-        (uint256 bx1, uint256 bx2, uint256 by1, uint256 by2) = abi.decode(proof[64:192], (uint256, uint256, uint256, uint256));
-        (uint256 cx, uint256 cy) = abi.decode(proof[192:256], (uint256, uint256));
-
-        // Compute L = IC[0] + publicInput * IC[1]
-        // Step 1: ECMUL — publicInput * IC[1]
-        uint256[3] memory mulInput;
-        mulInput[0] = vk_ic1[0];
-        mulInput[1] = vk_ic1[1];
-        mulInput[2] = publicInput;
-        uint256[2] memory scaledIC1;
-        bool mulOk;
-        assembly {
-            mulOk := staticcall(gas(), 0x07, mulInput, 0x60, scaledIC1, 0x40)
-        }
-        require(mulOk, "Interlink: ECMUL failed");
-
-        // Step 2: ECADD — IC[0] + scaledIC1
-        uint256[4] memory addInput;
-        addInput[0] = vk_ic0[0];
-        addInput[1] = vk_ic0[1];
-        addInput[2] = scaledIC1[0];
-        addInput[3] = scaledIC1[1];
-        uint256[2] memory L;
-        bool addOk;
-        assembly {
-            addOk := staticcall(gas(), 0x06, addInput, 0x80, L, 0x40)
-        }
-        require(addOk, "Interlink: ECADD failed");
-
-        // 4-pairing check: e(-A, B) · e(α, β) · e(L, γ) · e(C, δ) = 1
-        // -A: negate y coordinate → (ax, BN254_BASE_FIELD - ay)
-        uint256 neg_ay = (ay == 0) ? 0 : BN254_BASE_FIELD - ay;
-
-        uint256[24] memory pairingInput;
-
-        // Pair 0: (-A, B)
-        pairingInput[0]  = ax;
-        pairingInput[1]  = neg_ay;
-        pairingInput[2]  = bx1;
-        pairingInput[3]  = bx2;
-        pairingInput[4]  = by1;
-        pairingInput[5]  = by2;
-
-        // Pair 1: (alpha, beta)
-        pairingInput[6]  = vk_alpha[0];
-        pairingInput[7]  = vk_alpha[1];
-        pairingInput[8]  = vk_beta[0][0];
-        pairingInput[9]  = vk_beta[0][1];
-        pairingInput[10] = vk_beta[1][0];
-        pairingInput[11] = vk_beta[1][1];
-
-        // Pair 2: (L, gamma)
-        pairingInput[12] = L[0];
-        pairingInput[13] = L[1];
-        pairingInput[14] = vk_gamma[0][0];
-        pairingInput[15] = vk_gamma[0][1];
-        pairingInput[16] = vk_gamma[1][0];
-        pairingInput[17] = vk_gamma[1][1];
-
-        // Pair 3: (C, delta)
-        pairingInput[18] = cx;
-        pairingInput[19] = cy;
-        pairingInput[20] = vk_delta[0][0];
-        pairingInput[21] = vk_delta[0][1];
-        pairingInput[22] = vk_delta[1][0];
-        pairingInput[23] = vk_delta[1][1];
-
-        // Call ecPairing precompile (0x08): returns 1 if the pairing product == 1
-        uint256[1] memory result;
-        bool pairingOk;
-        assembly {
-            pairingOk := staticcall(gas(), 0x08, pairingInput, 768, result, 0x20)
-        }
-
-        return pairingOk && result[0] == 1;
+    function hashMessage(Message memory m) public pure returns (bytes32) {
+        return keccak256(abi.encode(MESSAGE_TYPEHASH, m));
     }
 
-    /// @dev Accept plain ETH sends.
-    receive() external payable {}
+    /// @notice Circuit public input for a payload hash and nonce.
+    function commitment(bytes32 payloadHash, uint64 nonce) public pure returns (uint256) {
+        uint256 w = addmod(uint256(payloadHash) % R, ROUND_CONSTANT, R);
+        uint256 w2 = mulmod(w, w, R);
+        uint256 w4 = mulmod(w2, w2, R);
+        return addmod(mulmod(w4, w, R), uint256(nonce), R);
+    }
+
+    // ─── Internals ──────────────────────────────────────────────────────────
+
+    function _publish(
+        uint64 dstChain,
+        uint8 action,
+        bytes32 asset,
+        uint256 amount,
+        bytes32 recipient,
+        bytes32 extraHash,
+        bytes memory data
+    ) internal returns (bytes32 h) {
+        bytes32 dstGateway = remoteGateways[dstChain];
+        require(dstGateway != bytes32(0), "Interlink: unsupported destination");
+
+        uint64 nonce = currentNonce++;
+        bytes32 sender = _toBytes32(msg.sender);
+        h = hashMessage(
+            Message({
+                srcChain: uint64(block.chainid),
+                srcGateway: _toBytes32(address(this)),
+                dstChain: dstChain,
+                dstGateway: dstGateway,
+                nonce: nonce,
+                action: action,
+                sender: sender,
+                asset: asset,
+                amount: amount,
+                recipient: recipient,
+                extraHash: extraHash
+            })
+        );
+        emit MessagePublished(
+            h, nonce, dstChain, dstGateway, action, sender, asset, amount, recipient, extraHash, data
+        );
+    }
+
+    /// Verify and mark an inbound message as executed. Returns its payload hash.
+    function _consume(uint8 action, InboundMessage calldata m, bytes calldata proof)
+        internal
+        returns (bytes32 h)
+    {
+        bytes32 srcGateway = remoteGateways[m.srcChain];
+        require(srcGateway != bytes32(0), "Interlink: unknown source");
+        require(vkInitialized, "Interlink: VK not initialized");
+
+        h = hashMessage(
+            Message({
+                srcChain: m.srcChain,
+                srcGateway: srcGateway,
+                dstChain: uint64(block.chainid),
+                dstGateway: _toBytes32(address(this)),
+                nonce: m.nonce,
+                action: action,
+                sender: m.sender,
+                asset: m.asset,
+                amount: m.amount,
+                recipient: m.recipient,
+                extraHash: m.extraHash
+            })
+        );
+        require(!executedMessages[h], "Interlink: Message already executed");
+        require(_verifyGroth16(proof, commitment(h, m.nonce)), "Interlink: Invalid Groth16 proof");
+        executedMessages[h] = true;
+    }
+
+    /// Pull funds in and return the amount actually received (fee-on-transfer safe).
+    function _collect(address token, uint256 amount) internal returns (uint256 received) {
+        require(amount > 0, "Interlink: zero amount");
+        if (token == address(0)) {
+            require(msg.value == amount, "Interlink: Incorrect native value sent");
+            received = amount;
+        } else {
+            require(msg.value == 0, "Interlink: unexpected native value");
+            require(token.code.length > 0, "Interlink: token has no code");
+            uint256 before = IERC20Balance(token).balanceOf(address(this));
+            _safeTransferFrom(token, msg.sender, address(this), amount);
+            received = IERC20Balance(token).balanceOf(address(this)) - before;
+            require(received > 0, "Interlink: nothing received");
+            isCustodiedAsset[token] = true;
+        }
+        // Solana amounts are bounded; keep every message representable everywhere.
+        require(received <= type(uint128).max, "Interlink: amount too large");
+        totalLocked[token] += received;
+    }
+
+    function _send(address token, address to, uint256 amount) internal {
+        if (token == address(0)) {
+            (bool ok,) = to.call{value: amount}("");
+            require(ok, "Interlink: ETH transfer failed");
+        } else {
+            _safeTransfer(token, to, amount);
+        }
+    }
+
+    /// Accepts tokens that return nothing (USDT) as well as those returning bool.
+    function _safeTransfer(address token, address to, uint256 amount) private {
+        (bool ok, bytes memory data) = token.call(abi.encodeWithSelector(0xa9059cbb, to, amount));
+        require(ok && (data.length == 0 || abi.decode(data, (bool))), "Interlink: token transfer failed");
+    }
+
+    function _safeTransferFrom(address token, address from, address to, uint256 amount) private {
+        (bool ok, bytes memory data) =
+            token.call(abi.encodeWithSelector(0x23b872dd, from, to, amount));
+        require(ok && (data.length == 0 || abi.decode(data, (bool))), "Interlink: Transfer failed");
+    }
+
+    function _toBytes32(address a) internal pure returns (bytes32) {
+        return bytes32(uint256(uint160(a)));
+    }
+
+    function _toAddress(bytes32 b) internal pure returns (address) {
+        require(uint256(b) >> 160 == 0, "Interlink: not an EVM address");
+        return address(uint160(uint256(b)));
+    }
+
+    function _decodeVk(bytes calldata vkData) internal pure returns (uint256[18] memory words) {
+        require(vkData.length == 576, "Interlink: VK must be 576 bytes");
+        words = abi.decode(vkData, (uint256[18]));
+        for (uint256 i; i < 18; ++i) {
+            require(words[i] < P, "Interlink: VK coordinate out of range");
+        }
+    }
+
+    // ─── Groth16 ────────────────────────────────────────────────────────────
+
+    /// e(−A, B) · e(α, β) · e(L, γ) · e(C, δ) = 1,  L = IC0 + input · IC1
+    /// proof = A (x, y) | B (x_im, x_re, y_im, y_re) | C (x, y), 32-byte big-endian words.
+    function _verifyGroth16(bytes calldata proof, uint256 input) internal view returns (bool) {
+        if (proof.length != 256 || input >= R) return false;
+        uint256[8] memory p = abi.decode(proof, (uint256[8]));
+        for (uint256 i; i < 8; ++i) {
+            if (p[i] >= P) return false;
+        }
+        uint256[18] memory vk = _vk;
+
+        uint256[3] memory mulIn = [vk[16], vk[17], input];
+        uint256[2] memory scaled;
+        bool ok;
+        assembly {
+            ok := staticcall(gas(), 0x07, mulIn, 0x60, scaled, 0x40)
+        }
+        if (!ok) return false;
+
+        uint256[4] memory addIn = [vk[14], vk[15], scaled[0], scaled[1]];
+        uint256[2] memory l;
+        assembly {
+            ok := staticcall(gas(), 0x06, addIn, 0x80, l, 0x40)
+        }
+        if (!ok) return false;
+
+        uint256[24] memory input24 = [
+            p[0], p[1] == 0 ? 0 : P - p[1], p[2], p[3], p[4], p[5],
+            vk[0], vk[1], vk[2], vk[3], vk[4], vk[5],
+            l[0], l[1], vk[6], vk[7], vk[8], vk[9],
+            p[6], p[7], vk[10], vk[11], vk[12], vk[13]
+        ];
+        uint256[1] memory out;
+        assembly {
+            ok := staticcall(gas(), 0x08, input24, 768, out, 0x20)
+        }
+        return ok && out[0] == 1;
+    }
 }

@@ -1,7 +1,18 @@
+//! Halo2 circuit primitives (Poseidon chip) and payload types.
+//!
+//! The production relayer lives in the `relayer` crate and uses Groth16.
+//! An older standalone relayer that used to live here was removed: it produced
+//! Halo2 proofs the on-chain Groth16 verifiers cannot check, and pulled in
+//! ethers-providers (and through it the vulnerable ring 0.16).
+
 pub mod circuit;
-pub mod network;
-pub mod relayer;
 pub mod types;
+
+/// keccak256, used to derive the circuit round constant.
+pub fn keccak256(data: &[u8]) -> [u8; 32] {
+    use sha3::{Digest, Keccak256};
+    Keccak256::digest(data).into()
+}
 
 /// Core errors for protocol execution and network failure
 #[derive(Debug)]

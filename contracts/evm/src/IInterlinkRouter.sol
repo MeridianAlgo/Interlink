@@ -45,8 +45,9 @@ interface IInterlinkRouter {
     function currentNonce() external view returns (uint64);
 
     /**
-     * @dev Returns whether a specific nonce has been executed.
-     * Maps to InterlinkGateway.executedNonces.
+     * @dev Returns whether an inbound message has been executed, keyed by its
+     * canonical payload hash (nonces are only unique per source chain).
+     * Maps to InterlinkGateway.executedMessages.
      */
-    function executedNonces(uint64 nonce) external view returns (bool);
+    function executedMessages(bytes32 payloadHash) external view returns (bool);
 }
