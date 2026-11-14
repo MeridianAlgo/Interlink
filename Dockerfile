@@ -47,7 +47,7 @@ USER relayer
 WORKDIR /home/relayer
 
 # Required env vars (see .env.example):
-#   EVM_WS_RPC_URL, EVM_HTTP_RPC_URL, SOLANA_RPC_URL,
+#   CHAIN_ID, EVM_HTTP_RPC_URL, SOLANA_RPC_URL, PROVING_KEY_PATH,
 #   GATEWAY_ADDRESS, HUB_PROGRAM_ID, KEYPAIR_PATH
 
 ENV RUST_LOG=relayer=info

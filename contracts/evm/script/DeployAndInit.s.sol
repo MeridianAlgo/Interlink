@@ -34,7 +34,7 @@ contract DeployAndInit is Script {
             gateway.setVerificationKey(vkData);
             console2.log("Verification key set successfully (576 bytes)");
         } else {
-            console2.log("No VK provided — call setVerificationKey() before processing proofs");
+            console2.log("No VK provided - call setVerificationKey() before processing proofs");
         }
 
         vm.stopBroadcast();

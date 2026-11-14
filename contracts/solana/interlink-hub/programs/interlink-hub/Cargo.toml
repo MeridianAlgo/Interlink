@@ -21,3 +21,13 @@ idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build"]
 anchor-lang = "0.30.1"
 anchor-spl = "0.30.1"
 solana-program = "=1.18.26"
+
+# Host-only: cross-check field arithmetic and run a real Groth16 proof
+# through the on-chain verifier.
+[dev-dependencies]
+ark-bn254 = "0.4"
+ark-ff = "0.4"
+ark-groth16 = "0.4"
+ark-relations = "0.4"
+ark-snark = "0.4"
+ark-std = "0.4"

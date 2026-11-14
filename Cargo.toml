@@ -9,11 +9,5 @@ members = [
 [workspace.metadata.cargo-udeps.ignore]
 development = true
 
-# security patches. keeping the gremlins out.
-# override ring to 0.17.12+. stops aes panics from rustsec-2025-0009.
-# this crate is a transitive dep via ethers-providers → jsonwebtoken.
-[workspace.dependencies]
-ring = ">=0.17.12"
-
 [profile.release]
 overflow-checks = true

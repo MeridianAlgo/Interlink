@@ -13,7 +13,8 @@ export enum ChainId {
   ArbitrumOne = 42161,
   ArbitrumNova = 42170,
   Base = 8453,
-  Solana = 900, // InterLink internal ID for Solana Hub
+  /** InterLink hub chain ID. Must equal HUB_CHAIN_ID in the contracts and relayer. */
+  Solana = 2,
 }
 
 export const CHAIN_NAMES: Record<ChainId, string> = {
@@ -41,6 +42,8 @@ export const CHAIN_FINALITY_SECONDS: Partial<Record<ChainId, number>> = {
 
 /** Status of a cross-chain transfer. */
 export enum TransferStatus {
+  /** Not yet attested on the hub (waiting for source finality or proof). */
+  Pending = "pending",
   /** Transfer submitted on source chain, waiting for finality. */
   PendingFinality = "pending_finality",
   /** Source block is final, ZK proof being generated. */
@@ -95,8 +98,10 @@ export interface TransferParams {
 
 /** A submitted transfer with tracking info. */
 export interface Transfer {
-  /** Unique sequence number assigned by the gateway. */
+  /** Gateway nonce (unique per source gateway, not globally). */
   sequence: number;
+  /** Canonical payload hash: the global identifier used for tracking. */
+  payloadHash: string;
   /** Source transaction hash. */
   txHash: string;
   /** Source block number. */
@@ -105,8 +110,8 @@ export interface Transfer {
   status: TransferStatus;
   /** Parameters used for this transfer. */
   params: TransferParams;
-  /** Quote used for this transfer. */
-  quote: TransferQuote;
+  /** Quote used for this transfer (absent for swaps). */
+  quote?: TransferQuote;
   /** Solana Hub settlement signature (once complete). */
   settlementSignature?: string;
   /** Total elapsed time in ms (once complete). */
@@ -123,8 +128,10 @@ export interface SwapParams {
   destinationChain: ChainId;
   /** Recipient on destination. */
   recipient: string;
-  /** Desired output token address on destination chain. */
+  /** Output token on the destination chain (Solana mint, base58 or bytes32 hex). */
   tokenOut: string;
+  /** Input token on the source chain (zero address / omitted = native). */
+  tokenIn?: string;
   /** Minimum output amount (slippage protection). */
   minAmountOut: bigint;
   /** Optional swap routing data for destination DEX. */
@@ -199,10 +206,26 @@ export interface InterlinkConfig {
    * Can be an RPC URL string or an ethers Provider.
    */
   evmRpcUrl?: string;
+  /** InterlinkGateway address on the source chain (required for transfer/swap). */
+  gatewayAddress?: string;
+  /** Source chain ID; defaults to the signer provider network. */
+  sourceChain?: ChainId;
+  /** Bearer token for the relayer webhook endpoints (API_TOKEN on the relayer). */
+  apiToken?: string;
   /** Request timeout in milliseconds (default: 10_000). */
   timeoutMs?: number;
   /** Whether to enable verbose SDK logging (default: false). */
   debug?: boolean;
+}
+
+/** On-chain status of a message on the hub, as reported by GET /transfers/{payloadHash}. */
+export interface TransferStatusInfo {
+  payloadHash: string;
+  status: TransferStatus;
+  /** Relayer that attested the proof (base58), once attested. */
+  attestedBy?: string;
+  /** Unix time of attestation, once attested. */
+  attestedAt?: number;
 }
 
 export const DEFAULT_RELAYER_URL = "https://relayer.interlink.protocol";

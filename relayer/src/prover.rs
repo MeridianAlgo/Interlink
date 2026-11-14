@@ -3,20 +3,30 @@
 //! Generates BN254 Groth16 proofs that verify on both EVM and Solana.
 //! Circuit relation: commitment = (message + round_constant)^5 + sequence
 //!
+//! SECURITY: this circuit only proves knowledge of a preimage of the public
+//! commitment, which the verifier computes from the payload hash itself. It
+//! does NOT prove that the message was emitted on the source chain, so anyone
+//! holding the proving key can "prove" any message. The bridge's real trust
+//! assumption is therefore "whoever holds the proving key", until the circuit
+//! verifies source-chain consensus and receipt inclusion. See
+//! docs/SECURITY_REVIEW.md.
+//!
 //! Proof format: 256 bytes = A (64-byte G1) + B (128-byte G2) + C (64-byte G1)
 //! Serialization: big-endian, EVM/Solana precompile compatible.
 
-use crate::events::GatewayEvent;
+use crate::events::{CanonicalMessage, GatewayEvent};
 use ark_bn254::{Bn254, Fr, G1Affine, G2Affine};
 use ark_ff::{BigInteger, Field, PrimeField};
 use ark_groth16::{Groth16, PreparedVerifyingKey, ProvingKey, VerifyingKey};
 use ark_relations::r1cs::{
     ConstraintSynthesizer, ConstraintSystemRef, LinearCombination, SynthesisError, Variable,
 };
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use ark_snark::SNARK;
+use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::info;
+use tracing::{info, warn};
 
 /// Domain salt — must match on-chain verifiers and EVM gateway.
 const DOMAIN_SALT: &[u8] = b"interlink_v1_domain";
@@ -24,11 +34,16 @@ const DOMAIN_SALT: &[u8] = b"interlink_v1_domain";
 // ─── Circuit ────────────────────────────────────────────────────────────────
 
 /// Compute the deterministic round constant from the domain salt.
-/// Uses keccak256 truncated to fit within BN254 scalar field.
 fn compute_round_constant() -> Fr {
-    let hash = ethers_core::utils::keccak256(DOMAIN_SALT);
-    // Interpret as big-endian and reduce mod r
+    let hash = crate::evm::keccak256(DOMAIN_SALT);
     Fr::from_be_bytes_mod_order(&hash)
+}
+
+/// Public input for a payload hash and sequence: (msg + rc)^5 + seq.
+/// Must match `InterlinkGateway.commitment` and the hub's `compute_commitment`.
+pub fn compute_commitment(payload_hash: &[u8; 32], sequence: u64) -> Fr {
+    let w = Fr::from_be_bytes_mod_order(payload_hash) + compute_round_constant();
+    w.square().square() * w + Fr::from(sequence)
 }
 
 /// The InterLink Groth16 circuit.
@@ -39,13 +54,6 @@ fn compute_round_constant() -> Fr {
 /// - Public input:  commitment (1 field element)
 /// - Private witness: message, sequence
 /// - Round constant: deterministic from domain salt (hardcoded in circuit)
-///
-/// R1CS constraints (4 multiplications):
-///   w  = message + rc           (linear, enforced)
-///   v1 = w * w                  (w²)
-///   v2 = v1 * v1                (w⁴)
-///   v3 = v2 * w                 (w⁵)
-///   commitment = v3 + sequence  (linear, enforced)
 #[derive(Clone)]
 pub struct InterlinkCircuit {
     pub message: Option<Fr>,
@@ -67,7 +75,6 @@ impl ConstraintSynthesizer<Fr> for InterlinkCircuit {
     fn generate_constraints(self, cs: ConstraintSystemRef<Fr>) -> Result<(), SynthesisError> {
         let rc = self.round_constant;
 
-        // Private witnesses
         let msg =
             cs.new_witness_variable(|| self.message.ok_or(SynthesisError::AssignmentMissing))?;
         let seq =
@@ -76,8 +83,6 @@ impl ConstraintSynthesizer<Fr> for InterlinkCircuit {
         // w = msg + rc
         let w_val = self.message.map(|m| m + rc);
         let w = cs.new_witness_variable(|| w_val.ok_or(SynthesisError::AssignmentMissing))?;
-
-        // Enforce: (msg + rc) * 1 = w
         {
             let mut a = LinearCombination::zero();
             a += (ark_ff::One::one(), msg);
@@ -120,8 +125,6 @@ impl ConstraintSynthesizer<Fr> for InterlinkCircuit {
         let commitment_val = v3_val.zip(self.sequence).map(|(v3, s)| v3 + s);
         let commitment =
             cs.new_input_variable(|| commitment_val.ok_or(SynthesisError::AssignmentMissing))?;
-
-        // Enforce: (v3 + seq) * 1 = commitment
         {
             let mut a = LinearCombination::zero();
             a += (ark_ff::One::one(), v3);
@@ -140,42 +143,29 @@ impl ConstraintSynthesizer<Fr> for InterlinkCircuit {
 // ─── Serialization helpers (ark ↔ EVM/Solana big-endian) ────────────────────
 
 /// Serialize a G1Affine point to 64 bytes (x: 32 BE, y: 32 BE).
-/// This matches EVM ecPairing and Solana alt_bn128 precompile format.
 fn g1_to_bytes(p: &G1Affine) -> [u8; 64] {
     let mut out = [0u8; 64];
     if p.infinity {
-        return out; // point at infinity = all zeros
+        return out;
     }
-    // ark stores field elements in little-endian Montgomery form internally,
-    // but BigInteger::to_bytes_be() gives canonical big-endian.
-    let x_bytes = p.x.into_bigint().to_bytes_be();
-    let y_bytes = p.y.into_bigint().to_bytes_be();
-    out[0..32].copy_from_slice(&x_bytes);
-    out[32..64].copy_from_slice(&y_bytes);
+    out[0..32].copy_from_slice(&p.x.into_bigint().to_bytes_be());
+    out[32..64].copy_from_slice(&p.y.into_bigint().to_bytes_be());
     out
 }
 
-/// Serialize a G2Affine point to 128 bytes.
-/// EVM/Solana convention: (x_imaginary, x_real, y_imaginary, y_real), each 32 BE.
-/// ark convention: x = c0 + c1*u where c0=real, c1=imaginary.
+/// Serialize a G2Affine point to 128 bytes: (x_im, x_re, y_im, y_re), each 32 BE.
 fn g2_to_bytes(p: &G2Affine) -> [u8; 128] {
     let mut out = [0u8; 128];
     if p.infinity {
         return out;
     }
-    // EVM expects (x_im, x_re, y_im, y_re) = (c1, c0, c1, c0) in ark terms
-    let x_c1 = p.x.c1.into_bigint().to_bytes_be(); // imaginary
-    let x_c0 = p.x.c0.into_bigint().to_bytes_be(); // real
-    let y_c1 = p.y.c1.into_bigint().to_bytes_be(); // imaginary
-    let y_c0 = p.y.c0.into_bigint().to_bytes_be(); // real
-    out[0..32].copy_from_slice(&x_c1);
-    out[32..64].copy_from_slice(&x_c0);
-    out[64..96].copy_from_slice(&y_c1);
-    out[96..128].copy_from_slice(&y_c0);
+    out[0..32].copy_from_slice(&p.x.c1.into_bigint().to_bytes_be());
+    out[32..64].copy_from_slice(&p.x.c0.into_bigint().to_bytes_be());
+    out[64..96].copy_from_slice(&p.y.c1.into_bigint().to_bytes_be());
+    out[96..128].copy_from_slice(&p.y.c0.into_bigint().to_bytes_be());
     out
 }
 
-/// Serialize a Groth16 proof to 256 bytes: A (64) + B (128) + C (64).
 fn serialize_proof(proof: &ark_groth16::Proof<Bn254>) -> Vec<u8> {
     let mut out = Vec::with_capacity(256);
     out.extend_from_slice(&g1_to_bytes(&proof.a));
@@ -184,15 +174,8 @@ fn serialize_proof(proof: &ark_groth16::Proof<Bn254>) -> Vec<u8> {
     out
 }
 
-/// Serialize a Groth16 verification key to bytes for on-chain storage.
-///
-/// Layout (576 bytes for 1 public input):
-///   alpha_g1:  64 bytes (G1)
-///   beta_g2:  128 bytes (G2)
-///   gamma_g2: 128 bytes (G2)
-///   delta_g2: 128 bytes (G2)
-///   ic[0]:     64 bytes (G1)
-///   ic[1]:     64 bytes (G1)   — one per public input
+/// Serialize a Groth16 verification key (576 bytes for 1 public input):
+/// alpha_g1 (64) | beta_g2 (128) | gamma_g2 (128) | delta_g2 (128) | ic[0] (64) | ic[1] (64)
 pub fn serialize_vk(vk: &VerifyingKey<Bn254>) -> Vec<u8> {
     let mut out = Vec::new();
     out.extend_from_slice(&g1_to_bytes(&vk.alpha_g1));
@@ -207,7 +190,6 @@ pub fn serialize_vk(vk: &VerifyingKey<Bn254>) -> Vec<u8> {
 
 // ─── Proof engine ───────────────────────────────────────────────────────────
 
-/// Cached Groth16 proving artifacts (generated once at startup).
 struct ProverCache {
     pk: ProvingKey<Bn254>,
     vk: VerifyingKey<Bn254>,
@@ -215,11 +197,7 @@ struct ProverCache {
     round_constant: Fr,
 }
 
-/// Groth16 proof generation engine with key caching.
-///
-/// Cheaply cloneable — the inner `Arc` means all clones share the same initialized
-/// key cache. Wrap in `Arc` once and clone into each concurrent processing task
-/// without re-running the trusted setup.
+/// Groth16 proof generation engine with key caching. Cheaply cloneable.
 #[derive(Clone)]
 pub struct ProverEngine {
     cache: Arc<RwLock<Option<ProverCache>>>,
@@ -234,8 +212,10 @@ pub struct ProofPackage {
     pub public_inputs: Vec<u8>,
     /// Event sequence number
     pub sequence: u64,
-    /// Original payload hash from the EVM event
+    /// Canonical payload hash the proof is bound to
     pub payload_hash: [u8; 32],
+    /// The canonical message (None for legacy events, which cannot be submitted)
+    pub message: Option<CanonicalMessage>,
 }
 
 impl ProverEngine {
@@ -245,45 +225,81 @@ impl ProverEngine {
         }
     }
 
-    /// Initialize: run Groth16 trusted setup and cache keys.
-    /// In production, use keys from a real ceremony. For devnet, generated fresh.
+    /// Run a fresh, throwaway Groth16 setup. **Tests and benchmarks only**:
+    /// every call produces a different verification key, so proofs from one
+    /// process never verify against a VK uploaded by another.
     pub async fn initialize(&self) -> Result<(), String> {
-        info!("initializing Groth16 prover (trusted setup)");
-
-        let (pk, vk, pvk, rc) = tokio::task::spawn_blocking(move || {
-            let rc = compute_round_constant();
-            let circuit = InterlinkCircuit {
-                message: None,
-                sequence: None,
-                round_constant: rc,
-            };
-
+        let (pk, vk) = tokio::task::spawn_blocking(|| {
             let mut rng = ark_std::rand::rngs::OsRng;
-            let (pk, vk) = Groth16::<Bn254>::circuit_specific_setup(circuit, &mut rng)
-                .expect("Groth16 setup failed");
-            let pvk = Groth16::<Bn254>::process_vk(&vk).expect("VK processing failed");
-
-            (pk, vk, pvk, rc)
+            Groth16::<Bn254>::circuit_specific_setup(InterlinkCircuit::default(), &mut rng)
+                .map_err(|e| format!("Groth16 setup failed: {}", e))
         })
         .await
-        .map_err(|e| format!("setup task failed: {}", e))?;
+        .map_err(|e| format!("setup task failed: {}", e))??;
+        self.install(pk, vk).await
+    }
 
-        // Log the VK for on-chain deployment
-        let vk_bytes = serialize_vk(&vk);
-        info!(
-            vk_size = vk_bytes.len(),
-            ic_count = vk.gamma_abc_g1.len(),
-            "Groth16 keys ready. Export VK with export_vk() for on-chain deployment."
-        );
+    /// Load the proving key from `path`. If it does not exist and
+    /// `allow_create` is set, run a local setup and save it there.
+    ///
+    /// The relayer and `export-vk` must use the same file, otherwise the
+    /// on-chain VK will not match the proofs. A locally generated key is a
+    /// single-party trusted setup: whoever ran it could keep the toxic waste.
+    /// Production keys must come from a multi-party ceremony.
+    pub async fn load_or_create(&self, path: &Path, allow_create: bool) -> Result<(), String> {
+        let pk = if path.exists() {
+            let bytes = std::fs::read(path)
+                .map_err(|e| format!("read proving key {}: {}", path.display(), e))?;
+            let pk = tokio::task::spawn_blocking(move || {
+                ProvingKey::<Bn254>::deserialize_compressed(bytes.as_slice())
+            })
+            .await
+            .map_err(|e| format!("deserialize task failed: {}", e))?
+            .map_err(|e| format!("invalid proving key {}: {}", path.display(), e))?;
+            info!(path = %path.display(), "loaded Groth16 proving key");
+            pk
+        } else if allow_create {
+            warn!(
+                path = %path.display(),
+                "no proving key found; running a LOCAL single-party setup (dev only)"
+            );
+            let pk = tokio::task::spawn_blocking(|| {
+                let mut rng = ark_std::rand::rngs::OsRng;
+                Groth16::<Bn254>::circuit_specific_setup(InterlinkCircuit::default(), &mut rng)
+                    .map(|(pk, _)| pk)
+                    .map_err(|e| format!("Groth16 setup failed: {}", e))
+            })
+            .await
+            .map_err(|e| format!("setup task failed: {}", e))??;
+            let mut bytes = Vec::new();
+            pk.serialize_compressed(&mut bytes)
+                .map_err(|e| format!("serialize proving key: {}", e))?;
+            if let Some(dir) = path.parent() {
+                std::fs::create_dir_all(dir)
+                    .map_err(|e| format!("create {}: {}", dir.display(), e))?;
+            }
+            std::fs::write(path, bytes)
+                .map_err(|e| format!("write proving key {}: {}", path.display(), e))?;
+            pk
+        } else {
+            return Err(format!(
+                "proving key {} not found; generate it with `cargo run --bin export-vk`",
+                path.display()
+            ));
+        };
+        let vk = pk.vk.clone();
+        self.install(pk, vk).await
+    }
 
-        let mut cache = self.cache.write().await;
-        *cache = Some(ProverCache {
+    async fn install(&self, pk: ProvingKey<Bn254>, vk: VerifyingKey<Bn254>) -> Result<(), String> {
+        let pvk = Groth16::<Bn254>::process_vk(&vk).map_err(|e| format!("VK processing: {}", e))?;
+        info!(vk_size = serialize_vk(&vk).len(), "Groth16 keys ready");
+        *self.cache.write().await = Some(ProverCache {
             pk,
             vk,
             pvk,
-            round_constant: rc,
+            round_constant: compute_round_constant(),
         });
-
         Ok(())
     }
 
@@ -295,23 +311,45 @@ impl ProverEngine {
     }
 
     /// Generate a Groth16 proof for a gateway event.
+    ///
+    /// For current-format events the payload hash is recomputed from the
+    /// event fields; a mismatch is refused rather than proven.
     pub async fn generate_proof(&self, event: &GatewayEvent) -> Result<ProofPackage, String> {
+        match event {
+            GatewayEvent::Message(_) => {
+                let msg = event
+                    .verified_message()
+                    .ok_or("event payload hash does not match its fields; refusing to prove")?;
+                self.prove_message(msg).await
+            }
+            _ => {
+                self.prove_hash(event.payload_hash(), event.sequence(), None)
+                    .await
+            }
+        }
+    }
+
+    /// Prove a canonical message in either direction (gateway → hub, or hub → gateway).
+    pub async fn prove_message(&self, msg: &CanonicalMessage) -> Result<ProofPackage, String> {
+        self.prove_hash(msg.hash(), msg.nonce, Some(msg.clone()))
+            .await
+    }
+
+    async fn prove_hash(
+        &self,
+        payload_hash: [u8; 32],
+        sequence: u64,
+        message: Option<CanonicalMessage>,
+    ) -> Result<ProofPackage, String> {
         let cache_guard = self.cache.read().await;
         let cache = cache_guard.as_ref().ok_or("prover not initialized")?;
 
-        let sequence = event.sequence();
-        let payload_hash = event.payload_hash();
-
         info!(sequence, "generating Groth16 proof");
 
-        // Derive message field element from payload hash
         let msg_field = Fr::from_be_bytes_mod_order(&payload_hash);
         let seq_field = Fr::from(sequence);
         let rc = cache.round_constant;
-
-        // Compute expected commitment: (msg + rc)^5 + seq
-        let w = msg_field + rc;
-        let commitment = w.square().square() * w + seq_field;
+        let commitment = compute_commitment(&payload_hash, sequence);
 
         let circuit = InterlinkCircuit {
             message: Some(msg_field),
@@ -327,14 +365,11 @@ impl ProverEngine {
             let proof = Groth16::<Bn254>::prove(&pk, circuit, &mut rng)
                 .map_err(|e| format!("proof generation failed: {}", e))?;
 
-            // Verify locally before sending (catches witness errors early)
-            let public_inputs = vec![commitment];
-            let valid = Groth16::<Bn254>::verify_with_processed_vk(&pvk, &public_inputs, &proof)
+            let valid = Groth16::<Bn254>::verify_with_processed_vk(&pvk, &[commitment], &proof)
                 .map_err(|e| format!("local verify error: {}", e))?;
             if !valid {
                 return Err("locally generated proof failed verification — circuit bug".to_string());
             }
-
             Ok(serialize_proof(&proof))
         })
         .await
@@ -349,14 +384,12 @@ impl ProverEngine {
 
         info!(sequence, "Groth16 proof generated and locally verified");
 
-        // Public input = commitment serialized as 32-byte big-endian
-        let commitment_bytes = commitment.into_bigint().to_bytes_be();
-
         Ok(ProofPackage {
             proof_bytes,
-            public_inputs: commitment_bytes,
+            public_inputs: commitment.into_bigint().to_bytes_be(),
             sequence,
             payload_hash,
+            message,
         })
     }
 }
@@ -369,16 +402,11 @@ mod tests {
     fn test_circuit_satisfiability() {
         use ark_relations::r1cs::ConstraintSystem;
 
-        let rc = compute_round_constant();
-        let msg = Fr::from(42u64);
-        let seq = Fr::from(1u64);
-
         let circuit = InterlinkCircuit {
-            message: Some(msg),
-            sequence: Some(seq),
-            round_constant: rc,
+            message: Some(Fr::from(42u64)),
+            sequence: Some(Fr::from(1u64)),
+            round_constant: compute_round_constant(),
         };
-
         let cs = ConstraintSystem::<Fr>::new_ref();
         circuit.generate_constraints(cs.clone()).unwrap();
         assert!(cs.is_satisfied().unwrap(), "circuit not satisfied");
@@ -403,27 +431,77 @@ mod tests {
         let package = engine.generate_proof(&event).await.unwrap();
         assert_eq!(package.proof_bytes.len(), 256);
         assert_eq!(package.sequence, 1);
+        assert!(package.message.is_none());
     }
 
-    #[test]
-    fn test_proof_serialization_size() {
-        // Verify that G1 = 64 bytes, G2 = 128 bytes, total = 256
-        assert_eq!(std::mem::size_of::<[u8; 64]>(), 64); // G1
-        assert_eq!(64 + 128 + 64, 256); // A + B + C
+    #[tokio::test]
+    async fn test_refuses_message_with_wrong_hash() {
+        use crate::events::{MessageEvent, ACTION_TRANSFER, HUB_CHAIN_ID};
+        let engine = ProverEngine::new(0);
+        engine.initialize().await.unwrap();
+
+        let message = CanonicalMessage {
+            src_chain: 1,
+            src_gateway: [1; 32],
+            dst_chain: HUB_CHAIN_ID,
+            dst_gateway: [2; 32],
+            nonce: 4,
+            action: ACTION_TRANSFER,
+            sender: [3; 32],
+            asset: [0; 32],
+            amount: 10,
+            recipient: [4; 32],
+            extra_hash: [5; 32],
+        };
+        let mut ev = MessageEvent {
+            block_number: 1,
+            block_hash: [0; 32],
+            tx_hash: [0; 32],
+            gateway: [0; 20],
+            payload_hash: message.hash(),
+            message,
+            data: vec![],
+        };
+        let ok = engine
+            .generate_proof(&GatewayEvent::Message(ev.clone()))
+            .await
+            .unwrap();
+        assert_eq!(ok.payload_hash, ev.payload_hash);
+        assert!(ok.message.is_some());
+
+        ev.message.amount = 1_000_000;
+        assert!(engine
+            .generate_proof(&GatewayEvent::Message(ev))
+            .await
+            .is_err());
+    }
+
+    /// The whole point of persisting the key: two loads give the same VK.
+    #[tokio::test]
+    async fn test_proving_key_persists_across_restarts() {
+        let dir = std::env::temp_dir().join(format!("interlink-pk-test-{}", std::process::id()));
+        let path = dir.join("pk.bin");
+        let _ = std::fs::remove_file(&path);
+
+        let a = ProverEngine::new(0);
+        assert!(
+            a.load_or_create(&path, false).await.is_err(),
+            "must not create silently"
+        );
+        a.load_or_create(&path, true).await.unwrap();
+        let b = ProverEngine::new(0);
+        b.load_or_create(&path, false).await.unwrap();
+        assert_eq!(a.export_vk().await.unwrap(), b.export_vk().await.unwrap());
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn test_vk_serialization() {
         use ark_std::rand::rngs::OsRng;
-        let rc = compute_round_constant();
-        let circuit = InterlinkCircuit {
-            message: None,
-            sequence: None,
-            round_constant: rc,
-        };
-        let (_, vk) = Groth16::<Bn254>::circuit_specific_setup(circuit, &mut OsRng).unwrap();
-        let vk_bytes = serialize_vk(&vk);
-        // alpha(64) + beta(128) + gamma(128) + delta(128) + ic[0](64) + ic[1](64) = 576
-        assert_eq!(vk_bytes.len(), 576);
+        let (_, vk) =
+            Groth16::<Bn254>::circuit_specific_setup(InterlinkCircuit::default(), &mut OsRng)
+                .unwrap();
+        assert_eq!(serialize_vk(&vk).len(), 576);
     }
 }
